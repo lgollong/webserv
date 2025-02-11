@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
 			ConfigParser configParser;
 			configParser.parseConfigFile(configFile.getConfigFile());
 			std::vector<Server> servers = configParser.getServers();
-			ManageServers serverManager(servers);
+			ManageServer serverManager(servers);
 			serverManager.setupServers(servers);
 			serverManager.runServer();
 		}
