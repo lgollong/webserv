@@ -24,8 +24,9 @@
 #include "ConfigParser.hpp"
 #include "ManageServer.hpp"
 #include "Client.hpp"
+#include "Location.hpp"
 
-#define MAX_CONTENT 1000000
+#define MAX_CONTENT 10000000
 
 void	error_msg(std::string str);
 

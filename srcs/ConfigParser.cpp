@@ -27,11 +27,9 @@ std::string cleanString(const std::string &str) {
 
 void ConfigParser::parseConfigFile(std::string configFile){
 	std::ifstream fileStream(configFile.c_str());
-	if (!fileStream.is_open()) {
+	if (!fileStream.is_open())
 		throw std::runtime_error("Error: can not open file");
-	}
 	std::string line;
-	std::string location;
 	int serverCount = 1;
 	while (std::getline(fileStream, line)) {
 		if (line.empty() || line[0] == '#')
@@ -46,14 +44,10 @@ void ConfigParser::parseConfigFile(std::string configFile){
 					break;
 				line = trim(line);
 				if (line.find('{') != std::string::npos && line.find("location") != std::string::npos) {
-					std::istringstream iss(line);
-					std::string locationKeyword, locationPath;
-					if (iss >> locationKeyword >> locationPath){
-						location = locationPath;
-						location = cleanString(location);
-						location = trim(location);
-					}
-					std::map<std::string, std::vector<std::string> > locationConfig;
+					Location location;
+					std::string locationKey, locationPath;
+					if (std::istringstream(line) >> locationKey >> locationPath)
+						location.setPath(trim(cleanString(locationPath)));
 					while (std::getline(fileStream, line)) {
 						if (line.empty() || line[0] == '#')
 							continue;
@@ -61,34 +55,58 @@ void ConfigParser::parseConfigFile(std::string configFile){
 							break;
 						line = trim(line);
 						line = cleanString(line);
-						std::istringstream iniss(line);
+						std::istringstream iss(line);
 						std::string key, value;
-						if (iniss >> key) {
-							std::vector<std::string> values;
-							while (iniss >> value) {
-								values.push_back(value);
+						if (iss >> key) {
+							if (key == "allow_methods") {
+								while (iss >> value)
+									location.setMethodes(value);
 							}
-							locationConfig[key] = values;
+							else if (key == "root" && iss >> value)
+								location.setRoot(value);
+							else if (key == "index" && iss >> value)
+								location.setIndex(value);
+							else if (key == "client_max_body_size" && iss >> value)
+								location.setClientMaxBodySize(atoi(value.c_str()));
+							else if (key == "autoindex" && iss >> value)
+								location.setAutoIndex(value);
+							else if (key == "return" && iss >> value)
+								location.setReturn(value);
+							else if (key == "cgi_path") {
+								while (iss >> value)
+									location.setCgiPath(value);
+							}
+							else if (key == "cgi_ext") {
+								while (iss >> value)
+									location.setCgiExtension(value);
+							}
 						}
 					}
-					server.setLocations(location, locationConfig);
+					server.setLocations(location);
 				} else {
 					line = cleanString(line);
 					std::istringstream iss(line);
 					std::string key, value;
-					if (iss >> key >> value) {
-						if (key == "server_name")
+					if (iss >> key) {
+						if (key == "server_name" && iss >> value)
 							server.setServerName(value);
-						else if (key == "host")
+						else if (key == "host" && iss >> value)
 							server.setHost(inet_addr(value.c_str()));
-						else if (key == "listen")
+						else if (key == "listen" && iss >> value)
 							server.setPort(atoi(value.c_str()));
-						else if (key == "root")
+						else if (key == "root" && iss >> value)
 							server.setRoot(value);
-						else if (key == "client_max_body_size")
+						else if (key == "client_max_body_size" && iss >> value)
 							server.setClientMaxBodySize(atoi(value.c_str()));
-						else if (key == "index")
+						else if (key == "index" && iss >> value)
 							server.setIndex(value);
+						else if (key == "error_page") {
+							if (iss >> value) {
+								int error = atoi(value.c_str());
+								if (iss >> value)
+									server.setErrorPages(error, value);
+							}
+						}
 					}
 				}
 			}

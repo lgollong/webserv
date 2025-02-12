@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
 			std::vector<Server> servers = configParser.getServers();
 			ManageServer serverManager(servers);
 			serverManager.setupServers(servers);
-			serverManager.runServer();
+			// serverManager.runServer();
 		}
 		catch (std::exception &e){
 			std::cerr << e.what() << std::endl;
