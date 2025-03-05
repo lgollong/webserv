@@ -56,7 +56,7 @@ std::string	Location::getPath() const{
 	return path;
 }
 
-std::string	Location::getMethode(std::string methode) const{
+std::string	Location::getMethod(std::string methode) const{
 	for (std::vector<std::string>::const_iterator it = methodes.begin(); it != methodes.end(); ++it){
 		if (*it == methode)
 			return *it;

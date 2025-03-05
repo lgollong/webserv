@@ -19,7 +19,7 @@ class Location {
 		void	setCgiExtension(std::string cgiExtension);
 
 		std::string					getPath() const;
-		std::string					getMethode(std::string methode) const;
+		std::string					getMethod(std::string methode) const;
 		std::vector<std::string>	getMethodes() const;
 		std::string					getRoot() const;
 		std::string					getIndex() const;
