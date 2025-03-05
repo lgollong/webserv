@@ -25,6 +25,8 @@
 #include "ManageServer.hpp"
 #include "Client.hpp"
 #include "Location.hpp"
+#include "HTTPRequest.hpp"
+#include "HTTPResponse.hpp"
 
 #define MAX_CONTENT 10000000
 

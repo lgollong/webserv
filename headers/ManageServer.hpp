@@ -5,6 +5,8 @@
 
 class Server;
 class Client;
+class HTTPRequest;
+class HTTPResponse;
 
 class ManageServer {
 	public:
@@ -15,6 +17,7 @@ class ManageServer {
 		void runServer();
 		void disconnect(int i);
 		void acceptConnection(int i);
+		void recvRequest(HTTPRequest *request, int fd);
 
 		std::vector<Server> getServers() const;
 	private:

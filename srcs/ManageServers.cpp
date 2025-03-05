@@ -9,6 +9,7 @@ ManageServer::~ManageServer(){
 }
 
 void	ManageServer::disconnect(int i){
+	std::cout << "Client disconnected!" << " using the fd: " << fds[i].fd << std::endl;
 	if (fds[i].fd > 2)
 		close(fds[i].fd);
 	fds.erase(fds.begin() + i);
@@ -51,6 +52,12 @@ void ManageServer::runServer(){
 				if (i < servers.size())
 					acceptConnection(i);
 				else {
+					HTTPRequest request;
+					HTTPResponse response;
+					recvRequest(&request, fds[i].fd);
+					request.printRequest();
+					response.parseResponse(request);
+					response.sendResponse(fds[i].fd);
 				}
 			}
 		}
@@ -78,6 +85,21 @@ void ManageServer::setupServers(std::vector<Server> &servers){
 		it->setServAddress(servAddress);
 		pollfd fd = {it->getServSocket(), POLLIN, 0};
 		fds.push_back(fd);
+	}
+}
+
+void ManageServer::recvRequest(HTTPRequest *request, int fd){
+	char buffer[10000];
+	int bytes = recv(fd, buffer, 10000, 0);
+	if (bytes == -1)
+		throw std::runtime_error("Error: recv failed");
+	else if (bytes == 0)
+		disconnect(fd);
+	else {
+		buffer[bytes] = '\0';
+		std::string requestString(buffer);
+		// std::cout << "Request: " << requestString << std::endl;
+		request->parseRequest(requestString);
 	}
 }
 
