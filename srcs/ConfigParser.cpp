@@ -60,7 +60,7 @@ void ConfigParser::parseConfigFile(std::string configFile){
 						if (iss >> key) {
 							if (key == "allow_methods") {
 								while (iss >> value)
-									location.setMethodes(value);
+									location.setMethods(value);
 							}
 							else if (key == "root" && iss >> value)
 								location.setRoot(value);

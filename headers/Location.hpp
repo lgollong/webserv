@@ -9,7 +9,7 @@ class Location {
 		~Location();
 
 		void	setPath(std::string path);
-		void	setMethodes(std::string methode);
+		void	setMethods(std::string method);
 		void	setRoot(std::string root);
 		void	setIndex(std::string index);
 		void	setClientMaxBodySize(unsigned long clientMaxBodySize);
@@ -19,8 +19,8 @@ class Location {
 		void	setCgiExtension(std::string cgiExtension);
 
 		std::string					getPath() const;
-		std::string					getMethod(std::string methode) const;
-		std::vector<std::string>	getMethodes() const;
+		std::string					getMethod(std::string method) const;
+		std::vector<std::string>	getMethods() const;
 		std::string					getRoot() const;
 		std::string					getIndex() const;
 		unsigned long				getClientMaxBodySize() const;
@@ -32,7 +32,7 @@ class Location {
 		std::vector<std::string>	getCgiExtensions() const;
 	private:
 		std::string					path;
-		std::vector<std::string>	methodes;
+		std::vector<std::string>	methods;
 		std::string					root;
 		std::string					index;
 		unsigned long				clientMaxBodySize;

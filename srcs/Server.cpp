@@ -33,7 +33,7 @@ void	Server::printServerConfig(){
 	for (std::vector<Location>::iterator it = locations.begin(); it != locations.end(); it++){
 		std::cout << "Path: " << it->getPath() << std::endl;
 		std::cout << "Methodes: " << std::endl;
-		std::vector<std::string> methodes = it->getMethodes();
+		std::vector<std::string> methodes = it->getMethods();
 		for (std::vector<std::string>::iterator it2 = methodes.begin(); it2 != methodes.end(); it2++)
 			std::cout << "\t" << *it2 << std::endl;
 		std::cout << "Root: " << it->getRoot() << std::endl;

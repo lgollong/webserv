@@ -17,8 +17,8 @@ void	Location::setPath(std::string path){
 	this->path = path;
 }
 
-void	Location::setMethodes(std::string methode){
-	this->methodes.push_back(methode);
+void	Location::setMethods(std::string method){
+	this->methods.push_back(method);
 }
 
 void	Location::setRoot(std::string root){
@@ -56,16 +56,16 @@ std::string	Location::getPath() const{
 	return path;
 }
 
-std::string	Location::getMethod(std::string methode) const{
-	for (std::vector<std::string>::const_iterator it = methodes.begin(); it != methodes.end(); ++it){
-		if (*it == methode)
+std::string	Location::getMethod(std::string method) const{
+	for (std::vector<std::string>::const_iterator it = methods.begin(); it != methods.end(); ++it){
+		if (*it == method)
 			return *it;
 	}
 	return "";
 }
 
-std::vector<std::string>	Location::getMethodes() const{
-	return methodes;
+std::vector<std::string>	Location::getMethods() const{
+	return methods;
 }
 
 std::string	Location::getRoot() const{
