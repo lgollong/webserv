@@ -1,0 +1,5 @@
+.env
+*/.env
+objs/
+notes.txt
+nginx.conf
