@@ -13,13 +13,12 @@ class Poller {
         std::vector<pollfd>&  poll();
         void                  add(int fd, short events);
         void                  remove(int fd);
-        void                  set_interest(int fd, short events);
+        void                  setEvents(int fd, short events);
 
     private:
         std::vector<pollfd> fds;
 
         Poller(const Poller& other);
-        Poller& operator=(const Poller& other);
 };
 
 #endif

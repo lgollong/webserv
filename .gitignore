@@ -3,3 +3,6 @@
 objs/
 notes.txt
 nginx.conf
+tester
+cgi_tester
+webserv

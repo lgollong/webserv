@@ -28,10 +28,9 @@ class Worker {
         StaticFile&                files;
         Logger&                    logger;
 
-        void accept_new(int listen_fd);
-        void on_readable(int fd);
-        void on_writable(int fd);
-        void reset_for_keepalive(Connection& conn);
+        void acceptNew(int listen_fd);
+        void onReadable(int fd);
+        void onWritable(int fd);
 
         Worker(const Worker& other);
         Worker& operator=(const Worker& other);
