@@ -36,7 +36,7 @@ struct Response {
 
 // Resolved location for a request. Owned by Config.
 struct Route {
-    std::string           root;
+    std::string            root;
     bool                   is_cgi;
     std::string            cgi_pass;
     std::set<std::string>  allowed_methods;
@@ -46,7 +46,7 @@ struct Route {
 
 // One server{} block from the config file. Owned by Config.
 struct ServerConfig {
-    std::string         host;
+    std::string          host;
     int                  port;
     std::string          server_name;
     std::vector<Route>   locations;

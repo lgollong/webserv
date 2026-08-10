@@ -6,6 +6,7 @@ Poller::~Poller() {}
 
 std::vector<pollfd>& Poller::poll() {
     ::poll(fds.empty() ? NULL : &fds[0], fds.size(), -1);
+
     return fds;
 }
 

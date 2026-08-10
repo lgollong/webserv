@@ -6,17 +6,25 @@
 #include "../headers/Config.hpp"
 #include "../headers/Worker.hpp"
 
+// add try catch stuff for worker
 int main(int argc, char *argv[]){
 	(void)argc;
 	(void)argv;
-
-	Config config;
-	Http http;
-	Cgi cgi;
-	StaticFile files;
+	
 	Logger logger(std::cout, std::cerr, 1);
-	Worker worker(config, http, cgi, files, logger);
+	
+	try {
+		Config config;
+		Http http;
+		Cgi cgi;
+		StaticFile files;
+		Worker worker(config, http, cgi, files, logger);
 
-	worker.start();
+		worker.start();
+	}
+	catch (const std::exception &e) {
+		logger.error(e.what(), 0);
+		return (1);
+	}
 	return (0);
 }

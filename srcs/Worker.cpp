@@ -17,15 +17,121 @@ Worker::Worker(Config& config, Http& http, Cgi& cgi, StaticFile& files, Logger& 
 : config(config), http(http), cgi(cgi), files(files), logger(logger) {}
 
 Worker::~Worker() {}
+
+static int setup_listener(int port) {
+	int fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (fd < 0)
+		throw std::runtime_error(std::string("socket: ") + strerror(errno));
+
+	int opt = 1;
+	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
+		throw std::runtime_error(std::string("setsockopt: ") + strerror(errno));
+
+	sockaddr_in addr;
+	std::memset(&addr, 0, sizeof(addr));
+
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_port = htons(port);
+
+	if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+		throw std::runtime_error(std::string("bind: ") + strerror(errno));
+	if (listen(fd, SOMAXCONN) < 0)
+		throw std::runtime_error(std::string("listen: ") + strerror(errno));
+		
+	if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0)
+		throw std::runtime_error(std::string("fcntl: ") + strerror(errno));
+
+	return fd;
+}
+
 void Worker::start() {
 	// setup listener
+	const int port = 8080;
+	int listen_fd = setup_listener(port);
+	poller.add(listen_fd, POLLIN);
+	std::cout << "-------------listening on :" << port << " (fd=" << listen_fd << ")" << std::endl;
+
 	// loop
-		// poll ready fds
-		// loop ready fds
+		// poll to get ready fds
+		// loop over ready fds
 			// if ready fd = listen fd && ready fd revents = POLLIN
 				// accept new connection
 			// else if ready fd revents = POLLIN, POLLHUP, POLLERR
 				// read logic
 			// else if ready fd revents = POLLOUT
 				// write logic
+	while (true) {
+		std::vector<pollfd>& ready_fds = poller.poll();
+
+		for (size_t i = 0; i < ready_fds.size(); i++) {
+			if (ready_fds[i].revents == 0)
+				continue;
+			if (ready_fds[i].revents & POLLIN) {
+				if (ready_fds[i].fd == listen_fd) {
+					std::cout << "-------------listener: incoming connection found! accepting..." << std::endl;
+					acceptNew(listen_fd);
+				}
+				else {
+					std::cout << "-------------reading..." << std::endl;
+					onReadable(ready_fds[i].fd);
+				}
+			}
+			else if (ready_fds[i].revents & POLLOUT)
+				std::cout << "-------------writing..." << std::endl;
+		}
+	}
 }
+
+void Worker::acceptNew(int listen_fd) {
+	sockaddr_in client_addr;
+	socklen_t len = sizeof(client_addr);
+
+	int client_fd = accept(listen_fd, reinterpret_cast<sockaddr*>(&client_addr), &len);
+	if (client_fd < 0)
+		throw std::runtime_error(std::string("accept: ") + strerror(errno));
+	
+	if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
+		throw std::runtime_error(std::string("fcntl: ") + strerror(errno));
+	poller.add(client_fd, POLLIN);
+
+	Connection connection;
+	connection.fd = client_fd;
+	connections[client_fd] = connection;
+
+	std::cout << "-------------accepted fd=" << client_fd
+	          << " from " << inet_ntoa(client_addr.sin_addr) << std::endl;
+}
+
+void Worker::onReadable(int client_fd) {
+	char buf[4096];
+	ssize_t n = read(client_fd, buf, sizeof(buf));
+	if (n < 0)
+		throw std::runtime_error(std::string("read: ") + strerror(errno));
+
+	if (n <= 0) {
+		std::cout << "-------------closing fd=" << client_fd << " (read returned " << n << ")" << std::endl;
+		close(client_fd);
+		poller.remove(client_fd);
+		connections.erase(client_fd);
+		return ;
+	}
+	std::cout << "-------------read " << n << " bytes from fd=" << client_fd << ":\n"
+	          << std::string(buf, static_cast<size_t>(n)) << std::endl;
+}
+//read logic
+	// setup read buffer
+	// read() into buffer
+	// if read result = 0
+		// close fd
+		// remove from poller set
+		// delete connections struct
+	// if http.parse = true
+		// reset connections[].transaction 
+		// process request
+		// http.build -> response
+		// put response into connections[].outbuff
+		// add POLLOUT event to that fd
+
+// write logic
+	// write() outbuff into fd

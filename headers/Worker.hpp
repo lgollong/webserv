@@ -29,8 +29,8 @@ class Worker {
         Logger&                    logger;
 
         void acceptNew(int listen_fd);
-        void onReadable(int fd);
-        void onWritable(int fd);
+        void onReadable(int client_fd);
+        void onWritable(int client_fd);
 
         Worker(const Worker& other);
         Worker& operator=(const Worker& other);
