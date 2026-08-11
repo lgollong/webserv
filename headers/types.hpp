@@ -8,6 +8,7 @@
 #include <ctime>
 #include <sys/types.h>
 
+// @note is this even needed?
 // Connection lifecycle phase (see DEV_DOC.md §4).
 enum Phase {
     READING,
@@ -94,7 +95,7 @@ struct Connection {
     std::string  inbuf;
     std::string  outbuf;
     size_t       sent;
-    bool         keep_alive;
+    bool         keep_alive; // @note needed?
     time_t       last_activity;
     Transaction  txn;
 
