@@ -18,7 +18,7 @@ Worker::Worker(Config& config, Http& http, Cgi& cgi, StaticFile& files, Logger& 
 
 Worker::~Worker() {}
 
-static int setup_listener(int port) {
+static int setupListener(int port) {
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0)
 		throw std::runtime_error(std::string("socket: ") + strerror(errno));
@@ -48,7 +48,7 @@ static int setup_listener(int port) {
 void Worker::start() {
 	// setup listener
 	const int port = 8080;
-	int listen_fd = setup_listener(port);
+	int listen_fd = setupListener(port);
 	poller.add(listen_fd, POLLIN);
 	std::cout << "-------------listening on :" << port << " (fd=" << listen_fd << ")" << std::endl;
 
@@ -77,8 +77,10 @@ void Worker::start() {
 					onReadable(ready_fds[i].fd);
 				}
 			}
-			else if (ready_fds[i].revents & POLLOUT)
+			else if (ready_fds[i].revents & POLLOUT) {
 				std::cout << "-------------writing..." << std::endl;
+				onWritable(ready_fds[i].fd);
+			}
 		}
 	}
 }
@@ -103,6 +105,19 @@ void Worker::acceptNew(int listen_fd) {
 	          << " from " << inet_ntoa(client_addr.sin_addr) << std::endl;
 }
 
+//read logic
+	// setup read buffer
+	// read() into buffer
+	// if read result = 0
+		// close fd
+		// remove from poller set
+		// delete connections struct
+	// if http.parse = true
+		// reset connections[].transaction 
+		// process request
+		// http.build -> response
+		// put response into connections[].outbuff
+		// add POLLOUT event to that fd
 void Worker::onReadable(int client_fd) {
 	char buf[4096];
 	ssize_t n = read(client_fd, buf, sizeof(buf));
@@ -118,20 +133,28 @@ void Worker::onReadable(int client_fd) {
 	}
 	std::cout << "-------------read " << n << " bytes from fd=" << client_fd << ":\n"
 	          << std::string(buf, static_cast<size_t>(n)) << std::endl;
+
+	connections[client_fd].inbuf.append(buf, n);
+	if (http.parse(connections[client_fd].inbuf, connections[client_fd].txn.request) == true) {
+		connections[client_fd].outbuf = http.build(connections[client_fd].txn.response);
+		poller.setEvents(client_fd, POLLOUT);
+	}
 }
-//read logic
-	// setup read buffer
-	// read() into buffer
-	// if read result = 0
-		// close fd
-		// remove from poller set
-		// delete connections struct
-	// if http.parse = true
-		// reset connections[].transaction 
-		// process request
-		// http.build -> response
-		// put response into connections[].outbuff
-		// add POLLOUT event to that fd
 
 // write logic
 	// write() outbuff into fd
+void Worker::onWritable(int client_fd) {
+	Connection &conn = connections[client_fd];
+	ssize_t n = write(client_fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
+	if (n < 0)
+		throw std::runtime_error(std::string("write: ") + strerror(errno));
+	std::cout << "-------------wrote " << n << " bytes to fd=" << client_fd << ":\n"
+	          << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n)) << std::endl;
+
+	conn.sent += n;
+	if (conn.sent == conn.outbuf.size()) {
+		conn.outbuf.clear();
+		conn.sent = 0;
+		poller.setEvents(client_fd, POLLIN);
+	}
+}
