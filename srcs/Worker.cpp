@@ -13,6 +13,10 @@
 #include <cstring>
 #include <iostream>
 
+// @note is error handling rigorous enough? memset etc. not handled?
+// @todo whole keep-alive shit isnt handled
+// @todo cgi logic incomplete
+
 Worker::Worker(Config& config, Http& http, Cgi& cgi, StaticFile& files, Logger& logger)
 : config(config), http(http), cgi(cgi), files(files), logger(logger) {}
 
@@ -134,15 +138,33 @@ void Worker::onReadable(int client_fd) {
 	std::cout << "-------------read " << n << " bytes from fd=" << client_fd << ":\n"
 	          << std::string(buf, static_cast<size_t>(n)) << std::endl;
 
-	connections[client_fd].inbuf.append(buf, n);
-	if (http.parse(connections[client_fd].inbuf, connections[client_fd].txn.request) == true) {
-		connections[client_fd].outbuf = http.build(connections[client_fd].txn.response);
+	Connection &conn = connections[client_fd];
+	conn.inbuf.append(buf, n);
+	if (http.parse(conn.inbuf, conn.txn.request) == true) {
+		std::cout << "-------------request complete!" << std::endl;
+		conn.txn.route = config.route(conn.txn.request);
+		if (conn.txn.route.is_cgi == true) {
+			std::cout << "-------------executing cgi" << std::endl;
+			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
+			poller.add(conn.txn.cgi.out_fd, POLLIN);
+			return ;
+		}
+		
+		std::cout << "-------------serving response" << std::endl;
+		// pulling requested content and storing in response data structure
+		Content content = files.serve(conn.txn.route, conn.txn.request);
+		conn.txn.response.status = content.status;
+		conn.txn.response.body = content.body;
+  		conn.txn.response.headers["Content-Type"] = content.mime_type;
+		conn.outbuf = http.build(conn.txn.response);
 		poller.setEvents(client_fd, POLLOUT);
 	}
 }
 
+// @todo test with response thats too big for one write cycle
 // write logic
 	// write() outbuff into fd
+	// keep track of what has been written and what remains
 void Worker::onWritable(int client_fd) {
 	Connection &conn = connections[client_fd];
 	ssize_t n = write(client_fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);

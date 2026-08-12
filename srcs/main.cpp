@@ -8,13 +8,15 @@
 
 // add try catch stuff for worker
 int main(int argc, char *argv[]){
-	(void)argc;
-	(void)argv;
-	
+	if (argc != 2) {
+		std::cout << "Wrong number of arguments" << std::endl;
+		return (1);
+	}
+
 	Logger logger(std::cout, std::cerr, 1);
-	
+
 	try {
-		Config config;
+		Config config(argv[1]);
 		Http http;
 		Cgi cgi;
 		StaticFile files;

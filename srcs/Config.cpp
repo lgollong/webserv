@@ -1,6 +1,30 @@
 #include "Config.hpp"
 
-Config::Config() {}
+Config::Config(const std::string &configPath) {
+    (void)configPath; // mock: no real config-file parsing yet
+
+    ServerConfig server;
+    server.host = "0.0.0.0";
+    server.port = 8080;
+    server.server_name = "localhost";
+
+    Route root;
+    root.root = "./sites";
+    root.is_cgi = false;
+    root.allowed_methods.insert("GET");
+    root.allowed_methods.insert("POST");
+    root.allowed_methods.insert("DELETE");
+    server.locations.push_back(root);
+
+    Route cgiLocation;
+    cgiLocation.root = "./sites";
+    cgiLocation.is_cgi = true;
+    cgiLocation.cgi_pass = "/usr/bin/php-cgi";
+    cgiLocation.allowed_methods.insert("POST");
+    server.locations.push_back(cgiLocation);
+
+    servers.push_back(server);
+}
 
 Config::~Config() {}
 
