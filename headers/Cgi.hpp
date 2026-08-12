@@ -5,12 +5,12 @@
 
 // Forks/execs a script, wires up its I/O, collects output non-blockingly.
 class Cgi {
-    public:
-        Cgi();
-        ~Cgi();
+	public:
+		Cgi();
+		~Cgi();
 
-        CgiJob  start(const Request& request, const Route& route);
-        bool    collect(CgiJob& cgi);
+		CgiJob  start(const Request& request, const Route& route);
+		bool    collect(CgiJob& cgi);
 };
 
 #endif

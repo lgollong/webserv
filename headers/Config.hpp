@@ -8,14 +8,14 @@
 // @note are we following 42s cpp standards in the project? e.g. there is no default constructor here
 // Parses the config file (startup); resolves a request to its location (per request).
 class Config {
-    public:
-        Config(const std::string &configPath);
-        ~Config();
+	public:
+		Config(const std::string &configPath);
+		~Config();
 
-        Route route(const Request& request) const;
+		Route route(const Request& request) const;
 
-    private:
-        std::vector<ServerConfig> servers;
+	private:
+		std::vector<ServerConfig> servers;
 };
 
 #endif

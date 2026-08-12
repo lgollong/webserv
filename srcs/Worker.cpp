@@ -155,7 +155,7 @@ void Worker::onReadable(int client_fd) {
 		Content content = files.serve(conn.txn.route, conn.txn.request);
 		conn.txn.response.status = content.status;
 		conn.txn.response.body = content.body;
-  		conn.txn.response.headers["Content-Type"] = content.mime_type;
+		conn.txn.response.headers["Content-Type"] = content.mime_type;
 		conn.outbuf = http.build(conn.txn.response);
 		poller.setEvents(client_fd, POLLOUT);
 	}

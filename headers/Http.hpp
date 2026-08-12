@@ -6,12 +6,12 @@
 
 // Byte stream <-> structured message, both directions; renders status codes (incl. errors).
 class Http {
-    public:
-        Http();
-        ~Http();
+	public:
+		Http();
+		~Http();
 
-        bool         parse(std::string& inbuf, Request& request);
-        std::string  build(const Response& response);
+		bool         parse(std::string& inbuf, Request& request);
+		std::string  build(const Response& response);
 };
 
 #endif
