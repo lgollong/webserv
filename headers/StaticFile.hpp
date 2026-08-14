@@ -11,7 +11,7 @@ class StaticFile {
 		StaticFile();
 		~StaticFile();
 
-		Content serve(const Route& route, const Request& request);
+		Content serve(const Route &route, const Request &request);
 
 	private:
 		std::map<std::string, std::string> mime_types;

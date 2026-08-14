@@ -18,7 +18,7 @@ class Poller {
 	private:
 		std::vector<pollfd> fds;
 
-		Poller(const Poller& other);
+		Poller(const Poller &other);
 };
 
 #endif

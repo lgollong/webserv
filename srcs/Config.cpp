@@ -28,7 +28,7 @@ Config::Config(const std::string &configPath) {
 
 Config::~Config() {}
 
-Route Config::route(const Request& request) const {
+Route Config::route(const Request &request) const {
 	// mock: no real config-file parsing / location matching yet.
 	// pretend every request maps to one static location under ./sites,
 	// except paths ending in .bla, which pretend to be CGI-backed --

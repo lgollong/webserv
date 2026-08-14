@@ -14,7 +14,7 @@
 // Every other class is a passive service Worker calls; services never call each other.
 class Worker {
 	public:
-		Worker(Config& config, Http& http, Cgi& cgi, StaticFile& files, Logger& logger);
+		Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &logger);
 		~Worker();
 
 		void run();
@@ -23,18 +23,18 @@ class Worker {
 		std::map<int, Connection>  connections;
 		std::map<int, Connection*> fdToConnection;
 		Poller                     poller;
-		Config&                    config;
-		Http&                      http;
-		Cgi&                       cgi;
-		StaticFile&                files;
-		Logger&                    logger;
+		Config                     &config;
+		Http                       &http;
+		Cgi                        &cgi;
+		StaticFile                 &files;
+		Logger                     &logger;
 
 		void acceptNew(int listen_fd);
 		void onCgiReadable(Connection &conn);
 		void onReadable(Connection &conn);
 		void onWritable(Connection &conn);
 
-		Worker(const Worker& other);
+		Worker(const Worker &other);
 };
 
 #endif

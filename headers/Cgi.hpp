@@ -9,7 +9,7 @@ class Cgi {
 		Cgi();
 		~Cgi();
 
-		CgiJob    start(const Request &request, const Route& route);
+		CgiJob    start(const Request &request, const Route &route);
 		bool      collect(CgiJob &cgi);
 		Response  buildResponse(const CgiJob &job) const;
 };

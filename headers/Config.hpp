@@ -12,7 +12,7 @@ class Config {
 		Config(const std::string &configPath);
 		~Config();
 
-		Route route(const Request& request) const;
+		Route route(const Request &request) const;
 
 	private:
 		std::vector<ServerConfig> servers;

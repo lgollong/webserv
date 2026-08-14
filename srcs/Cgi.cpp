@@ -36,7 +36,7 @@ Response Cgi::buildResponse(const CgiJob &job) const {
 	// real parsing against job.output -- CGI/1.1 scripts write a small
 	// Key: Value header block, a blank line, then the body. Not the same
 	// as an HTTP response (no status line), so we translate it into one.
-	const std::string& raw = job.output;
+	const std::string &raw = job.output;
 
 	std::string::size_type sep = raw.find("\r\n\r\n");
 	size_t sepLen = 4;

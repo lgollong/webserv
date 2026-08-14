@@ -5,7 +5,7 @@ Http::Http() {}
 
 Http::~Http() {}
 
-bool Http::parse(std::string& inbuf, Request& request) {
+bool Http::parse(std::string &inbuf, Request &request) {
 	if (inbuf.empty())
 		return false; // nothing buffered yet, wait for more bytes
 
@@ -22,7 +22,7 @@ bool Http::parse(std::string& inbuf, Request& request) {
 	return true;
 }
 
-std::string Http::build(const Response& response) {
+std::string Http::build(const Response &response) {
 	int status = response.status ? response.status : 200;
 
 	std::string reason = "OK";

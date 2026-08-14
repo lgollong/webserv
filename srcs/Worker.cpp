@@ -20,7 +20,7 @@
 // @todo whole keep-alive shit isnt handled
 // @todo cgi logic incomplete
 
-Worker::Worker(Config& config, Http& http, Cgi& cgi, StaticFile& files, Logger& logger)
+Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &logger)
 : config(config), http(http), cgi(cgi), files(files), logger(logger) {}
 
 Worker::~Worker() {}
@@ -69,7 +69,7 @@ void Worker::run() {
 			// else if ready fd revents = POLLOUT
 				// write logic
 	while (true) {
-		std::vector<pollfd>& ready_fds = poller.poll();
+		std::vector<pollfd> &ready_fds = poller.poll();
 
 		for (size_t i = 0; i < ready_fds.size(); i++) {
 			if (ready_fds[i].revents == 0)

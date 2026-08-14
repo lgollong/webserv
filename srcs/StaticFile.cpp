@@ -16,7 +16,7 @@ StaticFile::StaticFile() {
 
 StaticFile::~StaticFile() {}
 
-Content StaticFile::serve(const Route& route, const Request& request) {
+Content StaticFile::serve(const Route &route, const Request &request) {
 	(void)route; // a real lookup will need route.root to resolve the path on disk
 
 	Content content;

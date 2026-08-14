@@ -10,8 +10,8 @@ class Http {
 		Http();
 		~Http();
 
-		bool         parse(std::string& inbuf, Request& request);
-		std::string  build(const Response& response);
+		bool         parse(std::string &inbuf, Request &request);
+		std::string  build(const Response &response);
 };
 
 #endif
