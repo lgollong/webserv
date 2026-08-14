@@ -14,6 +14,8 @@
 #include <iostream>
 
 // @note is error handling rigorous enough? memset etc. not handled?
+// @todo timeout sweep missing (look at DEV_DOC). here we probably need the connection phases
+// @note are we following the norm everywhere? e.g. no copy operator implemented etc.
 // @todo whole keep-alive shit isnt handled
 // @todo cgi logic incomplete
 
@@ -49,7 +51,7 @@ static int setupListener(int port) {
 	return fd;
 }
 
-void Worker::start() {
+void Worker::run() {
 	// setup listener
 	const int port = 8080;
 	int listen_fd = setupListener(port);
@@ -71,19 +73,29 @@ void Worker::start() {
 		for (size_t i = 0; i < ready_fds.size(); i++) {
 			if (ready_fds[i].revents == 0)
 				continue;
-			if (ready_fds[i].revents & POLLIN) {
-				if (ready_fds[i].fd == listen_fd) {
+			if (ready_fds[i].fd == listen_fd) {
+				if (ready_fds[i].revents & POLLIN) {
 					logger.debug() << "listener: incoming connection found! accepting...";
 					acceptNew(listen_fd);
 				}
-				else {
-					logger.debug() << "reading...";
-					onReadable(ready_fds[i].fd);
-				}
+				continue;
+			}
+
+			Connection *conn = fdToConnection[ready_fds[i].fd];
+			if (!conn)
+				throw std::runtime_error(std::string("no connection object found in map, this should never happen"));
+
+			if (ready_fds[i].fd == conn->txn.cgi.out_fd) {
+				logger.debug() << "checking cgi out fd";
+				onCgiReadable(*conn);
+			}
+			else if (ready_fds[i].revents & POLLIN) {
+				logger.debug() << "checking reading fd";
+				onReadable(*conn);
 			}
 			else if (ready_fds[i].revents & POLLOUT) {
-				logger.debug() << "writing...";
-				onWritable(ready_fds[i].fd);
+				logger.debug() << "checking writing fd";
+				onWritable(*conn);
 			}
 		}
 	}
@@ -104,8 +116,23 @@ void Worker::acceptNew(int listen_fd) {
 	Connection connection;
 	connection.fd = client_fd;
 	connections[client_fd] = connection;
+	fdToConnection[client_fd] = &connections[client_fd];
 
 	logger.debug() << "accepted fd=" << client_fd << " from " << inet_ntoa(client_addr.sin_addr);
+}
+
+void Worker::onCgiReadable(Connection &conn) {
+	if (!cgi.collect(conn.txn.cgi))
+		return ;
+
+	logger.debug() << "cgi collection complete. building response...";
+	poller.remove(conn.txn.cgi.out_fd);
+	close (conn.txn.cgi.out_fd);
+	fdToConnection.erase(conn.txn.cgi.out_fd);
+
+	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+	conn.outbuf = http.build(conn.txn.response);
+	poller.setEvents(conn.fd, POLLOUT);
 }
 
 //read logic
@@ -121,23 +148,23 @@ void Worker::acceptNew(int listen_fd) {
 		// http.build -> response
 		// put response into connections[].outbuff
 		// add POLLOUT event to that fd
-void Worker::onReadable(int client_fd) {
+void Worker::onReadable(Connection &conn) {
 	char buf[4096];
-	ssize_t n = read(client_fd, buf, sizeof(buf));
+	ssize_t n = read(conn.fd, buf, sizeof(buf));
 	if (n < 0)
 		throw std::runtime_error(std::string("read: ") + strerror(errno));
 
 	if (n <= 0) {
-		logger.debug() << "closing fd=" << client_fd << " (read returned " << n << ")";
-		close(client_fd);
-		poller.remove(client_fd);
-		connections.erase(client_fd);
+		logger.debug() << "closing fd=" << conn.fd << " (read returned " << n << ")";
+		close(conn.fd);
+		poller.remove(conn.fd);
+		fdToConnection.erase(conn.fd);
+		connections.erase(conn.fd);
 		return ;
 	}
-	logger.debug() << "read " << n << " bytes from fd=" << client_fd << ":\n"
+	logger.debug() << "read " << n << " bytes from fd=" << conn.fd << ":\n"
 	        << std::string(buf, static_cast<size_t>(n));
 
-	Connection &conn = connections[client_fd];
 	conn.inbuf.append(buf, n);
 	if (http.parse(conn.inbuf, conn.txn.request) == true) {
 		logger.debug() << "request complete";
@@ -156,7 +183,7 @@ void Worker::onReadable(int client_fd) {
 		conn.txn.response.body = content.body;
 		conn.txn.response.headers["Content-Type"] = content.mime_type;
 		conn.outbuf = http.build(conn.txn.response);
-		poller.setEvents(client_fd, POLLOUT);
+		poller.setEvents(conn.fd, POLLOUT);
 	}
 }
 
@@ -164,18 +191,18 @@ void Worker::onReadable(int client_fd) {
 // write logic
 	// write() outbuff into fd
 	// keep track of what has been written and what remains
-void Worker::onWritable(int client_fd) {
-	Connection &conn = connections[client_fd];
-	ssize_t n = write(client_fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
+void Worker::onWritable(Connection &conn) {
+	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
 	if (n < 0)
 		throw std::runtime_error(std::string("write: ") + strerror(errno));
-	logger.debug() << "wrote " << n << " bytes to fd=" << client_fd << ":\n" 
+	logger.debug() << "wrote " << n << " bytes to fd=" << conn.fd << ":\n" 
 	            << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
 
 	conn.sent += n;
 	if (conn.sent == conn.outbuf.size()) {
 		conn.outbuf.clear();
 		conn.sent = 0;
-		poller.setEvents(client_fd, POLLIN);
+		conn.txn = Transaction();
+		poller.setEvents(conn.fd, POLLIN);
 	}
 }

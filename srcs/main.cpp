@@ -22,7 +22,7 @@ int main(int argc, char *argv[]){
 		StaticFile files;
 		Worker worker(config, http, cgi, files, logger);
 
-		worker.start();
+		worker.run();
 	}
 	catch (const std::exception &e) {
 		logger.error(e.what());

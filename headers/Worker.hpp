@@ -17,10 +17,11 @@ class Worker {
 		Worker(Config& config, Http& http, Cgi& cgi, StaticFile& files, Logger& logger);
 		~Worker();
 
-		void start();
+		void run();
 
 	private:
 		std::map<int, Connection>  connections;
+		std::map<int, Connection*> fdToConnection;
 		Poller                     poller;
 		Config&                    config;
 		Http&                      http;
@@ -29,11 +30,11 @@ class Worker {
 		Logger&                    logger;
 
 		void acceptNew(int listen_fd);
-		void onReadable(int client_fd);
-		void onWritable(int client_fd);
+		void onCgiReadable(Connection &conn);
+		void onReadable(Connection &conn);
+		void onWritable(Connection &conn);
 
 		Worker(const Worker& other);
-		Worker& operator=(const Worker& other);
 };
 
 #endif
