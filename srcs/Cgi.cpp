@@ -32,6 +32,20 @@ bool Cgi::collect(CgiJob &cgi) {
 	return cgi.done;
 }
 
+bool Cgi::sendBody(CgiJob &job, const std::string &body) {
+	(void)job;
+	(void)body;
+
+	// mock: job.in_fd stays -1 (see start()), so there's no real pipe to
+	// write to. A real implementation needs a byte cursor on CgiJob (same
+	// role as Connection::sent) to track partial writes across multiple
+	// calls, and must close job.in_fd once the whole body has gone out so
+	// the child sees EOF on its stdin. Note this is independent of
+	// job.done, which tracks output *collection* (out_fd), not body
+	// sending (in_fd) -- pretend the body always goes out in one shot.
+	return true;
+}
+
 Response Cgi::buildResponse(const CgiJob &job) const {
 	// real parsing against job.output -- CGI/1.1 scripts write a small
 	// Key: Value header block, a blank line, then the body. Not the same

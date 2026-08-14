@@ -11,6 +11,7 @@ class Cgi {
 
 		CgiJob    start(const Request &request, const Route &route);
 		bool      collect(CgiJob &cgi);
+		bool      sendBody(CgiJob &job, const std::string &body); // true once fully written (and in_fd closed)
 		Response  buildResponse(const CgiJob &job) const;
 };
 

@@ -14,7 +14,6 @@
 #include <iostream>
 
 // @note is error handling rigorous enough? memset etc. not handled?
-// @todo implement cgi writable logic
 // @todo timeout sweep missing (look at DEV_DOC). here we probably need the connection phases
 // @note are we following the norm everywhere? e.g. no copy operator implemented etc.
 // @todo whole keep-alive shit isnt handled
@@ -54,6 +53,7 @@ static int setupListener(int port) {
 
 void Worker::run() {
 	// setup listener
+	// @todo take port from config
 	const int port = 8080;
 	int listen_fd = setupListener(port);
 	poller.add(listen_fd, POLLIN);
@@ -89,6 +89,10 @@ void Worker::run() {
 			if (ready_fds[i].fd == conn->txn.cgi.out_fd) {
 				logger.debug() << "fd: " << conn->fd << " checking cgi out fd";
 				onCgiReadable(*conn);
+			}
+			else if (ready_fds[i].fd == conn->txn.cgi.in_fd) {
+				logger.debug() << "fd: " << conn->fd << " checking cgi in fd";
+				onCgiWritable(*conn);
 			}
 			else if (ready_fds[i].revents & POLLIN) {
 				logger.debug() << "fd: " << conn->fd << " checking reading fd";
@@ -136,6 +140,16 @@ void Worker::onCgiReadable(Connection &conn) {
 	poller.setEvents(conn.fd, POLLOUT);
 }
 
+void Worker::onCgiWritable(Connection &conn) {
+	if (!cgi.sendBody(conn.txn.cgi, conn.txn.request.body))
+		return ;
+
+	logger.debug() << "fd: " << conn.fd << " cgi body fully sent.";
+	poller.remove(conn.txn.cgi.in_fd);
+	close (conn.txn.cgi.in_fd);
+	fdToConnection.erase(conn.txn.cgi.in_fd);
+}
+
 //read logic
 	// setup read buffer
 	// read() into buffer
@@ -173,18 +187,23 @@ void Worker::onReadable(Connection &conn) {
 		if (conn.txn.route.is_cgi == true) {
 			logger.debug() << "fd: " << conn.fd << " executing cgi";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
+			poller.add(conn.txn.cgi.in_fd, POLLOUT);
 			poller.add(conn.txn.cgi.out_fd, POLLIN);
+			fdToConnection[conn.txn.cgi.in_fd] = &conn;
+			fdToConnection[conn.txn.cgi.out_fd] = &conn;
 			return ;
 		}
+		else {
+			logger.debug() << "fd: " << conn.fd << " serving response";
+			// pulling requested content and storing in response data structure
+			Content content = files.serve(conn.txn.route, conn.txn.request);
+			conn.txn.response.status = content.status;
+			conn.txn.response.body = content.body;
+			conn.txn.response.headers["Content-Type"] = content.mime_type;
+			conn.outbuf = http.build(conn.txn.response);
+			poller.setEvents(conn.fd, POLLOUT);
+		}
 
-		logger.debug() << "fd: " << conn.fd << " serving response";
-		// pulling requested content and storing in response data structure
-		Content content = files.serve(conn.txn.route, conn.txn.request);
-		conn.txn.response.status = content.status;
-		conn.txn.response.body = content.body;
-		conn.txn.response.headers["Content-Type"] = content.mime_type;
-		conn.outbuf = http.build(conn.txn.response);
-		poller.setEvents(conn.fd, POLLOUT);
 	}
 }
 
