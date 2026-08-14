@@ -14,6 +14,7 @@
 #include <iostream>
 
 // @note is error handling rigorous enough? memset etc. not handled?
+// @todo implement cgi writable logic
 // @todo timeout sweep missing (look at DEV_DOC). here we probably need the connection phases
 // @note are we following the norm everywhere? e.g. no copy operator implemented etc.
 // @todo whole keep-alive shit isnt handled
