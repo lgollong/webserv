@@ -57,7 +57,7 @@ void Worker::run() {
 	const int port = 8080;
 	int listen_fd = setupListener(port);
 	poller.add(listen_fd, POLLIN);
-	logger.debug() << "listening on :" << port << " (fd=" << listen_fd << ")";
+	logger.debug() << "fd: " << listen_fd << " listening on :" << port;
 
 	// loop
 		// poll to get ready fds
@@ -76,7 +76,7 @@ void Worker::run() {
 				continue;
 			if (ready_fds[i].fd == listen_fd) {
 				if (ready_fds[i].revents & POLLIN) {
-					logger.debug() << "listener: incoming connection found! accepting...";
+					logger.debug() << "fd: " << listen_fd << " listener: incoming connection found! accepting...";
 					acceptNew(listen_fd);
 				}
 				continue;
@@ -87,15 +87,15 @@ void Worker::run() {
 				throw std::runtime_error(std::string("no connection object found in map, this should never happen"));
 
 			if (ready_fds[i].fd == conn->txn.cgi.out_fd) {
-				logger.debug() << "checking cgi out fd";
+				logger.debug() << "fd: " << conn->fd << " checking cgi out fd";
 				onCgiReadable(*conn);
 			}
 			else if (ready_fds[i].revents & POLLIN) {
-				logger.debug() << "checking reading fd";
+				logger.debug() << "fd: " << conn->fd << " checking reading fd";
 				onReadable(*conn);
 			}
 			else if (ready_fds[i].revents & POLLOUT) {
-				logger.debug() << "checking writing fd";
+				logger.debug() << "fd: " << conn->fd << " checking writing fd";
 				onWritable(*conn);
 			}
 		}
@@ -119,14 +119,14 @@ void Worker::acceptNew(int listen_fd) {
 	connections[client_fd] = connection;
 	fdToConnection[client_fd] = &connections[client_fd];
 
-	logger.debug() << "accepted fd=" << client_fd << " from " << inet_ntoa(client_addr.sin_addr);
+	logger.debug() << "fd: " << client_fd << " accepted from " << inet_ntoa(client_addr.sin_addr);
 }
 
 void Worker::onCgiReadable(Connection &conn) {
 	if (!cgi.collect(conn.txn.cgi))
 		return ;
 
-	logger.debug() << "cgi collection complete. building response...";
+	logger.debug() << "fd: " << conn.fd << " cgi collection complete. building response...";
 	poller.remove(conn.txn.cgi.out_fd);
 	close (conn.txn.cgi.out_fd);
 	fdToConnection.erase(conn.txn.cgi.out_fd);
@@ -156,28 +156,28 @@ void Worker::onReadable(Connection &conn) {
 		throw std::runtime_error(std::string("read: ") + strerror(errno));
 
 	if (n <= 0) {
-		logger.debug() << "closing fd=" << conn.fd << " (read returned " << n << ")";
+		logger.debug() << "fd: " << conn.fd << " closing (read returned " << n << ")";
 		close(conn.fd);
 		poller.remove(conn.fd);
 		fdToConnection.erase(conn.fd);
 		connections.erase(conn.fd);
 		return ;
 	}
-	logger.debug() << "read " << n << " bytes from fd=" << conn.fd << ":\n"
+	logger.debug() << "fd: " << conn.fd << " read " << n << " bytes:\n"
 	        << std::string(buf, static_cast<size_t>(n));
 
 	conn.inbuf.append(buf, n);
 	if (http.parse(conn.inbuf, conn.txn.request) == true) {
-		logger.debug() << "request complete";
+		logger.debug() << "fd: " << conn.fd << " request complete";
 		conn.txn.route = config.route(conn.txn.request);
 		if (conn.txn.route.is_cgi == true) {
-			logger.debug() << "executing cgi";
+			logger.debug() << "fd: " << conn.fd << " executing cgi";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
 			poller.add(conn.txn.cgi.out_fd, POLLIN);
 			return ;
 		}
 
-		logger.debug() << "serving response";
+		logger.debug() << "fd: " << conn.fd << " serving response";
 		// pulling requested content and storing in response data structure
 		Content content = files.serve(conn.txn.route, conn.txn.request);
 		conn.txn.response.status = content.status;
@@ -196,7 +196,7 @@ void Worker::onWritable(Connection &conn) {
 	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
 	if (n < 0)
 		throw std::runtime_error(std::string("write: ") + strerror(errno));
-	logger.debug() << "wrote " << n << " bytes to fd=" << conn.fd << ":\n" 
+	logger.debug() << "fd: " << conn.fd << " wrote " << n << " bytes:\n"
 	            << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
 
 	conn.sent += n;
