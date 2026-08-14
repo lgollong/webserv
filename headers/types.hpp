@@ -17,6 +17,11 @@ enum Phase {
 	IDLE
 };
 
+enum LogLevel {
+	ERROR,
+	DEBUG
+};
+
 // Parsed inbound HTTP message. Owned by HTTP.
 struct Request {
 	std::string                        method;

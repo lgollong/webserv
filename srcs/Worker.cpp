@@ -54,7 +54,7 @@ void Worker::start() {
 	const int port = 8080;
 	int listen_fd = setupListener(port);
 	poller.add(listen_fd, POLLIN);
-	std::cout << "-------------listening on :" << port << " (fd=" << listen_fd << ")" << std::endl;
+	logger.debug() << "listening on :" << port << " (fd=" << listen_fd << ")";
 
 	// loop
 		// poll to get ready fds
@@ -73,16 +73,16 @@ void Worker::start() {
 				continue;
 			if (ready_fds[i].revents & POLLIN) {
 				if (ready_fds[i].fd == listen_fd) {
-					std::cout << "-------------listener: incoming connection found! accepting..." << std::endl;
+					logger.debug() << "listener: incoming connection found! accepting...";
 					acceptNew(listen_fd);
 				}
 				else {
-					std::cout << "-------------reading..." << std::endl;
+					logger.debug() << "reading...";
 					onReadable(ready_fds[i].fd);
 				}
 			}
 			else if (ready_fds[i].revents & POLLOUT) {
-				std::cout << "-------------writing..." << std::endl;
+				logger.debug() << "writing...";
 				onWritable(ready_fds[i].fd);
 			}
 		}
@@ -105,8 +105,7 @@ void Worker::acceptNew(int listen_fd) {
 	connection.fd = client_fd;
 	connections[client_fd] = connection;
 
-	std::cout << "-------------accepted fd=" << client_fd
-	          << " from " << inet_ntoa(client_addr.sin_addr) << std::endl;
+	logger.debug() << "accepted fd=" << client_fd << " from " << inet_ntoa(client_addr.sin_addr);
 }
 
 //read logic
@@ -129,28 +128,28 @@ void Worker::onReadable(int client_fd) {
 		throw std::runtime_error(std::string("read: ") + strerror(errno));
 
 	if (n <= 0) {
-		std::cout << "-------------closing fd=" << client_fd << " (read returned " << n << ")" << std::endl;
+		logger.debug() << "closing fd=" << client_fd << " (read returned " << n << ")";
 		close(client_fd);
 		poller.remove(client_fd);
 		connections.erase(client_fd);
 		return ;
 	}
-	std::cout << "-------------read " << n << " bytes from fd=" << client_fd << ":\n"
-	          << std::string(buf, static_cast<size_t>(n)) << std::endl;
+	logger.debug() << "read " << n << " bytes from fd=" << client_fd << ":\n"
+	        << std::string(buf, static_cast<size_t>(n));
 
 	Connection &conn = connections[client_fd];
 	conn.inbuf.append(buf, n);
 	if (http.parse(conn.inbuf, conn.txn.request) == true) {
-		std::cout << "-------------request complete!" << std::endl;
+		logger.debug() << "request complete";
 		conn.txn.route = config.route(conn.txn.request);
 		if (conn.txn.route.is_cgi == true) {
-			std::cout << "-------------executing cgi" << std::endl;
+			logger.debug() << "executing cgi";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
 			poller.add(conn.txn.cgi.out_fd, POLLIN);
 			return ;
 		}
-		
-		std::cout << "-------------serving response" << std::endl;
+
+		logger.debug() << "serving response";
 		// pulling requested content and storing in response data structure
 		Content content = files.serve(conn.txn.route, conn.txn.request);
 		conn.txn.response.status = content.status;
@@ -170,8 +169,8 @@ void Worker::onWritable(int client_fd) {
 	ssize_t n = write(client_fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
 	if (n < 0)
 		throw std::runtime_error(std::string("write: ") + strerror(errno));
-	std::cout << "-------------wrote " << n << " bytes to fd=" << client_fd << ":\n"
-	          << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n)) << std::endl;
+	logger.debug() << "wrote " << n << " bytes to fd=" << client_fd << ":\n" 
+	            << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
 
 	conn.sent += n;
 	if (conn.sent == conn.outbuf.size()) {

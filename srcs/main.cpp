@@ -1,4 +1,5 @@
 #include <iostream>
+#include "../headers/types.hpp"
 #include "../headers/StaticFile.hpp"
 #include "../headers/Logger.hpp"
 #include "../headers/Cgi.hpp"
@@ -12,7 +13,7 @@ int main(int argc, char *argv[]){
 		return (1);
 	}
 
-	Logger logger(std::cout, std::cerr, 1);
+	Logger logger(std::cout, std::cerr, DEBUG);
 
 	try {
 		Config config(argv[1]);
@@ -24,7 +25,7 @@ int main(int argc, char *argv[]){
 		worker.start();
 	}
 	catch (const std::exception &e) {
-		logger.error(e.what(), 0);
+		logger.error(e.what());
 		return (1);
 	}
 	return (0);
