@@ -14,6 +14,7 @@
 #include <iostream>
 
 // @note is error handling rigorous enough? memset etc. not handled?
+// @todo handle malformed requests
 // @todo timeout sweep missing (look at DEV_DOC). here we probably need the connection phases
 // @note are we following the norm everywhere? e.g. no copy operator implemented etc.
 // @todo whole keep-alive shit isnt handled
@@ -181,9 +182,11 @@ void Worker::onReadable(Connection &conn) {
 	        << std::string(buf, static_cast<size_t>(n));
 
 	conn.inbuf.append(buf, n);
-	if (http.parse(conn.inbuf, conn.txn.request) == true) {
+	int req_size = http.parse(conn.inbuf, conn.txn.request);
+	while (req_size > 0) {
 		logger.debug() << "fd: " << conn.fd << " request complete";
 		conn.txn.route = config.route(conn.txn.request);
+
 		if (conn.txn.route.is_cgi == true) {
 			logger.debug() << "fd: " << conn.fd << " executing cgi";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
@@ -200,10 +203,13 @@ void Worker::onReadable(Connection &conn) {
 			conn.txn.response.status = content.status;
 			conn.txn.response.body = content.body;
 			conn.txn.response.headers["Content-Type"] = content.mime_type;
-			conn.outbuf = http.build(conn.txn.response);
+			conn.outbuf += http.build(conn.txn.response);
 			poller.setEvents(conn.fd, POLLOUT);
 		}
 
+		conn.inbuf.erase(0, static_cast<size_t>(req_size));
+		
+		req_size = http.parse(conn.inbuf, conn.txn.request);
 	}
 }
 

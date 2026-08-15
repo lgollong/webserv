@@ -30,9 +30,10 @@ class Worker {
 		Logger                     &logger;
 
 		void acceptNew(int listen_fd);
-		void onCgiReadable(Connection &conn);
 		void onReadable(Connection &conn);
 		void onWritable(Connection &conn);
+		void onCgiReadable(Connection &conn);
+		void onCgiWritable(Connection &conn);
 
 		Worker(const Worker &other);
 };

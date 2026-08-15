@@ -10,7 +10,11 @@ class Http {
 		Http();
 		~Http();
 
-		bool         parse(std::string &inbuf, Request &request);
+		// > 0: bytes consumed, a complete request was parsed into `request`.
+		//   0: `inbuf` doesn't contain a complete request yet -- wait for more data.
+		//  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
+		// Never mutates `inbuf`; the caller (Worker) owns trimming consumed bytes.
+		int          parse(const std::string &inbuf, Request &request);
 		std::string  build(const Response &response);
 };
 

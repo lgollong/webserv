@@ -5,12 +5,17 @@ Http::Http() {}
 
 Http::~Http() {}
 
-bool Http::parse(std::string &inbuf, Request &request) {
+int Http::parse(const std::string &inbuf, Request &request) {
 	if (inbuf.empty())
-		return false; // nothing buffered yet, wait for more bytes
+		return 0; // nothing buffered yet, wait for more bytes
 
 	// mock: no real HTTP parsing yet, just pretend whatever showed up
 	// in inbuf was one complete GET request and hand back example data.
+	// A real implementation would locate the actual request boundary
+	// (end of body per Content-Length, or end of headers for bodyless
+	// requests) and return only that many bytes -- not the whole buffer
+	// -- so a second, already-buffered pipelined request is left intact
+	// for the next call.
 	request.method = "GET";
 	request.path = "/index.html";
 	request.query = "";
@@ -18,8 +23,7 @@ bool Http::parse(std::string &inbuf, Request &request) {
 	request.headers["User-Agent"] = "webserv-mock-client/1.0";
 	request.body = "";
 
-	inbuf.clear(); // pretend we consumed exactly one request's worth of bytes
-	return true;
+	return static_cast<int>(inbuf.size()); // pretend the whole buffer was one request
 }
 
 std::string Http::build(const Response &response) {
