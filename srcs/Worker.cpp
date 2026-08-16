@@ -151,19 +151,10 @@ void Worker::onCgiWritable(Connection &conn) {
 	fdToConnection.erase(conn.txn.cgi.in_fd);
 }
 
-//read logic
-	// setup read buffer
-	// read() into buffer
-	// if read result = 0
-		// close fd
-		// remove from poller set
-		// delete connections struct
-	// if http.parse = true
-		// reset connections[].transaction 
-		// process request
-		// http.build -> response
-		// put response into connections[].outbuff
-		// add POLLOUT event to that fd
+// read logic
+// read into inbuffer as long as there is something to read
+// loop over inbuffer and check if any full request is in there
+// check if its cgi or standard request and process it
 void Worker::onReadable(Connection &conn) {
 	char buf[4096];
 	ssize_t n = read(conn.fd, buf, sizeof(buf));
@@ -182,13 +173,13 @@ void Worker::onReadable(Connection &conn) {
 	        << std::string(buf, static_cast<size_t>(n));
 
 	conn.inbuf.append(buf, n);
-	int req_size = http.parse(conn.inbuf, conn.txn.request);
+	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request);
 	while (req_size > 0) {
-		logger.debug() << "fd: " << conn.fd << " request complete";
+		logger.debug() << "fd: " << conn.fd << " complete request found";
 		conn.txn.route = config.route(conn.txn.request);
 
 		if (conn.txn.route.is_cgi == true) {
-			logger.debug() << "fd: " << conn.fd << " executing cgi";
+			logger.debug() << "fd: " << conn.fd << " this is a cgi request";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
 			poller.add(conn.txn.cgi.in_fd, POLLOUT);
 			poller.add(conn.txn.cgi.out_fd, POLLIN);
@@ -197,7 +188,7 @@ void Worker::onReadable(Connection &conn) {
 			return ;
 		}
 		else {
-			logger.debug() << "fd: " << conn.fd << " serving response";
+			logger.debug() << "fd: " << conn.fd << " this is a standard request";
 			// pulling requested content and storing in response data structure
 			Content content = files.serve(conn.txn.route, conn.txn.request);
 			conn.txn.response.status = content.status;

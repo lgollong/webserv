@@ -5,7 +5,7 @@ Http::Http() {}
 
 Http::~Http() {}
 
-int Http::parse(const std::string &inbuf, Request &request) {
+ssize_t Http::parse(const std::string &inbuf, Request &request) {
 	if (inbuf.empty())
 		return 0; // nothing buffered yet, wait for more bytes
 
@@ -23,7 +23,7 @@ int Http::parse(const std::string &inbuf, Request &request) {
 	request.headers["User-Agent"] = "webserv-mock-client/1.0";
 	request.body = "";
 
-	return static_cast<int>(inbuf.size()); // pretend the whole buffer was one request
+	return static_cast<ssize_t>(inbuf.size()); // pretend the whole buffer was one request
 }
 
 std::string Http::build(const Response &response) {
