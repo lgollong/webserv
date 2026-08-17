@@ -55,6 +55,7 @@ static int setupListener(int port) {
 void Worker::run() {
 	// setup listener
 	// @todo take port from config
+	// @todo server must be able to listen on multiple ports at the same time
 	const int port = 8080;
 	int listen_fd = setupListener(port);
 	poller.add(listen_fd, POLLIN);
