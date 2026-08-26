@@ -35,8 +35,10 @@ main
 - Accepts clients, registers client and CGI pipe fds with `Poller`, and dispatches readable and writable events.
 - Buffers incoming request bytes in `Connection::inbuf` and queued output in `Connection::outbuf`.
 - Tracks partial client writes with `Connection::sent`.
+- Takes a stable snapshot of ready events before callbacks remove fds, and has one cleanup path for a client and its registered CGI pipe fds.
+- Handles client and CGI `POLLERR`, `POLLHUP`, and `POLLNVAL` paths without throwing from the event loop.
 - `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
-- `To Fix`: it must handle `POLLERR`, `POLLHUP`, and `POLLNVAL`, accept until the socket would block, and safely handle non-blocking read/write errors and disconnects.
+- `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
 - `To Fix`: malformed requests, request timeouts, keep-alive behavior, and safe per-request reset are incomplete.
 - `To Fix`: CGI state is not fully coordinated with connection phases or child lifecycle.
 
@@ -45,8 +47,8 @@ main
 `Implemented`, but minimal.
 
 - Wraps a `std::vector<pollfd>` and supports adding, removing, and changing fd interests.
-- Calls the single process-wide `poll()` used by `Worker`.
-- `To Fix`: check and surface `poll()` errors; provide robust handling for invalid and error events.
+- Calls the single process-wide `poll()` used by `Worker` and returns its readiness result.
+- `Partial`: `Worker` logs a failed wait, handles invalid/error events for managed connection fds, and attempts to recreate a failed listener.
 
 ### `Http`
 
@@ -84,8 +86,9 @@ main
 - Creates stdin/stdout pipes, forks, runs a configured script with `execve`, and sets the parent pipe ends non-blocking.
 - Builds CGI environment variables from the request and parses CGI response headers and body.
 - `Worker` registers the CGI pipes in the same `Poller` as sockets and transfers the request body/output through readiness callbacks.
-- `To Fix`: validate all process and pipe operations; close descriptors correctly on every failure path; make the child terminate if `execve` fails; and reap children with non-blocking `waitpid`.
-- `To Fix`: the current pipe I/O checks `errno` after `read` and `write`, which violates this repository's hard requirement.
+- Reports pipe, fork, and non-blocking setup failures through `CgiJob`, and the child exits if `execve` fails.
+- Treats failed pipe reads/writes as a controlled CGI failure without inspecting `errno` after I/O; the response path produces `502` when no valid CGI result exists.
+- `To Fix`: reap children with non-blocking `waitpid` and complete the remaining CGI cleanup paths.
 - `Planned`: enforce CGI timeouts and fully support request-body edge cases, including chunked input and CGI EOF behavior.
 
 ### `Logger`
@@ -104,8 +107,8 @@ main
 - `Route` holds a root, CGI settings, and allowed methods.
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
 - `Connection` owns socket identity, input/output buffers, partial-write position, last activity, and its current transaction.
-- `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, and completion state.
-- `To Fix`: use `Phase`, `keep_alive`, and `last_activity` consistently, and define explicit cleanup rules for client and CGI fds.
+- `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion state, and failure state.
+- `Partial`: client and registered CGI fds now have an explicit shared cleanup path; `Phase`, `keep_alive`, `last_activity`, and child-process cleanup remain incomplete.
 
 ## Current Request Flow
 
@@ -134,8 +137,8 @@ The flow is wired end to end, but it needs the reliability work listed above bef
 
 - `Implemented`: listening sockets, client sockets, and the parent ends of CGI pipes are set non-blocking.
 - `Implemented`: one `Poller` drives socket and CGI pipe readiness.
-- `To Fix`: all read/write error paths must obey the repository rule not to inspect `errno` after `read`, `recv`, `write`, or `send`.
-- `To Fix`: event processing must tolerate would-block results, short reads/writes, disconnects, and poll error flags without crashing the server.
+- `Implemented`: socket and pipe read/write paths use their return values and do not inspect `errno` after `read`, `recv`, `write`, or `send`.
+- `Partial`: client and CGI error/hangup events close their managed fds without throwing, while partial writes retain their cursor. Broader stress behavior still needs work.
 - `Planned`: add timeout handling for slow or incomplete clients and CGI jobs.
 
 ## Subject-Critical Gaps
