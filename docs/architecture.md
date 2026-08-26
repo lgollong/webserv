@@ -102,7 +102,7 @@ main
 
 `Implemented`, with incomplete lifecycle use.
 
-- `Request` holds method, path, query, headers, and body.
+- `Request` holds method, path, query, HTTP version, headers, and body.
 - `Response` holds status, headers, and body.
 - `Route` holds a root, CGI settings, and allowed methods.
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
