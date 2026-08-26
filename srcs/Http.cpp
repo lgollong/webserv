@@ -402,34 +402,87 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 	return static_cast<ssize_t>(requestSize);
 }
 
+static const char *reasonPhrase(int status) {
+	switch (status) {
+		case 200: return "OK";
+		case 201: return "Created";
+		case 202: return "Accepted";
+		case 204: return "No Content";
+		case 301: return "Moved Permanently";
+		case 302: return "Found";
+		case 303: return "See Other";
+		case 304: return "Not Modified";
+		case 307: return "Temporary Redirect";
+		case 308: return "Permanent Redirect";
+		case 400: return "Bad Request";
+		case 401: return "Unauthorized";
+		case 403: return "Forbidden";
+		case 404: return "Not Found";
+		case 405: return "Method Not Allowed";
+		case 409: return "Conflict";
+		case 411: return "Length Required";
+		case 413: return "Payload Too Large";
+		case 415: return "Unsupported Media Type";
+		case 431: return "Request Header Fields Too Large";
+		case 500: return "Internal Server Error";
+		case 501: return "Not Implemented";
+		case 502: return "Bad Gateway";
+		case 503: return "Service Unavailable";
+	}
+	return NULL;
+}
+
+static bool hasResponseHeader(const std::map<std::string, std::string> &headers,
+		const std::string &wanted, std::string &value) {
+	for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it) {
+		if (lowerCase(it->first) != wanted || !isHeaderValue(it->second))
+			continue;
+		value = it->second;
+		return true;
+	}
+	return false;
+}
+
+static bool isResponseHeader(const std::string &name, const std::string &value) {
+	if (name.empty() || !isHeaderValue(value))
+		return false;
+	for (std::string::size_type i = 0; i < name.size(); ++i) {
+		if (!isTokenChar(name[i]))
+			return false;
+	}
+	return true;
+}
+
 std::string Http::build(const Response &response) {
 	int status = response.status ? response.status : 200;
+	const char *reason = reasonPhrase(status);
+	if (reason == NULL) {
+		status = 500;
+		reason = reasonPhrase(status);
+	}
 
-	std::string reason = "OK";
-	if (status == 201) reason = "Created";
-	else if (status == 204) reason = "No Content";
-	else if (status == 400) reason = "Bad Request";
-	else if (status == 403) reason = "Forbidden";
-	else if (status == 404) reason = "Not Found";
-	else if (status == 405) reason = "Method Not Allowed";
-	else if (status == 413) reason = "Payload Too Large";
-	else if (status == 431) reason = "Request Header Fields Too Large";
-	else if (status == 500) reason = "Internal Server Error";
-	else if (status == 502) reason = "Bad Gateway";
+	std::string body = response.body;
+	if (status == 204 || status == 304)
+		body.clear();
 
-	std::map<std::string, std::string> headers = response.headers;
-	if (headers.find("Content-Type") == headers.end())
-		headers["Content-Type"] = "text/html";
+	std::string contentType;
+	if (!hasResponseHeader(response.headers, "content-type", contentType))
+		contentType = "text/html";
 
 	std::ostringstream len;
-	len << response.body.size();
-	headers["Content-Length"] = len.str();
+	len << body.size();
 
 	std::ostringstream out;
 	out << "HTTP/1.1 " << status << " " << reason << "\r\n";
-	for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it)
+	out << "Content-Type: " << contentType << "\r\n";
+	out << "Content-Length: " << len.str() << "\r\n";
+	for (std::map<std::string, std::string>::const_iterator it = response.headers.begin(); it != response.headers.end(); ++it) {
+		std::string name = lowerCase(it->first);
+		if (name == "content-type" || name == "content-length" || !isResponseHeader(it->first, it->second))
+			continue;
 		out << it->first << ": " << it->second << "\r\n";
-	out << "\r\n" << response.body;
+	}
+	out << "\r\n" << body;
 
 	return out.str();
 }

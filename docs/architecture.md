@@ -62,10 +62,11 @@ main
 - Decodes chunked bodies before assigning `Request::body`, supports chunk extensions and syntax-checked trailers, and applies the body limit to decoded bytes. Chunk trailers are not merged into request headers.
 - Exposes a body-limit overload for future configuration integration. The current two-argument parser uses a temporary 10,000,000-byte default, matching the first server limit in `config/req.config`, until #5 supplies `client_max_body_size`.
 - Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request. Its error-status overload reports `400` for malformed syntax/framing, `413` for a declared body over the limit, and `431` for header limits.
-- Builds HTTP/1.1 responses with a default content type and calculated `Content-Length`, including reasons for `413` and `431`.
+- Builds a complete HTTP/1.1 response envelope for supported status codes, falling back to `500` for an unsupported status.
+- Owns case-insensitive `Content-Type` selection and calculated `Content-Length`, suppresses unsafe or conflicting caller-supplied framing headers, preserves valid extension headers, and omits bodies for `204` and `304`.
 - `Worker` queues parser failures through the normal output path and closes that connection after its error response flushes.
 - `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and provide configured/default error pages.
-- `To Fix`: expand status handling and response headers to cover the subject's required behavior.
+- `To Fix`: add handler-specific response headers and complete status/error-page behavior with the relevant handler work.
 
 ### `Config`
 
