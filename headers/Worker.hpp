@@ -34,6 +34,8 @@ class Worker {
 		void onWritable(Connection &conn);
 		void onCgiReadable(Connection &conn);
 		void onCgiWritable(Connection &conn);
+		void closeManagedFd(int &fd);
+		void closeConnection(Connection &conn);
 
 		Worker(const Worker &other);
 };

@@ -10,7 +10,8 @@ class Poller {
 		Poller();
 		~Poller();
 
-		std::vector<pollfd>&  poll();
+		int                   poll();
+		const std::vector<pollfd>& events() const;
 		void                  add(int fd, short events);
 		void                  remove(int fd);
 		void                  setEvents(int fd, short events);
