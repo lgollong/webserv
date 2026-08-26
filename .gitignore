@@ -4,4 +4,6 @@ objs/
 notes.txt
 nginx.conf
 .local/
+tester
+cgi_tester
 webserv
