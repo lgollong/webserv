@@ -1,29 +1,99 @@
 #include "Http.hpp"
 #include <sstream>
+#include <cstdlib>
 
 Http::Http() {}
 
 Http::~Http() {}
 
+// request-line = method SP request-target SP HTTP-version CRLF
+// request-target = path [ "?" query ]
+static bool parseRequestLine(const std::string &line, Request &request) {
+	std::string::size_type sp1 = line.find(' ');
+	if (sp1 == std::string::npos)
+		return false;
+	std::string::size_type sp2 = line.find(' ', sp1 + 1);
+	if (sp2 == std::string::npos)
+		return false;
+
+	std::string method = line.substr(0, sp1);
+	std::string target  = line.substr(sp1 + 1, sp2 - sp1 - 1);
+	std::string version = line.substr(sp2 + 1);
+	if (method.empty() || target.empty() || version.empty())
+		return false;
+
+	request.method = method;
+
+	std::string::size_type qpos = target.find('?');
+	if (qpos == std::string::npos) {
+		request.path = target;
+		request.query = "";
+	} else {
+		request.path = target.substr(0, qpos);
+		request.query = target.substr(qpos + 1);
+	}
+
+	return true;
+}
+
+// header-field = field-name ":" [ field-value ] CRLF
+static void parseHeaderFields(const std::string &headerBlock, std::string::size_type start,
+                               std::map<std::string, std::string> &headers) {
+	std::string::size_type pos = start;
+
+	while (pos < headerBlock.size()) {
+		std::string::size_type lineEnd = headerBlock.find("\r\n", pos);
+		std::string line = (lineEnd == std::string::npos)
+			? headerBlock.substr(pos)
+			: headerBlock.substr(pos, lineEnd - pos);
+
+		std::string::size_type colon = line.find(':');
+		if (colon != std::string::npos) {
+			std::string key = line.substr(0, colon);
+			std::string::size_type valueStart = line.find_first_not_of(' ', colon + 1);
+			std::string value = (valueStart == std::string::npos) ? "" : line.substr(valueStart);
+			headers[key] = value;
+		}
+
+		if (lineEnd == std::string::npos)
+			break;
+		pos = lineEnd + 2;
+	}
+}
+
+// > 0: bytes consumed, a complete request was parsed into `request`.
+//   0: `inbuf` doesn't contain a complete request yet -- wait for more data.
+//  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
 ssize_t Http::parse(const std::string &inbuf, Request &request) {
-	if (inbuf.empty())
-		return 0; // nothing buffered yet, wait for more bytes
+	std::string::size_type headerEnd = inbuf.find("\r\n\r\n");
+	if (headerEnd == std::string::npos)
+		return 0; // headers not fully buffered yet
 
-	// mock: no real HTTP parsing yet, just pretend whatever showed up
-	// in inbuf was one complete GET request and hand back example data.
-	// A real implementation would locate the actual request boundary
-	// (end of body per Content-Length, or end of headers for bodyless
-	// requests) and return only that many bytes -- not the whole buffer
-	// -- so a second, already-buffered pipelined request is left intact
-	// for the next call.
-	request.method = "GET";
-	request.path = "/index.html";
-	request.query = "";
-	request.headers["Host"] = "localhost";
-	request.headers["User-Agent"] = "webserv-mock-client/1.0";
-	request.body = "";
+	std::string headerBlock = inbuf.substr(0, headerEnd);
+	std::string::size_type bodyStart = headerEnd + 4;
 
-	return static_cast<ssize_t>(inbuf.size()); // pretend the whole buffer was one request
+	std::string::size_type lineEnd = headerBlock.find("\r\n");
+	std::string requestLine = (lineEnd == std::string::npos) ? headerBlock : headerBlock.substr(0, lineEnd);
+
+	Request parsed;
+	if (!parseRequestLine(requestLine, parsed))
+		return -1; // malformed request-line
+
+	std::string::size_type headersStart = (lineEnd == std::string::npos) ? headerBlock.size() : lineEnd + 2;
+	parseHeaderFields(headerBlock, headersStart, parsed.headers);
+
+	size_t contentLength = 0;
+	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("Content-Length");
+	if (it != parsed.headers.end())
+		contentLength = static_cast<size_t>(std::atoi(it->second.c_str()));
+
+	if (inbuf.size() < bodyStart + contentLength)
+		return 0; // body not fully buffered yet
+
+	parsed.body = inbuf.substr(bodyStart, contentLength);
+	request = parsed;
+
+	return static_cast<ssize_t>(bodyStart + contentLength);
 }
 
 std::string Http::build(const Response &response) {

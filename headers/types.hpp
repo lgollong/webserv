@@ -65,10 +65,11 @@ struct CgiJob {
 	pid_t        pid;
 	int          in_fd;
 	int          out_fd;
+	size_t       sent;
 	std::string  output;
 	bool         done;
 
-	CgiJob() : pid(-1), in_fd(-1), out_fd(-1), done(false) {}
+	CgiJob() : pid(-1), in_fd(-1), out_fd(-1), sent(0), done(false) {}
 };
 
 // Result of serving a static file. Owned by StaticFile.

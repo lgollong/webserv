@@ -9,7 +9,7 @@ Config::Config(const std::string &configPath) {
 	server.server_name = "localhost";
 
 	Route root;
-	root.root = "./sites";
+	root.root = "./contents";
 	root.is_cgi = false;
 	root.allowed_methods.insert("GET");
 	root.allowed_methods.insert("POST");
@@ -17,7 +17,7 @@ Config::Config(const std::string &configPath) {
 	server.locations.push_back(root);
 
 	Route cgiLocation;
-	cgiLocation.root = "./sites";
+	cgiLocation.root = "./contents";
 	cgiLocation.is_cgi = true;
 	cgiLocation.cgi_pass = "/usr/bin/php-cgi";
 	cgiLocation.allowed_methods.insert("POST");
@@ -35,17 +35,17 @@ Route Config::route(const Request &request) const {
 	// gives Worker both branches to exercise (e.g. curl /index.html vs
 	// curl /foo.bla).
 	Route route;
-	route.root = "./sites";
+	route.root = "./contents";
 	route.allowed_methods.insert("GET");
 	route.allowed_methods.insert("POST");
 	route.allowed_methods.insert("DELETE");
 
-	bool is_bla = request.path.size() >= 4 &&
-		request.path.compare(request.path.size() - 4, 4, ".bla") == 0;
+	bool is_bla = request.path.size() >= 3 &&
+		request.path.compare(request.path.size() - 3, 3, ".sh") == 0;
 
 	if (is_bla) {
 		route.is_cgi = true;
-		route.cgi_pass = "/usr/bin/php-cgi";
+		route.cgi_pass = "./contents/cgi/test.sh";
 	} else {
 		route.is_cgi = false;
 	}
