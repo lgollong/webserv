@@ -10,7 +10,7 @@ class Poller {
 		Poller();
 		~Poller();
 
-		int                   poll();
+		int                   poll(int timeoutMs);
 		const std::vector<pollfd>& events() const;
 		void                  add(int fd, short events);
 		void                  remove(int fd);

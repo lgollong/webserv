@@ -35,11 +35,12 @@ main
 - Accepts clients, registers client and CGI pipe fds with `Poller`, and dispatches readable and writable events.
 - Buffers incoming request bytes in `Connection::inbuf` and queued output in `Connection::outbuf`.
 - Tracks partial client writes with `Connection::sent`.
+- Wakes from `poll()` at least once per second and closes client sockets that make no accepted/read/write progress for 30 seconds.
 - Takes a stable snapshot of ready events before callbacks remove fds, and has one cleanup path for a client and its registered CGI pipe fds.
 - Handles client and CGI `POLLERR`, `POLLHUP`, and `POLLNVAL` paths without throwing from the event loop.
 - `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
 - `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
-- `To Fix`: malformed requests, request timeouts, keep-alive behavior, and safe per-request reset are incomplete.
+- `To Fix`: keep-alive behavior and safe per-request reset are incomplete.
 - `To Fix`: CGI state is not fully coordinated with connection phases or child lifecycle.
 
 ### `Poller`
@@ -47,7 +48,7 @@ main
 `Implemented`, but minimal.
 
 - Wraps a `std::vector<pollfd>` and supports adding, removing, and changing fd interests.
-- Calls the single process-wide `poll()` used by `Worker` and returns its readiness result.
+- Calls the single process-wide `poll()` used by `Worker` with a caller-supplied timeout and returns its readiness result.
 - `Partial`: `Worker` logs a failed wait, handles invalid/error events for managed connection fds, and attempts to recreate a failed listener.
 
 ### `Http`
@@ -113,9 +114,9 @@ main
 - `Response` holds status, headers, and body.
 - `Route` holds a root, CGI settings, and allowed methods.
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
-- `Connection` owns socket identity, input/output buffers, partial-write position, parser-error close-after-write state, last activity, and its current transaction.
+- `Connection` owns socket identity, input/output buffers, partial-write position, parser-error close-after-write state, last activity, and its current transaction. Client read/write phases use its last-activity timestamp for the 30-second client timeout; `RUNNING_CGI` is excluded until #35 adds CGI timing.
 - `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion state, and failure state.
-- `Partial`: client and registered CGI fds now have an explicit shared cleanup path; `Phase`, `keep_alive`, `last_activity`, and child-process cleanup remain incomplete.
+- `Partial`: client and registered CGI fds now have an explicit shared cleanup path. `Phase` and `last_activity` support client expiry, while `keep_alive` and child-process cleanup remain incomplete.
 
 ## Current Request Flow
 
@@ -153,8 +154,8 @@ The flow is wired end to end, but it needs the reliability work listed above bef
 - `Implemented`: listening sockets, client sockets, and the parent ends of CGI pipes are set non-blocking.
 - `Implemented`: one `Poller` drives socket and CGI pipe readiness.
 - `Implemented`: socket and pipe read/write paths use their return values and do not inspect `errno` after `read`, `recv`, `write`, or `send`.
-- `Partial`: client and CGI error/hangup events close their managed fds without throwing, while partial writes retain their cursor. Broader stress behavior still needs work.
-- `Planned`: add timeout handling for slow or incomplete clients and CGI jobs.
+- `Partial`: client and CGI error/hangup events close their managed fds without throwing, while partial writes retain their cursor. Client inactivity expiry is implemented; broader stress behavior still needs work.
+- `Planned`: add timeout handling for CGI jobs.
 
 ## Subject-Critical Gaps
 
@@ -164,8 +165,8 @@ The project still needs the following mandatory behavior:
 2. Finish configuration-driven request-body limits, accurate errors, and method restrictions.
 3. Static file serving from configured roots, index files, autoindex, uploads, `POST`, and `DELETE`.
 4. Redirection and configured error pages.
-5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, timeouts, and no unexpected termination.
-6. Hardened CGI execution, child reaping, and full request-body/EOF handling.
+5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
+6. Hardened CGI execution, timeouts, child reaping, and full request-body/EOF handling.
 7. Repeatable compliance tests and a subject-compliant README.
 
 The optional bonus work remains cookie/session support and multiple CGI types.

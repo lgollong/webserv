@@ -11,11 +11,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <cstring>
+#include <ctime>
 #include <iostream>
 
 // @note is error handling rigorous enough? memset etc. not handled?
 // @todo handle malformed requests
-// @todo timeout sweep missing (look at DEV_DOC). here we probably need the connection phases
 // @note are we following the norm everywhere? e.g. no copy operator implemented etc.
 // @todo whole keep-alive shit isnt handled
 // @todo cgi logic incomplete
@@ -57,6 +57,9 @@ static void addDefaultErrorBody(Http &http, Response &response) {
 		response = http.defaultErrorResponse(response.status);
 }
 
+static const int kPollTimeoutMs = 1000;
+static const time_t kClientIdleTimeoutSeconds = 30;
+
 void Worker::run() {
 	// setup listener
 	// @todo take port from config
@@ -76,13 +79,15 @@ void Worker::run() {
 			// else if ready fd revents = POLLOUT
 				// write logic
 	while (true) {
-		int ready_count = poller.poll();
+		int ready_count = poller.poll(kPollTimeoutMs);
 		if (ready_count < 0) {
 			logger.error("poll failed");
 			continue;
 		}
-		if (ready_count == 0)
+		if (ready_count == 0) {
+			sweepExpiredConnections();
 			continue;
+		}
 
 		// Callbacks can remove fds, so iterate a stable snapshot of poll results.
 		std::vector<pollfd> ready_fds = poller.events();
@@ -154,6 +159,7 @@ void Worker::run() {
 				}
 			}
 		}
+		sweepExpiredConnections();
 	}
 }
 
@@ -176,6 +182,8 @@ void Worker::acceptNew(int listen_fd) {
 
 	Connection connection;
 	connection.fd = client_fd;
+	connection.phase = READING;
+	connection.last_activity = time(NULL);
 	connections[client_fd] = connection;
 	fdToConnection[client_fd] = &connections[client_fd];
 
@@ -193,6 +201,7 @@ void Worker::onCgiReadable(Connection &conn) {
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
 	addDefaultErrorBody(http, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
+	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);
 }
 
@@ -231,6 +240,8 @@ void Worker::onReadable(Connection &conn) {
 	        << std::string(buf, static_cast<size_t>(n));
 
 	conn.inbuf.append(buf, n);
+	conn.last_activity = time(NULL);
+	conn.phase = READING;
 	int parseStatus = 0;
 	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, parseStatus);
 	if (req_size < 0) {
@@ -249,9 +260,11 @@ void Worker::onReadable(Connection &conn) {
 				conn.txn.response = cgi.buildResponse(conn.txn.cgi);
 				addDefaultErrorBody(http, conn.txn.response);
 				conn.outbuf = http.build(conn.txn.response);
+				conn.phase = WRITING;
 				poller.setEvents(conn.fd, POLLOUT);
 				return ;
 			}
+			conn.phase = RUNNING_CGI;
 			poller.add(conn.txn.cgi.in_fd, POLLOUT);
 			poller.add(conn.txn.cgi.out_fd, POLLIN);
 			fdToConnection[conn.txn.cgi.in_fd] = &conn;
@@ -267,6 +280,7 @@ void Worker::onReadable(Connection &conn) {
 			conn.txn.response.headers["Content-Type"] = content.mime_type;
 			addDefaultErrorBody(http, conn.txn.response);
 			conn.outbuf += http.build(conn.txn.response);
+			conn.phase = WRITING;
 			poller.setEvents(conn.fd, POLLOUT);
 		}
 
@@ -296,6 +310,7 @@ void Worker::onWritable(Connection &conn) {
 	            << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
 
 	conn.sent += n;
+	conn.last_activity = time(NULL);
 	if (conn.sent == conn.outbuf.size()) {
 		conn.outbuf.clear();
 		conn.sent = 0;
@@ -304,7 +319,24 @@ void Worker::onWritable(Connection &conn) {
 			return ;
 		}
 		conn.txn = Transaction();
+		conn.phase = READING;
 		poller.setEvents(conn.fd, POLLIN);
+	}
+}
+
+void Worker::sweepExpiredConnections() {
+	const time_t now = time(NULL);
+	std::vector<int> expired;
+	for (std::map<int, Connection>::const_iterator it = connections.begin(); it != connections.end(); ++it) {
+		if (it->second.hasClientTimedOut(now, kClientIdleTimeoutSeconds))
+			expired.push_back(it->first);
+	}
+	for (std::vector<int>::const_iterator it = expired.begin(); it != expired.end(); ++it) {
+		std::map<int, Connection>::iterator found = connections.find(*it);
+		if (found == connections.end())
+			continue;
+		logger.debug() << "Worker: " << "fd: " << found->second.fd << " client inactivity timeout";
+		closeConnection(found->second);
 	}
 }
 

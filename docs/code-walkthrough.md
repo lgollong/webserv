@@ -53,7 +53,7 @@ events   activity the server wants to observe, such as POLLIN or POLLOUT
 revents  activity reported by poll()
 ```
 
-`POLLIN` means data may be read without waiting. `POLLOUT` means queued output may be written without waiting. The current [`Poller::poll()`](../srcs/Poller.cpp) calls the system `poll()` once for its whole vector and returns the readiness count; `Poller::events()` exposes the resulting fd entries to `Worker`.
+`POLLIN` means data may be read without waiting. `POLLOUT` means queued output may be written without waiting. The current [`Poller::poll()`](../srcs/Poller.cpp) calls the system `poll()` once for its whole vector with a caller-supplied timeout and returns the readiness count; `Poller::events()` exposes the resulting fd entries to `Worker`.
 
 The intended discipline is:
 
@@ -61,7 +61,7 @@ The intended discipline is:
 register fd -> wait in poll() -> inspect revents -> perform one appropriate action
 ```
 
-`Worker` copies the resulting fd entries before dispatching callbacks because a callback may remove an fd. It handles managed client/CGI error, hangup, and invalid-fd events by cleaning up the owning connection; it attempts to recreate a failed listener. Timeout handling and broader stress coverage remain unfinished.
+`Worker` copies the resulting fd entries before dispatching callbacks because a callback may remove an fd. It handles managed client/CGI error, hangup, and invalid-fd events by cleaning up the owning connection; it attempts to recreate a failed listener. It gives `poll()` a one-second timeout and sweeps client connections after a wait timeout or after ready events have been dispatched. The sweep collects expired fds before using the same cleanup path, so it does not invalidate map iteration or a ready-event snapshot. CGI connections are excluded here because #35 owns their deadline and child lifecycle.
 
 ## 4. Starting the Worker Loop
 
@@ -92,13 +92,13 @@ Current-state note: the listener is hard-coded to port `8080` and `INADDR_ANY`; 
 
 [`Worker::acceptNew()`](../srcs/Worker.cpp) runs after the listening socket has reported `POLLIN`.
 
-It calls `accept()` to obtain a client socket, marks that client fd non-blocking, and registers it with `POLLIN`. It then creates a default `Connection`, assigns the fd, stores it in `connections`, and stores a pointer in `fdToConnection`.
+It calls `accept()` to obtain a client socket, marks that client fd non-blocking, and registers it with `POLLIN`. It then creates a `Connection`, assigns the fd, records the current time as client activity, sets its phase to `READING`, stores it in `connections`, and stores a pointer in `fdToConnection`.
 
-At this point the server is not reading or writing application data. It is only waiting for the client socket to become readable.
+At this point the server is not reading or writing application data. It is only waiting for the client socket to become readable. A client in `READING` or `WRITING` that makes no accepted/read/write progress for 30 seconds is closed by the sweep; the same timeout intentionally does not apply while `RUNNING_CGI`.
 
 ## 6. Reading and Buffering an HTTP Request
 
-When a client fd reports `POLLIN`, [`Worker::onReadable()`](../srcs/Worker.cpp) reads up to 4096 bytes into a stack buffer and appends the result to `Connection::inbuf`. A zero or negative read result closes only that managed connection; the code does not inspect `errno` after the read.
+When a client fd reports `POLLIN`, [`Worker::onReadable()`](../srcs/Worker.cpp) reads up to 4096 bytes into a stack buffer and appends the result to `Connection::inbuf`. A positive read refreshes `last_activity`; a zero or negative read result closes only that managed connection, and the code does not inspect `errno` after the read.
 
 The input buffer matters because one TCP read is not one HTTP request. A request can arrive in several packets, and multiple requests can arrive together. `Worker` therefore calls:
 
@@ -164,11 +164,11 @@ When the client socket reports `POLLOUT`, [`Worker::onWritable()`](../srcs/Worke
 conn.outbuf.data() + conn.sent
 ```
 
-`conn.sent` is the partial-write cursor. If a write transfers only part of the response, the cursor advances and the rest stays queued for a later `POLLOUT`. When all bytes have been written, the worker clears the output buffer and resets `conn.sent`. For a parser failure, `close_after_write` is set and the worker closes only that connection at this point. Otherwise it resets `conn.txn` to a fresh transaction and switches the client interest back to `POLLIN`.
+`conn.sent` is the partial-write cursor. A positive write refreshes the client's activity time. If a write transfers only part of the response, the cursor advances and the rest stays queued for a later `POLLOUT`. When all bytes have been written, the worker clears the output buffer and resets `conn.sent`. For a parser failure, `close_after_write` is set and the worker closes only that connection at this point. Otherwise it resets `conn.txn`, returns the phase to `READING`, and switches the client interest back to `POLLIN`.
 
 This is the foundation for non-blocking output: no response assumes it can be sent in one system call.
 
-If a write returns zero or a negative value, `onWritable()` closes only that managed connection without inspecting `errno`. Complete keep-alive policy and timeout handling remain unfinished.
+If a write returns zero or a negative value, `onWritable()` closes only that managed connection without inspecting `errno`. Client inactivity timeout handling is implemented; complete keep-alive policy and CGI timeout handling remain unfinished.
 
 ## 10. CGI Response Path
 
@@ -201,7 +201,7 @@ logger.debug() << "Worker: fd " << conn.fd;
 
 build a temporary `LogStream`; its destructor flushes the accumulated message at the end of the expression. `main()` catches exceptions that leave `Worker::run()` and sends their messages to `Logger::error()`.
 
-Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, and malformed requests receive a response before their connection closes. Timeout behavior and full resilience coverage still need work.
+Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, malformed requests receive a response before their connection closes, and inactive client connections expire after 30 seconds. CGI timeout behavior and full resilience coverage still need work.
 
 ## 12. Reading the Code in Order
 
