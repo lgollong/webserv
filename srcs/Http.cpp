@@ -7,6 +7,10 @@ Http::Http() {}
 
 Http::~Http() {}
 
+static const int kBadRequest = 400;
+static const int kPayloadTooLarge = 413;
+static const int kRequestHeaderFieldsTooLarge = 431;
+
 // request-line = method SP request-target SP HTTP-version CRLF
 // request-target = path [ "?" query ]
 static bool isTokenChar(char value) {
@@ -102,7 +106,7 @@ static std::string trimOptionalWhitespace(const std::string &value) {
 
 // header-field = field-name ":" OWS field-value OWS CRLF
 static bool parseHeaderFields(const std::string &headerBlock, std::string::size_type start,
-		std::map<std::string, std::string> &headers) {
+		std::map<std::string, std::string> &headers, int &errorStatus) {
 	std::string::size_type pos = start;
 	size_t fieldCount = 0;
 	bool hasContentLength = false;
@@ -130,8 +134,10 @@ static bool parseHeaderFields(const std::string &headerBlock, std::string::size_
 			return false;
 
 		key = lowerCase(key);
-		if (++fieldCount > Http::MAX_HEADER_FIELDS)
+		if (++fieldCount > Http::MAX_HEADER_FIELDS) {
+			errorStatus = kRequestHeaderFieldsTooLarge;
 			return false;
+		}
 		if (key == "content-length") {
 			if (hasContentLength || hasTransferEncoding)
 				return false;
@@ -173,18 +179,33 @@ static bool parseContentLength(const std::string &value, size_t &contentLength) 
 //   0: `inbuf` doesn't contain a complete request yet -- wait for more data.
 //  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
 ssize_t Http::parse(const std::string &inbuf, Request &request) {
-	return parse(inbuf, request, DEFAULT_MAX_BODY_BYTES);
+	int ignoredStatus = 0;
+	return parse(inbuf, request, DEFAULT_MAX_BODY_BYTES, ignoredStatus);
 }
 
 ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBytes) {
+	int ignoredStatus = 0;
+	return parse(inbuf, request, maxBodyBytes, ignoredStatus);
+}
+
+ssize_t Http::parse(const std::string &inbuf, Request &request, int &errorStatus) {
+	return parse(inbuf, request, DEFAULT_MAX_BODY_BYTES, errorStatus);
+}
+
+ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBytes, int &errorStatus) {
+	errorStatus = 0;
 	std::string::size_type headerEnd = inbuf.find("\r\n\r\n");
 	if (headerEnd == std::string::npos) {
-		if (inbuf.size() > MAX_HEADER_BYTES)
+		if (inbuf.size() > MAX_HEADER_BYTES) {
+			errorStatus = kRequestHeaderFieldsTooLarge;
 			return -1;
+		}
 		return 0; // headers not fully buffered yet
 	}
-	if (headerEnd + 4 > MAX_HEADER_BYTES)
+	if (headerEnd + 4 > MAX_HEADER_BYTES) {
+		errorStatus = kRequestHeaderFieldsTooLarge;
 		return -1;
+	}
 
 	std::string headerBlock = inbuf.substr(0, headerEnd);
 	std::string::size_type bodyStart = headerEnd + 4;
@@ -193,26 +214,39 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 	std::string requestLine = (lineEnd == std::string::npos) ? headerBlock : headerBlock.substr(0, lineEnd);
 
 	Request parsed;
-	if (!parseRequestLine(requestLine, parsed))
+	if (!parseRequestLine(requestLine, parsed)) {
+		errorStatus = kBadRequest;
 		return -1; // malformed request-line
+	}
 
 	std::string::size_type headersStart = (lineEnd == std::string::npos) ? headerBlock.size() : lineEnd + 2;
-	if (!parseHeaderFields(headerBlock, headersStart, parsed.headers))
+	if (!parseHeaderFields(headerBlock, headersStart, parsed.headers, errorStatus)) {
+		if (errorStatus == 0)
+			errorStatus = kBadRequest;
 		return -1; // malformed or unsupported headers
+	}
 
 	size_t contentLength = 0;
 	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("content-length");
-	if (it != parsed.headers.end() && !parseContentLength(it->second, contentLength))
+	if (it != parsed.headers.end() && !parseContentLength(it->second, contentLength)) {
+		errorStatus = kBadRequest;
 		return -1; // invalid Content-Length
-	if (contentLength > maxBodyBytes)
+	}
+	if (contentLength > maxBodyBytes) {
+		errorStatus = kPayloadTooLarge;
 		return -1; // request body is larger than the configured limit
+	}
 
 	const size_t maxSize = std::numeric_limits<size_t>::max();
-	if (contentLength > maxSize - bodyStart)
+	if (contentLength > maxSize - bodyStart) {
+		errorStatus = kBadRequest;
 		return -1; // full request length cannot be represented
+	}
 	const size_t requestSize = bodyStart + contentLength;
-	if (requestSize > static_cast<size_t>(std::numeric_limits<ssize_t>::max()))
+	if (requestSize > static_cast<size_t>(std::numeric_limits<ssize_t>::max())) {
+		errorStatus = kBadRequest;
 		return -1; // parser contract cannot return this consumed count
+	}
 
 	if (inbuf.size() < requestSize)
 		return 0; // body not fully buffered yet
@@ -233,6 +267,8 @@ std::string Http::build(const Response &response) {
 	else if (status == 403) reason = "Forbidden";
 	else if (status == 404) reason = "Not Found";
 	else if (status == 405) reason = "Method Not Allowed";
+	else if (status == 413) reason = "Payload Too Large";
+	else if (status == 431) reason = "Request Header Fields Too Large";
 	else if (status == 500) reason = "Internal Server Error";
 	else if (status == 502) reason = "Bad Gateway";
 

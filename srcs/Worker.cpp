@@ -198,6 +198,16 @@ void Worker::onCgiWritable(Connection &conn) {
 	closeManagedFd(conn.txn.cgi.in_fd);
 }
 
+void Worker::queueParserError(Connection &conn, int status) {
+	conn.inbuf.clear();
+	conn.txn = Transaction();
+	conn.txn.response.status = status;
+	conn.outbuf += http.build(conn.txn.response);
+	conn.close_after_write = true;
+	conn.phase = WRITING;
+	poller.setEvents(conn.fd, POLLOUT);
+}
+
 // read logic
 // read into inbuffer as long as there is something to read
 // loop over inbuffer and check if any full request is in there
@@ -215,7 +225,13 @@ void Worker::onReadable(Connection &conn) {
 	        << std::string(buf, static_cast<size_t>(n));
 
 	conn.inbuf.append(buf, n);
-	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request);
+	int parseStatus = 0;
+	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, parseStatus);
+	if (req_size < 0) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected request with status " << parseStatus;
+		queueParserError(conn, parseStatus);
+		return ;
+	}
 	while (req_size > 0) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " complete request found";
 		conn.txn.route = config.route(conn.txn.request);
@@ -248,7 +264,12 @@ void Worker::onReadable(Connection &conn) {
 
 		conn.inbuf.erase(0, static_cast<size_t>(req_size));
 		
-		req_size = http.parse(conn.inbuf, conn.txn.request);
+		req_size = http.parse(conn.inbuf, conn.txn.request, parseStatus);
+		if (req_size < 0) {
+			logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected pipelined request with status " << parseStatus;
+			queueParserError(conn, parseStatus);
+			return ;
+		}
 	}
 }
 
@@ -270,6 +291,10 @@ void Worker::onWritable(Connection &conn) {
 	if (conn.sent == conn.outbuf.size()) {
 		conn.outbuf.clear();
 		conn.sent = 0;
+		if (conn.close_after_write) {
+			closeConnection(conn);
+			return ;
+		}
 		conn.txn = Transaction();
 		poller.setEvents(conn.fd, POLLIN);
 	}

@@ -34,6 +34,7 @@ class Worker {
 		void onWritable(Connection &conn);
 		void onCgiReadable(Connection &conn);
 		void onCgiWritable(Connection &conn);
+		void queueParserError(Connection &conn, int status);
 		void closeManagedFd(int &fd);
 		void closeConnection(Connection &conn);
 
