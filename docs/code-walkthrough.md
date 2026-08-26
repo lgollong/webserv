@@ -33,7 +33,7 @@ Before reading the loop, it helps to know the data structs in [`headers/types.hp
 | `Request` | Incoming method, path, query, headers, and body. | One `Transaction`; filled by `Http`. |
 | `Response` | Outgoing status, headers, and body. | One `Transaction`; serialized by `Http`. |
 | `Route` | Resolved root, CGI settings, and allowed methods. | One `Transaction`; returned by `Config`. |
-| `CgiJob` | Child pid, stdin/stdout fds, output, and write progress. | One `Transaction` while a CGI request runs. |
+| `CgiJob` | Child pid, stdin/stdout fds, output, write progress, and failure state. | One `Transaction` while a CGI request runs. |
 | `Transaction` | One request-to-response cycle. | Nested inside `Connection`. |
 | `Connection` | Client fd, input/output buffers, partial-write cursor, and current transaction. | Owned by `Worker` for one client socket. |
 
@@ -53,7 +53,7 @@ events   activity the server wants to observe, such as POLLIN or POLLOUT
 revents  activity reported by poll()
 ```
 
-`POLLIN` means data may be read without waiting. `POLLOUT` means queued output may be written without waiting. The current [`Poller::poll()`](../srcs/Poller.cpp) calls the system `poll()` once for its whole vector and returns that vector to `Worker`.
+`POLLIN` means data may be read without waiting. `POLLOUT` means queued output may be written without waiting. The current [`Poller::poll()`](../srcs/Poller.cpp) calls the system `poll()` once for its whole vector and returns the readiness count; `Poller::events()` exposes the resulting fd entries to `Worker`.
 
 The intended discipline is:
 
@@ -61,7 +61,7 @@ The intended discipline is:
 register fd -> wait in poll() -> inspect revents -> perform one appropriate action
 ```
 
-Current-state note: this is the intended single-loop design, but the main-branch error and hangup handling is not hardened yet. The `poll()` return value is ignored and the code does not yet robustly handle every `POLLERR`, `POLLHUP`, or `POLLNVAL` path.
+`Worker` copies the resulting fd entries before dispatching callbacks because a callback may remove an fd. It handles managed client/CGI error, hangup, and invalid-fd events by cleaning up the owning connection; it attempts to recreate a failed listener. Timeout handling and broader stress coverage remain unfinished.
 
 ## 4. Starting the Worker Loop
 
@@ -84,6 +84,8 @@ client socket + POLLIN    -> onReadable()
 client socket + POLLOUT   -> onWritable()
 ```
 
+Before dispatching a non-listener event, `Worker` looks it up in `fdToConnection` with `find()` rather than `operator[]`. This avoids accidentally creating a null map entry for a stale fd. `closeConnection()` removes the client socket and any registered CGI pipe fds from `Poller` and `fdToConnection` before closing them.
+
 Current-state note: the listener is hard-coded to port `8080` and `INADDR_ANY`; configured host/port pairs and multiple listeners are not implemented yet.
 
 ## 5. Accepting a Client
@@ -96,7 +98,7 @@ At this point the server is not reading or writing application data. It is only 
 
 ## 6. Reading and Buffering an HTTP Request
 
-When a client fd reports `POLLIN`, [`Worker::onReadable()`](../srcs/Worker.cpp) reads up to 4096 bytes into a stack buffer and appends the result to `Connection::inbuf`.
+When a client fd reports `POLLIN`, [`Worker::onReadable()`](../srcs/Worker.cpp) reads up to 4096 bytes into a stack buffer and appends the result to `Connection::inbuf`. A zero or negative read result closes only that managed connection; the code does not inspect `errno` after the read.
 
 The input buffer matters because one TCP read is not one HTTP request. A request can arrive in several packets, and multiple requests can arrive together. `Worker` therefore calls:
 
@@ -162,7 +164,7 @@ conn.outbuf.data() + conn.sent
 
 This is the foundation for non-blocking output: no response assumes it can be sent in one system call.
 
-Current-state note: the main branch still needs robust write-error handling, complete keep-alive policy, and timeout/disconnect cleanup.
+If a write returns zero or a negative value, `onWritable()` closes only that managed connection without inspecting `errno`. Complete keep-alive policy and timeout handling remain unfinished.
 
 ## 10. CGI Response Path
 
@@ -175,15 +177,15 @@ Worker writes request body -> CGI stdin
 CGI stdout -> Worker reads response
 ```
 
-It calls `fork()`. The child duplicates the read end of the input pipe to standard input and the write end of the output pipe to standard output, builds CGI environment variables from `Request`, and calls `execve()` for the script. The parent closes the child-only pipe ends, stores the child pid and remaining pipe fds in `CgiJob`, and marks those parent pipe ends non-blocking.
+It validates pipe creation and `fork()`, then calls `fork()`. The child duplicates the read end of the input pipe to standard input and the write end of the output pipe to standard output, builds CGI environment variables from `Request`, and calls `execve()` for the script. If setup or `execve()` fails, the child exits rather than returning to the server loop. The parent closes the child-only pipe ends, stores the child pid and remaining pipe fds in `CgiJob`, and marks those parent pipe ends non-blocking.
 
 Back in `Worker::onReadable()`, the CGI stdin fd is registered for `POLLOUT` and the CGI stdout fd for `POLLIN`. Both map back to the same client `Connection` through `fdToConnection`.
 
-When CGI stdin is writable, [`Worker::onCgiWritable()`](../srcs/Worker.cpp) calls `Cgi::sendBody()`. It advances `CgiJob::sent` until the request body is fully written, then removes and closes CGI stdin so the script sees EOF.
+When CGI stdin is writable, [`Worker::onCgiWritable()`](../srcs/Worker.cpp) calls `Cgi::sendBody()`. It advances `CgiJob::sent` until the request body is fully written, then removes and closes CGI stdin so the script sees EOF. A failed pipe read/write marks `CgiJob` as failed without checking `errno` after I/O.
 
 When CGI stdout is readable, [`Worker::onCgiReadable()`](../srcs/Worker.cpp) calls `Cgi::collect()`, which accumulates output in `CgiJob::output`. At EOF, `Cgi::buildResponse()` separates CGI headers from the body, copies `Content-Type`, `Status`, and other headers into a `Response`, and sends that response through the same `Http::build()` and client `POLLOUT` path used for static responses.
 
-Current-state note: CGI is only partially complete. It lacks robust pipe/process error handling, non-blocking child reaping, timeouts, full configuration-driven handler selection, and complete EOF/body-edge-case behavior.
+Current-state note: CGI pipe setup and return-value-only I/O failures now produce a controlled `502` response. CGI is still only partially complete: it lacks non-blocking child reaping, timeouts, full configuration-driven handler selection, and complete EOF/body-edge-case behavior.
 
 ## 11. Logging and Exceptions
 
@@ -195,7 +197,7 @@ logger.debug() << "Worker: fd " << conn.fd;
 
 build a temporary `LogStream`; its destructor flushes the accumulated message at the end of the expression. `main()` catches exceptions that leave `Worker::run()` and sends their messages to `Logger::error()`.
 
-Current-state note: access logging is still a stub, and several non-blocking error paths currently throw rather than keeping the server alive. Those paths need hardening before the implementation meets the subject's resilience requirement.
+Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, but malformed-request handling, timeout behavior, and full resilience coverage still need work.
 
 ## 12. Reading the Code in Order
 
