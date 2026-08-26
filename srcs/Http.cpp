@@ -1,6 +1,7 @@
 #include "Http.hpp"
 #include <sstream>
 #include <cstdlib>
+#include <cctype>
 
 Http::Http() {}
 
@@ -70,29 +71,85 @@ static bool parseRequestLine(const std::string &line, Request &request) {
 	return true;
 }
 
-// header-field = field-name ":" [ field-value ] CRLF
-static void parseHeaderFields(const std::string &headerBlock, std::string::size_type start,
-                               std::map<std::string, std::string> &headers) {
+static std::string lowerCase(const std::string &value) {
+	std::string result;
+	result.reserve(value.size());
+	for (std::string::size_type i = 0; i < value.size(); ++i)
+		result += static_cast<char>(std::tolower(static_cast<unsigned char>(value[i])));
+	return result;
+}
+
+static bool isHeaderValue(const std::string &value) {
+	for (std::string::size_type i = 0; i < value.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(value[i]);
+		if (c == '\t' || (c >= 0x20 && c != 0x7f))
+			continue;
+		return false;
+	}
+	return true;
+}
+
+static std::string trimOptionalWhitespace(const std::string &value) {
+	std::string::size_type first = 0;
+	while (first < value.size() && (value[first] == ' ' || value[first] == '\t'))
+		++first;
+
+	std::string::size_type last = value.size();
+	while (last > first && (value[last - 1] == ' ' || value[last - 1] == '\t'))
+		--last;
+	return value.substr(first, last - first);
+}
+
+// header-field = field-name ":" OWS field-value OWS CRLF
+static bool parseHeaderFields(const std::string &headerBlock, std::string::size_type start,
+		std::map<std::string, std::string> &headers) {
 	std::string::size_type pos = start;
+	size_t fieldCount = 0;
+	bool hasContentLength = false;
+	bool hasTransferEncoding = false;
 
 	while (pos < headerBlock.size()) {
 		std::string::size_type lineEnd = headerBlock.find("\r\n", pos);
-		std::string line = (lineEnd == std::string::npos)
+		bool isLastLine = lineEnd == std::string::npos;
+		std::string line = isLastLine
 			? headerBlock.substr(pos)
 			: headerBlock.substr(pos, lineEnd - pos);
 
 		std::string::size_type colon = line.find(':');
-		if (colon != std::string::npos) {
-			std::string key = line.substr(0, colon);
-			std::string::size_type valueStart = line.find_first_not_of(' ', colon + 1);
-			std::string value = (valueStart == std::string::npos) ? "" : line.substr(valueStart);
-			headers[key] = value;
+		if (colon == std::string::npos || colon == 0)
+			return false;
+
+		std::string key = line.substr(0, colon);
+		for (std::string::size_type i = 0; i < key.size(); ++i) {
+			if (!isTokenChar(key[i]))
+				return false;
 		}
 
-		if (lineEnd == std::string::npos)
+		std::string value = line.substr(colon + 1);
+		if (!isHeaderValue(value))
+			return false;
+
+		key = lowerCase(key);
+		if (++fieldCount > Http::MAX_HEADER_FIELDS)
+			return false;
+		if (key == "content-length") {
+			if (hasContentLength || hasTransferEncoding)
+				return false;
+			hasContentLength = true;
+		}
+		if (key == "transfer-encoding") {
+			if (hasTransferEncoding || hasContentLength)
+				return false;
+			hasTransferEncoding = true;
+		}
+
+		headers[key] = trimOptionalWhitespace(value);
+
+		if (isLastLine)
 			break;
 		pos = lineEnd + 2;
 	}
+	return !hasTransferEncoding;
 }
 
 // > 0: bytes consumed, a complete request was parsed into `request`.
@@ -100,8 +157,13 @@ static void parseHeaderFields(const std::string &headerBlock, std::string::size_
 //  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
 ssize_t Http::parse(const std::string &inbuf, Request &request) {
 	std::string::size_type headerEnd = inbuf.find("\r\n\r\n");
-	if (headerEnd == std::string::npos)
+	if (headerEnd == std::string::npos) {
+		if (inbuf.size() > MAX_HEADER_BYTES)
+			return -1;
 		return 0; // headers not fully buffered yet
+	}
+	if (headerEnd + 4 > MAX_HEADER_BYTES)
+		return -1;
 
 	std::string headerBlock = inbuf.substr(0, headerEnd);
 	std::string::size_type bodyStart = headerEnd + 4;
@@ -114,10 +176,11 @@ ssize_t Http::parse(const std::string &inbuf, Request &request) {
 		return -1; // malformed request-line
 
 	std::string::size_type headersStart = (lineEnd == std::string::npos) ? headerBlock.size() : lineEnd + 2;
-	parseHeaderFields(headerBlock, headersStart, parsed.headers);
+	if (!parseHeaderFields(headerBlock, headersStart, parsed.headers))
+		return -1; // malformed or unsupported headers
 
 	size_t contentLength = 0;
-	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("Content-Length");
+	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("content-length");
 	if (it != parsed.headers.end())
 		contentLength = static_cast<size_t>(std::atoi(it->second.c_str()));
 
