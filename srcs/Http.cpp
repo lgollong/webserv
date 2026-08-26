@@ -432,6 +432,25 @@ static const char *reasonPhrase(int status) {
 	return NULL;
 }
 
+Response Http::defaultErrorResponse(int status) const {
+	const char *reason = reasonPhrase(status);
+	if (status < 400 || reason == NULL) {
+		status = 500;
+		reason = reasonPhrase(status);
+	}
+
+	std::ostringstream out;
+	out << "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
+		<< status << " " << reason << "</title></head><body><h1>"
+		<< status << " " << reason << "</h1></body></html>";
+
+	Response response;
+	response.status = status;
+	response.headers["Content-Type"] = "text/html";
+	response.body = out.str();
+	return response;
+}
+
 static bool hasResponseHeader(const std::map<std::string, std::string> &headers,
 		const std::string &wanted, std::string &value) {
 	for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it) {

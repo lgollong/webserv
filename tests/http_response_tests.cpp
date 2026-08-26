@@ -105,6 +105,28 @@ int main() {
 			"supported status is serialized");
 	}
 
+	const int defaultErrorStatuses[] = {400, 403, 404, 405, 413, 431, 500, 502};
+	for (size_t i = 0; i < sizeof(defaultErrorStatuses) / sizeof(defaultErrorStatuses[0]); ++i) {
+		Response error = http.defaultErrorResponse(defaultErrorStatuses[i]);
+		raw = http.build(error);
+		expect(error.status == defaultErrorStatuses[i], "default error preserves its status");
+		expect(!error.body.empty(), "default error has a body");
+		expect(error.headers["Content-Type"] == "text/html", "default error declares HTML content");
+		expect(raw.find(statusPrefix(defaultErrorStatuses[i])) == 0,
+			"default error status is serialized");
+		expect(headerValue(raw, "Content-Type") == "text/html", "default error serializes HTML content type");
+		std::ostringstream length;
+		length << error.body.size();
+		expect(headerValue(raw, "Content-Length") == length.str(),
+			"default error content length matches body");
+		expect(raw.substr(raw.find("\r\n\r\n") + 4) == error.body,
+			"default error serializes its complete body");
+	}
+
+	Response invalidDefault = http.defaultErrorResponse(200);
+	expect(invalidDefault.status == 500, "non-error default falls back to 500");
+	expect(!invalidDefault.body.empty(), "500 fallback default has a body");
+
 	if (failures == 0)
 		std::cout << "http response tests passed" << std::endl;
 	return failures == 0 ? 0 : 1;
