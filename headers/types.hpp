@@ -109,6 +109,12 @@ struct Connection {
 	Transaction  txn;
 
 	Connection() : fd(-1), phase(IDLE), sent(0), keep_alive(false), close_after_write(false), last_activity(0) {}
+
+	bool hasClientTimedOut(time_t now, time_t timeout) const {
+		if (phase == RUNNING_CGI || last_activity == 0 || now < last_activity)
+			return false;
+		return now - last_activity >= timeout;
+	}
 };
 
 #endif
