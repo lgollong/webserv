@@ -26,6 +26,7 @@ class Http {
 		ssize_t      parse(const std::string &inbuf, Request &request, size_t maxBodyBytes);
 		ssize_t      parse(const std::string &inbuf, Request &request, int &errorStatus);
 		ssize_t      parse(const std::string &inbuf, Request &request, size_t maxBodyBytes, int &errorStatus);
+		Response     defaultErrorResponse(int status) const;
 		std::string  build(const Response &response);
 };
 
