@@ -1,332 +1,152 @@
 # Architecture
 
-This document describes the target architecture for `webserv`. The project subject in
-`docs/subject/en.subject.md` is the source of truth for required behavior.
+This document describes the implementation currently on `main` and identifies the work still required for the 42 `webserv` subject. It is a source-of-truth companion to the code, not a description of the intended final server only.
 
-Status markers:
+Status labels used here:
 
-- `Implemented`: present in the current codebase.
-- `Planned`: part of the intended architecture, not implemented yet.
-- `To Fix`: implemented differently from the target architecture and should be corrected.
+- `Implemented`: code exists and is connected to the running server.
+- `Partial`: code exists but is intentionally incomplete or does not yet meet the subject requirement.
+- `Planned`: no meaningful implementation exists yet.
+- `To Fix`: the current code conflicts with a project requirement or needs hardening.
 
-## Model
+## Runtime Model
 
-The server borrows the useful parts of nginx's architecture while staying small enough for the
-42 subject:
+`main.cpp` constructs the service objects and passes them to `Worker`. `Worker` owns the event loop, all client connections, and the `Poller`; the other components are passive services called by `Worker`.
 
-- single process;
-- one event loop;
-- one `poll()` or equivalent readiness mechanism;
-- declarative `server` and `location` configuration;
-- separate connection state and request/response state;
-- static content handled directly;
-- CGI handled by `fork` and `execve`.
+```text
+main
+  -> Config, Http, Cgi, StaticFile, Logger
+  -> Worker
+       -> Poller
+       -> Connection per client fd
+            -> Transaction per request
+            -> CgiJob while CGI is active
+```
 
-Unlike nginx, this project does not need a master/worker process pool, FastCGI upstreams, runtime
-modules, gzip filters, or disk I/O offloading.
+`Worker` uses one `poll()` wrapper for the listening socket, client sockets, and CGI pipe file descriptors. Connection state is stored in `std::map<int, Connection>` and a second map associates every registered fd with its owning connection.
 
-## Hard Non-Blocking Rules
-
-- `Implemented`: sockets are intended to be managed through a `poll()`-based loop.
-- `Planned`: CGI pipes must also be registered in the same event loop.
-- `To Fix`: socket reads/writes must only happen after readiness from the event loop.
-- `To Fix`: do not inspect `errno` after `read`, `recv`, `write`, or `send`.
-- `Planned`: every connection needs a timeout so requests cannot hang indefinitely.
-- `Planned`: CGI children must be reaped without blocking, using `waitpid(..., WNOHANG)`.
-- `Implemented`: regular disk files may be read normally; the subject exempts them from readiness polling.
-
-## Target Components
+## Components
 
 ### `Worker`
 
-`Planned`
+`Implemented`, with important `To Fix` items.
 
-The `Worker` owns the event loop and request flow. It is the only component that should orchestrate
-other services.
-
-Responsibilities:
-
-- own all active connections;
-- own the `Poller`;
-- accept new clients;
-- read client data after readiness;
-- parse requests;
-- resolve routes;
-- dispatch to static or CGI handling;
-- queue responses;
-- write responses after readiness;
-- reset connections for keep-alive or close them;
-- run timeout cleanup.
-
-Current equivalent:
-
-- `ManageServer` currently owns the event loop and socket setup.
-- `To Fix`: align `ManageServer` with the `Worker` role or rename/refactor it into `Worker`.
+- Creates a non-blocking listening socket and runs the central event loop.
+- Accepts clients, registers client and CGI pipe fds with `Poller`, and dispatches readable and writable events.
+- Buffers incoming request bytes in `Connection::inbuf` and queued output in `Connection::outbuf`.
+- Tracks partial client writes with `Connection::sent`.
+- `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
+- `To Fix`: it must handle `POLLERR`, `POLLHUP`, and `POLLNVAL`, accept until the socket would block, and safely handle non-blocking read/write errors and disconnects.
+- `To Fix`: malformed requests, request timeouts, keep-alive behavior, and safe per-request reset are incomplete.
+- `To Fix`: CGI state is not fully coordinated with connection phases or child lifecycle.
 
 ### `Poller`
 
-`Planned`
+`Implemented`, but minimal.
 
-Thin wrapper around `poll()`.
+- Wraps a `std::vector<pollfd>` and supports adding, removing, and changing fd interests.
+- Calls the single process-wide `poll()` used by `Worker`.
+- `To Fix`: check and surface `poll()` errors; provide robust handling for invalid and error events.
 
-Responsibilities:
+### `Http`
 
-- store `pollfd` entries;
-- add/remove descriptors;
-- update read/write interest;
-- expose readiness results to `Worker`.
+`Partial`.
 
-Current equivalent:
-
-- `ManageServer` currently stores `std::vector<pollfd>` directly.
-- `To Fix`: extract this into a dedicated `Poller` so event-loop bookkeeping is isolated.
-
-### `HTTP`
-
-`Planned`
-
-Responsible for byte stream to HTTP objects and HTTP objects to response bytes.
-
-Responsibilities:
-
-- parse request line;
-- parse headers;
-- parse query string;
-- detect incomplete requests;
-- reject malformed requests;
-- handle `Content-Length`;
-- support body parsing for `POST`;
-- build HTTP responses;
-- render status lines and default error responses.
-
-Current equivalent:
-
-- `HTTPRequest` parses part of the request.
-- `HTTPResponse` builds and sends responses.
-- `To Fix`: response building and socket sending should be separated so partial writes remain event-loop driven.
-- `To Fix`: request parsing needs incomplete/malformed/body-aware behavior.
+- Parses a buffered request line, headers, and a `Content-Length` body.
+- Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed request line.
+- Builds HTTP/1.1 responses with a default content type and calculated `Content-Length`.
+- `To Fix`: validate the HTTP version, request target, header syntax, method behavior, header limits, body limits, and malformed requests with appropriate status responses.
+- `Planned`: support chunked request bodies and unchunk them before CGI input.
+- `To Fix`: expand status handling and response headers to cover the subject's required behavior.
 
 ### `Config`
 
-`Planned`
+`Partial`.
 
-Responsible for startup config parsing and per-request route resolution.
-
-Responsibilities:
-
-- parse all `server` blocks;
-- parse all `location` blocks;
-- store listen host/port pairs;
-- store server roots, indexes, max body sizes, and error pages;
-- store route-specific methods, redirects, roots, autoindex, indexes, upload settings, and CGI settings;
-- resolve a request to the correct server and location.
-
-Current equivalent:
-
-- `ConfigFile`, `ConfigParser`, `Server`, and `Location` implement parts of this.
-- `Implemented`: server and location objects exist.
-- `Implemented`: several config directives are parsed.
-- `Planned`: route resolution for requests still needs to be completed.
+- Defines `ServerConfig` and `Route` data structures and exposes `route(const Request&)`.
+- The current constructor ignores the supplied config path and creates mock values.
+- The current resolver returns a mock static route, except for `.sh` paths which are treated as CGI.
+- `Planned`: parse the required configuration file syntax, validate it, resolve server and location blocks, and support all mandatory directives.
 
 ### `StaticFile`
 
-`Planned`
+`Partial`.
 
-Responsible for static content and upload/delete behavior.
+- Provides a MIME-type map and a `serve()` API used by `Worker`.
+- The current implementation returns generated placeholder HTML rather than files from disk.
+- `Planned`: securely resolve paths under configured roots, read static files, implement index files and autoindex, and support upload and `DELETE` behavior.
 
-Responsibilities:
+### `Cgi`
 
-- map URL paths through the resolved route root;
-- prevent invalid path traversal;
-- read static files;
-- determine MIME type;
-- serve directory indexes;
-- generate autoindex pages when enabled;
-- enforce allowed methods;
-- handle file uploads to configured storage;
-- implement `DELETE`;
-- return accurate errors.
+`Partial`.
 
-Current equivalent:
-
-- Static file behavior is currently inside `HTTPResponse`.
-- `To Fix`: move static file concerns out of `HTTPResponse` into a dedicated service.
-- `To Fix`: remove hardcoded absolute paths and resolve through config.
-
-### `CGI`
-
-`Planned`
-
-Responsible for running CGI scripts and collecting their output without blocking the server.
-
-Responsibilities:
-
-- detect CGI routes by configured extension;
-- create stdin/stdout pipes;
-- set pipe descriptors non-blocking;
-- `fork`;
-- set CGI environment variables;
-- `execve` the configured interpreter/script;
-- send request body to CGI stdin;
-- collect CGI stdout through the event loop;
-- parse CGI response headers such as `Status` and `Content-Type`;
-- handle EOF as the end of CGI output when no `Content-Length` is present.
-
-Current equivalent:
-
-- No dedicated CGI service exists yet.
-- `Planned`: implement CGI as its own service and register CGI pipe fds in the same `poll()` loop.
+- Creates stdin/stdout pipes, forks, runs a configured script with `execve`, and sets the parent pipe ends non-blocking.
+- Builds CGI environment variables from the request and parses CGI response headers and body.
+- `Worker` registers the CGI pipes in the same `Poller` as sockets and transfers the request body/output through readiness callbacks.
+- `To Fix`: validate all process and pipe operations; close descriptors correctly on every failure path; make the child terminate if `execve` fails; and reap children with non-blocking `waitpid`.
+- `To Fix`: the current pipe I/O checks `errno` after `read` and `write`, which violates this repository's hard requirement.
+- `Planned`: enforce CGI timeouts and fully support request-body edge cases, including chunked input and CGI EOF behavior.
 
 ### `Logger`
 
-`Planned`
+`Partial`.
 
-Responsible for access and diagnostic logs.
+- Supports error logging and a C++98-compatible stream-style debug logger.
+- `Planned`: implement access-log records and use consistent logging for request, disconnect, and failure paths.
 
-Responsibilities:
+## State Objects
 
-- log completed requests;
-- log errors and diagnostics;
-- avoid mixing logging logic into request handling.
+`Implemented`, with incomplete lifecycle use.
 
-Current equivalent:
+- `Request` holds method, path, query, headers, and body.
+- `Response` holds status, headers, and body.
+- `Route` holds a root, CGI settings, and allowed methods.
+- `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
+- `Connection` owns socket identity, input/output buffers, partial-write position, last activity, and its current transaction.
+- `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, and completion state.
+- `To Fix`: use `Phase`, `keep_alive`, and `last_activity` consistently, and define explicit cleanup rules for client and CGI fds.
 
-- Logging is currently mostly direct `std::cout` / `std::cerr`.
-- `To Fix`: centralize logging behind a small logger service.
-
-## Target State Objects
-
-### `Connection`
-
-`Planned`
-
-Per socket. Survives across keep-alive requests.
-
-```cpp
-struct Connection {
-    int          fd;
-    Phase        phase;
-    std::string  inbuf;
-    std::string  outbuf;
-    size_t       sent;
-    bool         keep_alive;
-    time_t       last_activity;
-    Transaction  txn;
-};
-```
-
-Responsibilities:
-
-- keep unconsumed input bytes;
-- keep queued output bytes;
-- track partial writes;
-- track keep-alive state;
-- track timeout data;
-- own the current request transaction.
-
-Current equivalent:
-
-- `Client` stores socket/address/id only.
-- `To Fix`: extend connection state beyond socket identity.
-
-### `Transaction`
-
-`Planned`
-
-Per request/response cycle. Reset after each completed request.
-
-```cpp
-struct Transaction {
-    Request   request;
-    Response  response;
-    Route     route;
-    CgiJob    cgi;
-    bool      headers_done;
-    size_t    content_length;
-    int       status;
-};
-```
-
-Responsibilities:
-
-- own the parsed request;
-- own the response being assembled;
-- store resolved route information;
-- store CGI state when applicable;
-- track parsing progress and working status.
-
-Current equivalent:
-
-- Request and response state currently live as short-lived `HTTPRequest` and `HTTPResponse` objects.
-- `To Fix`: persist transaction state across partial reads, CGI waits, and partial writes.
-
-## Target Request Flow
+## Current Request Flow
 
 ### Static Request
 
-`Planned`
+1. `Worker` receives a readiness event for a client socket and reads bytes into `Connection::inbuf`.
+2. `Http` parses a complete `Request` when enough bytes are buffered.
+3. `Config` returns a route.
+4. `StaticFile` creates `Content`, currently placeholder HTML.
+5. `Http` serializes a `Response` into `Connection::outbuf`.
+6. `Worker` changes the client interest to `POLLOUT` and writes until the buffer is complete.
 
-1. `Poller` reports a client fd readable.
-2. `Worker` reads available bytes into `Connection::inbuf`.
-3. `HTTP` parses a complete request or reports incomplete/malformed input.
-4. `Config` resolves the matching server/location.
-5. `StaticFile` serves content or returns an error status.
-6. `HTTP` builds response bytes into `Connection::outbuf`.
-7. `Poller` enables write interest for that client fd.
-8. `Worker` writes queued bytes after write readiness.
-9. `Worker` resets the transaction for keep-alive or closes the connection.
-10. `Logger` records the completed request.
-
-Current state:
-
-- `Implemented`: listening sockets and clients are polled.
-- `Implemented`: basic request receive path exists.
-- `Implemented`: simple response send path exists.
-- `To Fix`: request parsing, route resolution, static serving, partial writes, keep-alive, and logging need target behavior.
+This establishes the intended ownership flow, but static file serving, route resolution, errors, and connection handling remain incomplete.
 
 ### CGI Request
 
-`Planned`
+1. `Worker` identifies a CGI route from `Config`.
+2. `Cgi` starts the child and returns its pipe fds in `CgiJob`.
+3. `Worker` registers CGI stdin for `POLLOUT` and stdout for `POLLIN` in the same `Poller`.
+4. `Cgi` sends the request body and collects CGI output through readiness callbacks.
+5. `Cgi` converts the CGI response into `Response`, which `Http` serializes for the client.
 
-1. Static request flow runs through route resolution.
-2. `Config` marks the route as CGI based on extension/location.
-3. `CGI` creates pipes and forks the script.
-4. CGI stdin/stdout fds are registered with `Poller`.
-5. Request body is written to CGI stdin through write readiness.
-6. CGI stdout is collected through read readiness.
-7. Child exit is reaped without blocking.
-8. CGI headers/body are translated into a `Response`.
-9. Response bytes are queued and written through the normal client write path.
+The flow is wired end to end, but it needs the reliability work listed above before it meets the subject's non-blocking and no-hang requirements.
 
-Current state:
+## Non-Blocking Rules
 
-- `Planned`: CGI execution is not implemented yet.
+- `Implemented`: listening sockets, client sockets, and the parent ends of CGI pipes are set non-blocking.
+- `Implemented`: one `Poller` drives socket and CGI pipe readiness.
+- `To Fix`: all read/write error paths must obey the repository rule not to inspect `errno` after `read`, `recv`, `write`, or `send`.
+- `To Fix`: event processing must tolerate would-block results, short reads/writes, disconnects, and poll error flags without crashing the server.
+- `Planned`: add timeout handling for slow or incomplete clients and CGI jobs.
 
-## Ownership Rules
+## Subject-Critical Gaps
 
-`Planned`
+The project still needs the following mandatory behavior:
 
-- `Worker` owns connections by value.
-- Each `Connection` owns its current `Transaction`.
-- Services receive references and do not own connections.
-- Config objects are read-mostly after startup.
-- File descriptors are closed by the owner that registered and tracks them.
+1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
+2. Complete HTTP validation, request-body limits, chunked-body decoding, accurate errors, and method restrictions.
+3. Static file serving from configured roots, index files, autoindex, uploads, `POST`, and `DELETE`.
+4. Redirection and configured error pages.
+5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, timeouts, and no unexpected termination.
+6. Hardened CGI execution, child reaping, and full request-body/EOF handling.
+7. Repeatable compliance tests and a subject-compliant README.
 
-Current state:
-
-- `ManageServer` owns server/client vectors and poll fds.
-- `To Fix`: make fd ownership and connection lifetime explicit enough to support partial writes, CGI pipes, and timeouts.
-
-## Implementation Priorities
-
-1. `To Fix`: define persistent `Connection` and `Transaction` state.
-2. `To Fix`: separate response building from socket sending.
-3. `To Fix`: make all socket writes partial-write safe.
-4. `Planned`: implement robust HTTP parsing.
-5. `Planned`: implement request routing from parsed config.
-6. `Planned`: move static file behavior into `StaticFile`.
-7. `Planned`: implement upload and `DELETE`.
-8. `Planned`: implement CGI with non-blocking pipes.
-9. `Planned`: add timeouts and access/error logging.
-
-Every implementation step must be checked against `docs/subject/en.subject.md`.
+The optional bonus work remains cookie/session support and multiple CGI types.
