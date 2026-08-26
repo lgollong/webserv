@@ -4,9 +4,11 @@ Poller::Poller() {}
 
 Poller::~Poller() {}
 
-std::vector<pollfd>& Poller::poll() {
-	::poll(fds.empty() ? NULL : &fds[0], fds.size(), -1);
+int Poller::poll() {
+	return ::poll(fds.empty() ? NULL : &fds[0], fds.size(), -1);
+}
 
+const std::vector<pollfd>& Poller::events() const {
 	return fds;
 }
 
