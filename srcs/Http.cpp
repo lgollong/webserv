@@ -106,7 +106,7 @@ static std::string trimOptionalWhitespace(const std::string &value) {
 
 // header-field = field-name ":" OWS field-value OWS CRLF
 static bool parseHeaderFields(const std::string &headerBlock, std::string::size_type start,
-		std::map<std::string, std::string> &headers, int &errorStatus) {
+		std::map<std::string, std::string> &headers, bool &isChunked, int &errorStatus) {
 	std::string::size_type pos = start;
 	size_t fieldCount = 0;
 	bool hasContentLength = false;
@@ -147,6 +147,9 @@ static bool parseHeaderFields(const std::string &headerBlock, std::string::size_
 			if (hasTransferEncoding || hasContentLength)
 				return false;
 			hasTransferEncoding = true;
+			if (lowerCase(trimOptionalWhitespace(value)) != "chunked")
+				return false;
+			isChunked = true;
 		}
 
 		headers[key] = trimOptionalWhitespace(value);
@@ -155,7 +158,7 @@ static bool parseHeaderFields(const std::string &headerBlock, std::string::size_
 			break;
 		pos = lineEnd + 2;
 	}
-	return !hasTransferEncoding;
+	return true;
 }
 
 static bool parseContentLength(const std::string &value, size_t &contentLength) {
@@ -173,6 +176,138 @@ static bool parseContentLength(const std::string &value, size_t &contentLength) 
 		contentLength = contentLength * 10 + digit;
 	}
 	return true;
+}
+
+static bool parseChunkSize(const std::string &line, size_t &chunkSize) {
+	std::string::size_type extension = line.find(';');
+	std::string sizeText = line.substr(0, extension);
+	if (sizeText.empty())
+		return false;
+	if (extension != std::string::npos) {
+		if (extension + 1 == line.size())
+			return false;
+		for (std::string::size_type i = extension + 1; i < line.size(); ++i) {
+			unsigned char c = static_cast<unsigned char>(line[i]);
+			if (c < 0x20 || c == 0x7f)
+				return false;
+		}
+	}
+
+	chunkSize = 0;
+	const size_t maxSize = std::numeric_limits<size_t>::max();
+	for (std::string::size_type i = 0; i < sizeText.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(sizeText[i]);
+		size_t digit = 0;
+		if (c >= '0' && c <= '9')
+			digit = c - '0';
+		else if (c >= 'a' && c <= 'f')
+			digit = c - 'a' + 10;
+		else if (c >= 'A' && c <= 'F')
+			digit = c - 'A' + 10;
+		else
+			return false;
+		if (chunkSize > (maxSize - digit) / 16)
+			return false;
+		chunkSize = chunkSize * 16 + digit;
+	}
+	return true;
+}
+
+static ssize_t parseChunkedBody(const std::string &inbuf, size_t bodyStart, size_t maxBodyBytes,
+		std::string &body, int &errorStatus) {
+	size_t pos = bodyStart;
+	std::string decoded;
+	const size_t maxSize = std::numeric_limits<size_t>::max();
+
+	while (true) {
+		std::string::size_type lineEnd = inbuf.find("\r\n", pos);
+		if (lineEnd == std::string::npos) {
+			if (inbuf.size() - pos > Http::MAX_CHUNK_LINE_BYTES) {
+				errorStatus = kRequestHeaderFieldsTooLarge;
+				return -1;
+			}
+			return 0;
+		}
+		if (lineEnd - pos > Http::MAX_CHUNK_LINE_BYTES) {
+			errorStatus = kRequestHeaderFieldsTooLarge;
+			return -1;
+		}
+
+		size_t chunkSize = 0;
+		if (!parseChunkSize(inbuf.substr(pos, lineEnd - pos), chunkSize)) {
+			errorStatus = kBadRequest;
+			return -1;
+		}
+		pos = lineEnd + 2;
+
+		if (chunkSize == 0) {
+			if (pos > maxSize - 2) {
+				errorStatus = kBadRequest;
+				return -1;
+			}
+			if (inbuf.size() >= pos + 2 && inbuf.compare(pos, 2, "\r\n") == 0) {
+				pos += 2;
+				if (pos > static_cast<size_t>(std::numeric_limits<ssize_t>::max())) {
+					errorStatus = kBadRequest;
+					return -1;
+				}
+				body = decoded;
+				return static_cast<ssize_t>(pos);
+			}
+
+			std::string::size_type trailerEnd = inbuf.find("\r\n\r\n", pos);
+			if (trailerEnd == std::string::npos) {
+				if (inbuf.size() - pos > Http::MAX_HEADER_BYTES) {
+					errorStatus = kRequestHeaderFieldsTooLarge;
+					return -1;
+				}
+				return 0;
+			}
+			if (trailerEnd > maxSize - 4) {
+				errorStatus = kBadRequest;
+				return -1;
+			}
+			if (trailerEnd + 4 - pos > Http::MAX_HEADER_BYTES) {
+				errorStatus = kRequestHeaderFieldsTooLarge;
+				return -1;
+			}
+
+			std::map<std::string, std::string> trailers;
+			bool trailerChunked = false;
+			if (!parseHeaderFields(inbuf.substr(pos, trailerEnd - pos), 0, trailers, trailerChunked, errorStatus) ||
+				trailers.find("content-length") != trailers.end() || trailers.find("transfer-encoding") != trailers.end()) {
+				if (errorStatus == 0)
+					errorStatus = kBadRequest;
+				return -1;
+			}
+			pos = trailerEnd + 4;
+			if (pos > static_cast<size_t>(std::numeric_limits<ssize_t>::max())) {
+				errorStatus = kBadRequest;
+				return -1;
+			}
+			body = decoded;
+			return static_cast<ssize_t>(pos);
+		}
+
+		if (chunkSize > maxBodyBytes || decoded.size() > maxBodyBytes - chunkSize) {
+			errorStatus = kPayloadTooLarge;
+			return -1;
+		}
+		if (pos > maxSize - chunkSize || maxSize - pos - chunkSize < 2) {
+			errorStatus = kBadRequest;
+			return -1;
+		}
+		size_t chunkEnd = pos + chunkSize;
+		if (inbuf.size() < chunkEnd + 2)
+			return 0;
+		if (inbuf.compare(chunkEnd, 2, "\r\n") != 0) {
+			errorStatus = kBadRequest;
+			return -1;
+		}
+
+		decoded.append(inbuf, pos, chunkSize);
+		pos = chunkEnd + 2;
+	}
 }
 
 // > 0: bytes consumed, a complete request was parsed into `request`.
@@ -220,10 +355,20 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 	}
 
 	std::string::size_type headersStart = (lineEnd == std::string::npos) ? headerBlock.size() : lineEnd + 2;
-	if (!parseHeaderFields(headerBlock, headersStart, parsed.headers, errorStatus)) {
+	bool isChunked = false;
+	if (!parseHeaderFields(headerBlock, headersStart, parsed.headers, isChunked, errorStatus)) {
 		if (errorStatus == 0)
 			errorStatus = kBadRequest;
 		return -1; // malformed or unsupported headers
+	}
+	if (isChunked) {
+		std::string decodedBody;
+		ssize_t requestSize = parseChunkedBody(inbuf, bodyStart, maxBodyBytes, decodedBody, errorStatus);
+		if (requestSize <= 0)
+			return requestSize;
+		parsed.body = decodedBody;
+		request = parsed;
+		return requestSize;
 	}
 
 	size_t contentLength = 0;

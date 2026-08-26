@@ -18,6 +18,10 @@ static std::string requestWithLine(const std::string &line) {
 	return line + "\r\nHost: example.test\r\n\r\n";
 }
 
+static std::string chunkedRequest(const std::string &body) {
+	return "POST /upload HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\n" + body;
+}
+
 static Request unchangedRequest() {
 	Request request;
 	request.method = "unchanged";
@@ -107,7 +111,7 @@ int main() {
 	expectMalformed(http, "GET / HTTP/1.1\r\nHost: example.test\nX-Test: value\r\n\r\n", "malformed header line ending");
 	expectMalformed(http, "GET / HTTP/1.1\r\nContent-Length: 0\r\ncontent-length: 0\r\n\r\n", "duplicate content length");
 	expectMalformed(http, "GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: 0\r\n\r\n", "conflicting body framing");
-	expectMalformed(http, "GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", "unsupported transfer encoding");
+	expectMalformed(http, "GET / HTTP/1.1\r\nTransfer-Encoding: gzip\r\n\r\n", "unsupported transfer encoding");
 
 	std::string oversized = "GET / HTTP/1.1\r\nX-Test: " + std::string(Http::MAX_HEADER_BYTES, 'x');
 	expectMalformed(http, oversized, "oversized fragmented headers");
@@ -176,6 +180,48 @@ int main() {
 	errorResponse.status = 431;
 	expect(http.build(errorResponse).find("HTTP/1.1 431 Request Header Fields Too Large\r\n") == 0,
 		"header-too-large response has a reason phrase");
+
+	std::string chunked = chunkedRequest("4\r\nWiki\r\n5;foo=bar\r\npedia\r\n0\r\n\r\n");
+	result = http.parse(chunked, request);
+	expect(result == static_cast<ssize_t>(chunked.size()), "chunked request reports consumed bytes");
+	expect(request.body == "Wikipedia", "chunked request body is decoded");
+
+	std::string fragmentedChunk = chunkedRequest("4\r\nWi");
+	expectIncomplete(http, fragmentedChunk, "fragmented chunk data");
+	expectIncomplete(http, chunkedRequest("4"), "fragmented chunk size");
+	expectIncomplete(http, chunkedRequest("4\r\nWiki\r"), "fragmented chunk terminator");
+	expectIncomplete(http, chunkedRequest("0\r\nX-Trace: waiting"), "fragmented chunk trailer");
+	fragmentedChunk += "ki\r\n0\r\n\r\n";
+	result = http.parse(fragmentedChunk, request);
+	expect(result == static_cast<ssize_t>(fragmentedChunk.size()), "completed fragmented chunk reports consumed bytes");
+	expect(request.body == "Wiki", "completed fragmented chunk is decoded");
+
+	std::string chunkedWithTrailer = chunkedRequest("1\r\na\r\n0\r\nX-Trace: complete\r\n\r\n");
+	result = http.parse(chunkedWithTrailer, request);
+	expect(result == static_cast<ssize_t>(chunkedWithTrailer.size()), "chunked trailers report consumed bytes");
+	expect(request.body == "a", "chunked trailers leave decoded body intact");
+
+	std::string chunkedNext = requestWithLine("GET /next HTTP/1.1");
+	std::string chunkedPipelined = chunkedRequest("4\r\ndata\r\n0\r\n\r\n") + chunkedNext;
+	result = http.parse(chunkedPipelined, request);
+	expect(result == static_cast<ssize_t>(chunkedPipelined.size() - chunkedNext.size()), "chunked consumed count ends at next request");
+	expect(request.body == "data", "pipelined chunked body is decoded");
+	expect(chunkedPipelined.substr(static_cast<size_t>(result)) == chunkedNext, "chunked pipelined bytes remain untouched");
+
+	expectParseStatus(http, chunkedRequest("z\r\n"), 400, "invalid chunk size");
+	expectParseStatus(http, chunkedRequest("4\r\ndataX\r\n"), 400, "invalid chunk terminator");
+	expectParseStatus(http, chunkedRequest("0\r\nContent-Length: 0\r\n\r\n"), 400, "forbidden chunk trailer");
+
+	std::ostringstream overflowingChunkSize;
+	overflowingChunkSize << std::hex << std::numeric_limits<size_t>::max() << "0";
+	expectParseStatus(http, chunkedRequest(overflowingChunkSize.str() + "\r\n"), 400, "overflowing chunk size");
+
+	expectParseStatusWithLimit(http, chunkedRequest("4\r\ndata\r\n0\r\n\r\n"), 3, 413,
+		"decoded chunked body over explicit limit");
+	std::string oversizedChunkLine = chunkedRequest(std::string(Http::MAX_CHUNK_LINE_BYTES + 1, 'a'));
+	expectParseStatus(http, oversizedChunkLine, 431, "oversized chunk line");
+	std::string oversizedTrailer = chunkedRequest("0\r\nX-Trace: " + std::string(Http::MAX_HEADER_BYTES, 'x'));
+	expectParseStatus(http, oversizedTrailer, 431, "oversized chunk trailer");
 
 	if (failures == 0)
 		std::cout << "http parser tests passed" << std::endl;

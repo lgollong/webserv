@@ -114,7 +114,7 @@ positive value  a full request was parsed; value is bytes consumed
 -1              malformed or unsupported request data
 ```
 
-It looks for the HTTP header terminator, `\r\n\r\n`, and rejects an unfinished header block once it grows beyond 16 KiB. When present, it strictly validates an exact `method SP origin-form-target SP HTTP/1.1` request line, separates a `?query` from the path, and stores the HTTP version. Each header name must be a token, and the parser canonicalizes it to lowercase, trims optional outer whitespace from its value, and rejects malformed line endings and control bytes. It limits a request to 100 header fields, rejects duplicate `Content-Length`, and rejects `Transfer-Encoding` until #21 supplies chunk decoding. A `Content-Length` must be one or more decimal digits and fit in `size_t`; the parser then waits until exactly that body is buffered. Its returned byte count ends after that body, so subsequent pipelined request bytes remain in `Connection::inbuf`.
+It looks for the HTTP header terminator, `\r\n\r\n`, and rejects an unfinished header block once it grows beyond 16 KiB. When present, it strictly validates an exact `method SP origin-form-target SP HTTP/1.1` request line, separates a `?query` from the path, and stores the HTTP version. Each header name must be a token, and the parser canonicalizes it to lowercase, trims optional outer whitespace from its value, and rejects malformed line endings and control bytes. It limits a request to 100 header fields, rejects duplicate `Content-Length`, and accepts only a sole `Transfer-Encoding: chunked` field. A `Content-Length` must be one or more decimal digits and fit in `size_t`; the parser then waits until exactly that body is buffered. For chunked input, it validates hexadecimal chunk sizes, ignores chunk extensions, decodes each chunk into the request body, validates trailers without merging them into request headers, and ends the request at the zero chunk. Its returned byte count ends after that body or trailer block, so subsequent pipelined request bytes remain in `Connection::inbuf`.
 
 The normal call currently uses a temporary 10,000,000-byte body limit. `Http` also exposes `parse(inbuf, request, maxBodyBytes)` so #5 can pass a parsed `client_max_body_size` before the body is buffered; the parser rejects an over-limit declaration without copying body bytes.
 
@@ -122,7 +122,7 @@ The normal call currently uses a temporary 10,000,000-byte body limit. `Http` al
 
 `Worker` removes exactly that many bytes from `conn.inbuf` only after a complete result. This is the key ownership rule: **`Worker` owns the byte buffer; `Http` interprets it.**
 
-Current-state note: request-line, header syntax/framing, fixed-limit `Content-Length` assembly, and parser-error responses are implemented. Configuration-driven body-size policy, chunked bodies, and configured error-page bodies remain incomplete.
+Current-state note: request-line, header syntax/framing, fixed-limit `Content-Length` and chunked-body assembly, and parser-error responses are implemented. Configuration-driven body-size policy and configured error-page bodies remain incomplete.
 
 ## 7. Resolving the Route
 
@@ -185,7 +185,7 @@ It validates pipe creation and `fork()`, then calls `fork()`. The child duplicat
 
 Back in `Worker::onReadable()`, the CGI stdin fd is registered for `POLLOUT` and the CGI stdout fd for `POLLIN`. Both map back to the same client `Connection` through `fdToConnection`.
 
-When CGI stdin is writable, [`Worker::onCgiWritable()`](../srcs/Worker.cpp) calls `Cgi::sendBody()`. It advances `CgiJob::sent` until the request body is fully written, then removes and closes CGI stdin so the script sees EOF. A failed pipe read/write marks `CgiJob` as failed without checking `errno` after I/O.
+When CGI stdin is writable, [`Worker::onCgiWritable()`](../srcs/Worker.cpp) calls `Cgi::sendBody()`. For a chunked request, this is the decoded `Request::body`, not the wire chunk framing. It advances `CgiJob::sent` until the request body is fully written, then removes and closes CGI stdin so the script sees EOF. A failed pipe read/write marks `CgiJob` as failed without checking `errno` after I/O.
 
 When CGI stdout is readable, [`Worker::onCgiReadable()`](../srcs/Worker.cpp) calls `Cgi::collect()`, which accumulates output in `CgiJob::output`. At EOF, `Cgi::buildResponse()` separates CGI headers from the body, copies `Content-Type`, `Status`, and other headers into a `Response`, and sends that response through the same `Http::build()` and client `POLLOUT` path used for static responses.
 
