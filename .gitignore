@@ -3,3 +3,5 @@
 objs/
 notes.txt
 nginx.conf
+./local
+webserv
