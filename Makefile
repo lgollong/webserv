@@ -14,6 +14,7 @@ CONFIG_MODEL_TEST = /private/tmp/webserv-config-model-tests
 STATIC_FILE_TEST = /private/tmp/webserv-static-file-tests
 EVENT_LOOP_STRESS_TEST = /private/tmp/webserv-event-loop-stress-tests
 SESSION_STORE_TEST = /private/tmp/webserv-session-store-tests
+COOKIE_SESSION_TEST = /private/tmp/webserv-cookie-session-tests
 CORE_SRC = $(filter-out $(SRC_DIR)/main.cpp,$(SRC))
 
 all: $(NAME)
@@ -38,7 +39,7 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test config-model-test static-file-test event-loop-stress-test session-store-test
+.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test config-model-test static-file-test event-loop-stress-test session-store-test cookie-session-test
 
 resilience-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/resilience_tests.cpp -o $(RESILIENCE_TEST)
@@ -67,3 +68,7 @@ event-loop-stress-test: $(NAME)
 session-store-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/session_store_tests.cpp srcs/Session.cpp -o $(SESSION_STORE_TEST)
 	@$(SESSION_STORE_TEST)
+
+cookie-session-test: $(NAME)
+	@$(CXX) $(CXXFLAGS) tests/cookie_session_tests.cpp -o $(COOKIE_SESSION_TEST)
+	@$(COOKIE_SESSION_TEST)

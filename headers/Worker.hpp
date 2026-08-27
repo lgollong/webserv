@@ -45,6 +45,7 @@ class Worker {
 		void onCgiWritable(Connection &conn);
 		void processBufferedRequest(Connection &conn);
 		void queueParserError(Connection &conn, int status);
+		void queueSessionResponse(Connection &conn);
 		void finishClientResponse(Connection &conn);
 		void sweepExpiredConnections();
 		void sweepCgiJobs(time_t now);

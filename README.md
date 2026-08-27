@@ -31,7 +31,7 @@ The executable currently requires one configuration-file argument:
 ./webserv config/req.config
 ```
 
-At this stage, the `Config` implementation explicitly builds a reference in-memory configuration model and the worker listens only on its first server (`8080`); supplied configuration files document the target format but are not parsed yet. A basic development request can be made with:
+At this stage, the `Config` implementation explicitly builds a reference in-memory configuration model and the worker binds each of its configured listeners (`8080` and `8081`); supplied configuration files document the target format but are not parsed yet. A basic development request can be made with:
 
 ```sh
 curl -i http://127.0.0.1:8080/files/index.html
@@ -44,6 +44,8 @@ make config-model-test
 make static-file-test
 make connection-lifecycle-test
 make cgi-pipe-test
+make session-store-test
+make cookie-session-test
 make resilience-test
 ```
 

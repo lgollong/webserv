@@ -54,9 +54,10 @@ struct Route {
 	bool                   autoindex;
 	std::string            index_file;
 	std::string            upload_store;
+	bool                   session_demo;
 	std::map<std::string, std::string> cgi_handlers;
 
-	Route() : is_cgi(false), redirect_status(0), autoindex(false) {}
+	Route() : is_cgi(false), redirect_status(0), autoindex(false), session_demo(false) {}
 };
 
 // One server{} block from the config file. Owned by Config.

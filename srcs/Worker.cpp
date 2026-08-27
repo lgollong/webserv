@@ -318,6 +318,35 @@ void Worker::queueParserError(Connection &conn, int status) {
 	poller.setEvents(conn.fd, POLLOUT);
 }
 
+void Worker::queueSessionResponse(Connection &conn) {
+	Session *session = sessions.fromRequest(conn.txn.request, time(NULL));
+	bool created = false;
+	if (session == NULL) {
+		session = sessions.create(time(NULL));
+		created = true;
+	}
+
+	if (session == NULL) {
+		conn.txn.response.status = 500;
+		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
+	}
+	else {
+		++session->visits;
+		conn.txn.response.status = 200;
+		conn.txn.response.headers["Content-Type"] = "text/plain";
+		std::ostringstream visits;
+		visits << session->visits;
+		conn.txn.response.body = "Session visits: " + visits.str() + "\n";
+		if (created)
+			conn.txn.response.headers["Set-Cookie"] = SessionStore::setCookie(*session);
+	}
+	applyConnectionPolicy(conn, conn.txn.response);
+	conn.outbuf = http.build(conn.txn.response);
+	conn.sent = 0;
+	conn.phase = WRITING;
+	poller.setEvents(conn.fd, POLLOUT);
+}
+
 void Worker::processBufferedRequest(Connection &conn) {
 	if (conn.phase != READING)
 		return ;
@@ -377,6 +406,11 @@ void Worker::processBufferedRequest(Connection &conn) {
 		conn.sent = 0;
 		conn.phase = WRITING;
 		poller.setEvents(conn.fd, POLLOUT);
+		return ;
+	}
+	if (conn.txn.route.session_demo) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " handling session demonstration";
+		queueSessionResponse(conn);
 		return ;
 	}
 
