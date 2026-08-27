@@ -185,7 +185,7 @@ CGI stdout -> Worker reads response
 
 It validates pipe creation and `fork()`, then calls `fork()`. The child duplicates the read end of the input pipe to standard input and the write end of the output pipe to standard output, builds CGI environment variables from `Request`, and calls `execve()` for the script. If setup or `execve()` fails, the child exits rather than returning to the server loop. The parent closes the child-only pipe ends, stores the child pid and remaining pipe fds in `CgiJob`, and marks those parent pipe ends non-blocking.
 
-Back in `Worker::onReadable()`, the CGI stdin fd is registered for `POLLOUT` and the CGI stdout fd for `POLLIN`. Both map back to the same client `Connection` through `fdToConnection`.
+Back in `Worker::onReadable()`, an empty request body closes CGI stdin immediately, giving the child EOF without registering unnecessary write interest. A non-empty body registers CGI stdin for `POLLOUT`; CGI stdout is always registered for `POLLIN`. Registered pipe fds map back to the same client `Connection` through `fdToConnection`.
 
 When CGI stdin is writable, [`Worker::onCgiWritable()`](../srcs/Worker.cpp) calls `Cgi::sendBody()`. For a chunked request, this is the decoded `Request::body`, not the wire chunk framing. It advances `CgiJob::sent` until the request body is fully written, then removes and closes CGI stdin so the script sees EOF. A failed pipe read/write or a stdin error/hangup readiness event marks `CgiJob` as failed without checking `errno` after I/O and enters the non-blocking termination/reap path.
 

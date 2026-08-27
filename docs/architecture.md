@@ -148,7 +148,7 @@ Configured custom error-page bodies remain planned work; they will replace the d
 
 1. `Worker` identifies a CGI route from `Config`.
 2. `Cgi` starts the child and returns its pipe fds in `CgiJob`.
-3. `Worker` registers CGI stdin for `POLLOUT` and stdout for `POLLIN` in the same `Poller`.
+3. `Worker` closes CGI stdin immediately for an empty request body; otherwise it registers stdin for `POLLOUT`. It always registers CGI stdout for `POLLIN` in the same `Poller`.
 4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks. It closes stdin after the entire body is accepted. Stdout EOF before that point, plus pipe error or invalid-fd readiness, marks the job as failed instead of accepting a partial-body CGI response.
 5. `Cgi` records its start time and `Worker` checks its 15-second lifetime during the periodic maintenance sweep. On normal completion, `Worker` reaps the child non-blockingly before converting the CGI output into a `Response`. On timeout or failure, it closes CGI pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, reaps the child, then sends the default `502` response.
 
