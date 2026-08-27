@@ -70,8 +70,25 @@ struct CgiJob {
 	std::string  output;
 	bool         done;
 	bool         failed;
+	time_t       started_at;
+	time_t       last_activity;
+	bool         termination_requested;
+	time_t       termination_requested_at;
 
-	CgiJob() : pid(-1), in_fd(-1), out_fd(-1), sent(0), done(false), failed(false) {}
+	CgiJob() : pid(-1), in_fd(-1), out_fd(-1), sent(0), done(false), failed(false),
+		started_at(0), last_activity(0), termination_requested(false), termination_requested_at(0) {}
+
+	bool hasTimedOut(time_t now, time_t timeout) const {
+		if (pid <= 0 || started_at == 0 || now < started_at)
+			return false;
+		return now - started_at >= timeout;
+	}
+
+	bool hasTerminationGraceExpired(time_t now, time_t grace) const {
+		if (!termination_requested || termination_requested_at == 0 || now < termination_requested_at)
+			return false;
+		return now - termination_requested_at >= grace;
+	}
 };
 
 // Result of serving a static file. Owned by StaticFile.

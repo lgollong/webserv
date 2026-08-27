@@ -5,6 +5,10 @@
 #include <sstream>
 #include <vector>
 #include <fcntl.h>
+#include <ctime>
+#include <cerrno>
+#include <csignal>
+#include <sys/wait.h>
 
 // augmented BNF for CGI:
 //   Meta-Variables (request → env)
@@ -134,6 +138,8 @@ CgiJob Cgi::start(const Request &request, const Route &route) {
 	close(inPipe[0]);
 	close(outPipe[1]);
 	job.pid = pid;
+	job.started_at = time(NULL);
+	job.last_activity = job.started_at;
 	job.in_fd = inPipe[1];
 	job.out_fd = outPipe[0];
 	if (!setNonBlocking(job.in_fd) || !setNonBlocking(job.out_fd)) {
@@ -152,6 +158,7 @@ bool Cgi::collect(CgiJob &cgi) {
 
 	if (n > 0) {
 		cgi.output.append(buf, static_cast<size_t>(n));
+		cgi.last_activity = time(NULL);
 		return false;
 	}
 	if (n < 0) {
@@ -173,7 +180,43 @@ bool Cgi::sendBody(CgiJob &job, const std::string &body) {
 	}
 
 	job.sent += n;
+	job.last_activity = time(NULL);
 	return job.sent == body.size();
+}
+
+void Cgi::terminate(CgiJob &job) const {
+	if (job.pid <= 0 || job.termination_requested)
+		return;
+	kill(job.pid, SIGTERM);
+	job.termination_requested = true;
+	job.termination_requested_at = time(NULL);
+}
+
+void Cgi::forceTerminate(CgiJob &job) const {
+	forceTerminate(job.pid);
+}
+
+void Cgi::forceTerminate(pid_t pid) const {
+	if (pid > 0)
+		kill(pid, SIGKILL);
+}
+
+bool Cgi::reap(CgiJob &job) const {
+	return reap(job.pid);
+}
+
+bool Cgi::reap(pid_t &pid) const {
+	if (pid <= 0)
+		return true;
+
+	int status = 0;
+	pid_t result = waitpid(pid, &status, WNOHANG);
+	if (result == 0)
+		return false;
+	if (result < 0 && errno == EINTR)
+		return false;
+	pid = -1;
+	return true;
 }
 
 // header-field = CGI-field | other-field

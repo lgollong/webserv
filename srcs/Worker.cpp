@@ -59,6 +59,8 @@ static void addDefaultErrorBody(Http &http, Response &response) {
 
 static const int kPollTimeoutMs = 1000;
 static const time_t kClientIdleTimeoutSeconds = 30;
+static const time_t kCgiTimeoutSeconds = 15;
+static const time_t kCgiTerminationGraceSeconds = 2;
 
 void Worker::run() {
 	// setup listener
@@ -194,15 +196,10 @@ void Worker::onCgiReadable(Connection &conn) {
 	if (!cgi.collect(conn.txn.cgi))
 		return ;
 
-	logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi collection complete. building response...";
 	closeManagedFd(conn.txn.cgi.out_fd);
 	closeManagedFd(conn.txn.cgi.in_fd);
-
-	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
-	addDefaultErrorBody(http, conn.txn.response);
-	conn.outbuf = http.build(conn.txn.response);
-	conn.phase = WRITING;
-	poller.setEvents(conn.fd, POLLOUT);
+	if (cgi.reap(conn.txn.cgi))
+		finishCgiResponse(conn);
 }
 
 void Worker::onCgiWritable(Connection &conn) {
@@ -211,6 +208,8 @@ void Worker::onCgiWritable(Connection &conn) {
 
 	logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi body fully sent.";
 	closeManagedFd(conn.txn.cgi.in_fd);
+	if (conn.txn.cgi.failed)
+		failCgiJob(conn);
 }
 
 void Worker::queueParserError(Connection &conn, int status) {
@@ -257,11 +256,7 @@ void Worker::onReadable(Connection &conn) {
 			logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
 			if (conn.txn.cgi.failed) {
-				conn.txn.response = cgi.buildResponse(conn.txn.cgi);
-				addDefaultErrorBody(http, conn.txn.response);
-				conn.outbuf = http.build(conn.txn.response);
-				conn.phase = WRITING;
-				poller.setEvents(conn.fd, POLLOUT);
+				failCgiJob(conn);
 				return ;
 			}
 			conn.phase = RUNNING_CGI;
@@ -338,6 +333,78 @@ void Worker::sweepExpiredConnections() {
 		logger.debug() << "Worker: " << "fd: " << found->second.fd << " client inactivity timeout";
 		closeConnection(found->second);
 	}
+	sweepCgiJobs(now);
+	reapDetachedCgiJobs(now);
+}
+
+void Worker::sweepCgiJobs(time_t now) {
+	for (std::map<int, Connection>::iterator it = connections.begin(); it != connections.end(); ++it) {
+		Connection &conn = it->second;
+		if (conn.phase != RUNNING_CGI)
+			continue;
+
+		CgiJob &job = conn.txn.cgi;
+		if (job.hasTimedOut(now, kCgiTimeoutSeconds) && !job.termination_requested) {
+			logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi timeout";
+			failCgiJob(conn);
+			continue;
+		}
+		if (job.hasTerminationGraceExpired(now, kCgiTerminationGraceSeconds))
+			cgi.forceTerminate(job);
+		if (job.pid > 0 && cgi.reap(job) && (job.done || job.failed))
+			finishCgiResponse(conn);
+		else if (job.pid <= 0 && (job.done || job.failed))
+			finishCgiResponse(conn);
+	}
+}
+
+void Worker::reapDetachedCgiJobs(time_t now) {
+	for (std::map<pid_t, time_t>::iterator it = pendingCgiReaps.begin(); it != pendingCgiReaps.end(); ) {
+		std::map<pid_t, time_t>::iterator current = it++;
+		pid_t pid = current->first;
+		if (now >= current->second && now - current->second >= kCgiTerminationGraceSeconds)
+			cgi.forceTerminate(pid);
+		if (cgi.reap(pid))
+			pendingCgiReaps.erase(current);
+	}
+}
+
+void Worker::finishCgiResponse(Connection &conn) {
+	closeManagedFd(conn.txn.cgi.out_fd);
+	closeManagedFd(conn.txn.cgi.in_fd);
+	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+	addDefaultErrorBody(http, conn.txn.response);
+	conn.outbuf = http.build(conn.txn.response);
+	conn.phase = WRITING;
+	poller.setEvents(conn.fd, POLLOUT);
+}
+
+void Worker::failCgiJob(Connection &conn) {
+	CgiJob &job = conn.txn.cgi;
+	job.failed = true;
+	closeManagedFd(job.in_fd);
+	closeManagedFd(job.out_fd);
+	if (job.pid > 0) {
+		cgi.terminate(job);
+		if (!cgi.reap(job)) {
+			conn.phase = RUNNING_CGI;
+			return;
+		}
+	}
+	finishCgiResponse(conn);
+}
+
+void Worker::releaseCgiJob(Connection &conn) {
+	CgiJob &job = conn.txn.cgi;
+	closeManagedFd(job.in_fd);
+	closeManagedFd(job.out_fd);
+	if (job.pid <= 0)
+		return;
+
+	cgi.terminate(job);
+	pid_t pid = job.pid;
+	if (!cgi.reap(job))
+		pendingCgiReaps[pid] = job.termination_requested_at;
 }
 
 void Worker::closeManagedFd(int &fd) {
@@ -351,8 +418,7 @@ void Worker::closeManagedFd(int &fd) {
 
 void Worker::closeConnection(Connection &conn) {
 	int client_fd = conn.fd;
-	closeManagedFd(conn.txn.cgi.in_fd);
-	closeManagedFd(conn.txn.cgi.out_fd);
+	releaseCgiJob(conn);
 	closeManagedFd(conn.fd);
 	connections.erase(client_fd);
 }

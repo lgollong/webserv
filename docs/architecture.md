@@ -96,8 +96,10 @@ main
 - `Worker` registers the CGI pipes in the same `Poller` as sockets and transfers the request body/output through readiness callbacks.
 - Reports pipe, fork, and non-blocking setup failures through `CgiJob`, and the child exits if `execve` fails.
 - Treats failed pipe reads/writes as a controlled CGI failure without inspecting `errno` after I/O; the response path produces `502` when no valid CGI result exists.
-- `To Fix`: reap children with non-blocking `waitpid` and complete the remaining CGI cleanup paths.
-- `Planned`: enforce CGI timeouts and fully support request-body edge cases, including chunked input and CGI EOF behavior.
+- Records CGI start and progress timestamps. `Worker` limits an active CGI job to 15 seconds, closes its pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, and reaps it with `waitpid(..., WNOHANG)` before emitting a `502` response.
+- Reaps normal completed children before resetting their transaction. On client disconnect, it retains the terminated PID and termination time in a worker-owned pending-reap map, where the same two-second `SIGKILL` escalation and non-blocking reap continue after the transaction is gone.
+- `To Fix`: complete the remaining CGI pipe and response cleanup edge cases.
+- `Planned`: fully support request-body edge cases, including chunked input and CGI EOF behavior.
 
 ### `Logger`
 
@@ -114,9 +116,9 @@ main
 - `Response` holds status, headers, and body.
 - `Route` holds a root, CGI settings, and allowed methods.
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
-- `Connection` owns socket identity, input/output buffers, partial-write position, parser-error close-after-write state, last activity, and its current transaction. Client read/write phases use its last-activity timestamp for the 30-second client timeout; `RUNNING_CGI` is excluded until #35 adds CGI timing.
-- `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion state, and failure state.
-- `Partial`: client and registered CGI fds now have an explicit shared cleanup path. `Phase` and `last_activity` support client expiry, while `keep_alive` and child-process cleanup remain incomplete.
+- `Connection` owns socket identity, input/output buffers, partial-write position, parser-error close-after-write state, last activity, and its current transaction. Client read/write phases use its last-activity timestamp for the 30-second client timeout.
+- `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion/failure state, start/progress timestamps, and termination state.
+- `Partial`: client and registered CGI fds now have an explicit shared cleanup path. `Phase`, client expiry, and CGI child reaping are active; `keep_alive` and remaining CGI protocol edge cases are incomplete.
 
 ## Current Request Flow
 
@@ -145,7 +147,7 @@ Configured custom error-page bodies remain planned work; they will replace the d
 2. `Cgi` starts the child and returns its pipe fds in `CgiJob`.
 3. `Worker` registers CGI stdin for `POLLOUT` and stdout for `POLLIN` in the same `Poller`.
 4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks.
-5. `Cgi` converts the CGI response into `Response`. An otherwise-empty CGI error response receives the default HTML body before `Http` serializes it for the client.
+5. `Cgi` records its start time and `Worker` checks its 15-second lifetime during the periodic maintenance sweep. On normal completion, `Worker` reaps the child non-blockingly before converting the CGI output into a `Response`. On timeout or failure, it closes CGI pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, reaps the child, then sends the default `502` response.
 
 The flow is wired end to end, but it needs the reliability work listed above before it meets the subject's non-blocking and no-hang requirements.
 
@@ -154,8 +156,8 @@ The flow is wired end to end, but it needs the reliability work listed above bef
 - `Implemented`: listening sockets, client sockets, and the parent ends of CGI pipes are set non-blocking.
 - `Implemented`: one `Poller` drives socket and CGI pipe readiness.
 - `Implemented`: socket and pipe read/write paths use their return values and do not inspect `errno` after `read`, `recv`, `write`, or `send`.
-- `Partial`: client and CGI error/hangup events close their managed fds without throwing, while partial writes retain their cursor. Client inactivity expiry is implemented; broader stress behavior still needs work.
-- `Planned`: add timeout handling for CGI jobs.
+- `Partial`: client and CGI error/hangup events close their managed fds without throwing, while partial writes retain their cursor. Client inactivity and CGI job expiry are implemented; broader stress behavior still needs work.
+- `To Fix`: complete remaining CGI pipe/body/EOF edge cases and resilience coverage.
 
 ## Subject-Critical Gaps
 
@@ -166,7 +168,7 @@ The project still needs the following mandatory behavior:
 3. Static file serving from configured roots, index files, autoindex, uploads, `POST`, and `DELETE`.
 4. Redirection and configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
-6. Hardened CGI execution, timeouts, child reaping, and full request-body/EOF handling.
+6. Hardened CGI execution and full request-body/EOF handling.
 7. Repeatable compliance tests and a subject-compliant README.
 
 The optional bonus work remains cookie/session support and multiple CGI types.
