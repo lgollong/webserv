@@ -41,6 +41,7 @@ main
 - `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
 - `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
 - Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
+- Queues a selected route's configured 3xx response with `Location` before it can enter CGI or static-file handling.
 - `To Fix`: CGI route selection still comes from the mock configuration rather than parsed server/location directives.
 
 ### `Poller`
@@ -127,15 +128,15 @@ main
 1. `Worker` receives a readiness event for a client socket and reads bytes into `Connection::inbuf`.
 2. `Http` parses a complete `Request` when enough bytes are buffered.
 3. `Config` returns a route.
-4. `StaticFile` resolves the request relative to the selected route root and creates `Content` from a regular disk file or an error status.
+4. A configured 3xx route is serialized with its `Location` header; otherwise `StaticFile` resolves the request relative to the selected route root and creates `Content` from a regular disk file or an error status.
 5. `Http` serializes a `Response` into `Connection::outbuf`.
 6. `Worker` changes the client interest to `POLLOUT` and writes until the buffer is complete.
 
 If later request bytes were already buffered on that client socket, they remain in `Connection::inbuf` while this response owns the current `Transaction`. After the last response byte flushes, `Worker` resets that transaction and dispatches one complete buffered next request without waiting for another client write.
 
-HTTP/1.1 persistence is active by default. If the normalized request `Connection` header contains a comma-delimited `close` token, `Worker` adds `Connection: close` to that response and closes that client only after the response flushes. Parser-error responses always use the same close-after-flush path. The worker applies this policy to static and CGI responses and does not let CGI-provided `Connection` headers override it.
+HTTP/1.1 persistence is active by default. If the normalized request `Connection` header contains a comma-delimited `close` token, `Worker` adds `Connection: close` to that response and closes that client only after the response flushes. Parser-error responses always use the same close-after-flush path. The worker applies this policy to redirect, static, and CGI responses and does not let CGI-provided `Connection` headers override it.
 
-This establishes the intended ownership flow, but static file serving and route resolution remain incomplete.
+This establishes the intended ownership flow, but parsed route/server resolution remains incomplete.
 
 ### Parser Failure
 
@@ -161,7 +162,7 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 
 ## Connection Lifecycle Verification
 
-`make connection-lifecycle-test` builds and runs a separate fast C++98 loopback suite. It starts and reaps its own server, verifies fragmented requests receive no early response, checks sequential default-persistent requests and a concurrent second client, and reads two responses from one buffered CGI-plus-static request sequence. It also verifies that static, CGI, and parser-error close cases return exactly one `Connection: close` header and EOF only after their complete response. The command exits non-zero for an incorrect response boundary, missing/early EOF, unavailable listener, or server failure.
+`make connection-lifecycle-test` builds and runs a separate fast C++98 loopback suite. It starts and reaps its own server, verifies fragmented requests receive no early response, checks sequential default-persistent requests and a concurrent second client, verifies the configured `/redirect` response has `302 Found`, `Location: /gallery`, empty framing, and persistence, and reads two responses from one buffered CGI-plus-static request sequence. It also verifies that static, redirect, CGI, and parser-error close cases return exactly one `Connection: close` header and EOF only after their complete response. The command exits non-zero for an incorrect response boundary, missing/early EOF, unavailable listener, or server failure.
 
 ## CGI Pipe Verification
 
@@ -182,7 +183,7 @@ The project still needs the following mandatory behavior:
 1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
 2. Finish configuration-driven request-body limits, accurate errors, and method restrictions.
 3. Directory index/autoindex, uploads, `POST`, and `DELETE` behavior.
-4. Redirection and configured error pages.
+4. Configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
 6. Hardened CGI execution and full request-body/EOF handling.
 7. Repeatable compliance tests.

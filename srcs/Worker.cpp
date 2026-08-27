@@ -295,6 +295,20 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.keep_alive = !conn.close_after_write;
 	conn.txn.route = config.route(conn.txn.request);
 
+	if (conn.txn.route.redirect_status >= 300 && conn.txn.route.redirect_status < 400 &&
+		!conn.txn.route.redirect_target.empty()) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " redirecting to "
+			<< conn.txn.route.redirect_target;
+		conn.txn.response.status = conn.txn.route.redirect_status;
+		conn.txn.response.headers["Location"] = conn.txn.route.redirect_target;
+		applyConnectionPolicy(conn, conn.txn.response);
+		conn.outbuf = http.build(conn.txn.response);
+		conn.sent = 0;
+		conn.phase = WRITING;
+		poller.setEvents(conn.fd, POLLOUT);
+		return ;
+	}
+
 	if (conn.txn.route.is_cgi == true) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
 		conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
