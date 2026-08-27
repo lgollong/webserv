@@ -120,7 +120,7 @@ The normal call currently uses a temporary 10,000,000-byte body limit. `Http` al
 
 `Worker` uses the error-status overload. On a `-1` result, it receives `400` for malformed syntax/framing, `413` for a body over the parser limit, or `431` for a header limit. It clears the unprocessable input, asks `Http::defaultErrorResponse()` for a matching HTML `Response`, serializes it through `Http::build()`, marks `Connection::close_after_write`, and switches the fd to `POLLOUT`. This prevents malformed data from leaving the connection waiting in `POLLIN` forever while still returning a complete HTTP response.
 
-`Worker` removes exactly that many bytes from `conn.inbuf` only after a complete result. This is the key ownership rule: **`Worker` owns the byte buffer; `Http` interprets it.**
+`Worker` removes exactly that many bytes from `conn.inbuf` only after a complete result, before it resolves the route and queues that request's response. It processes at most one request while the client is in `READING`, so the resulting response or CGI job exclusively owns the current `Transaction`. Any later pipelined bytes stay in `conn.inbuf` until the current response flushes. This is the key ownership rule: **`Worker` owns the byte buffer; `Http` interprets it.**
 
 Current-state note: request-line, header syntax/framing, fixed-limit `Content-Length` and chunked-body assembly, and default parser-error responses are implemented. Configuration-driven body-size policy and configured custom error-page bodies remain incomplete.
 
@@ -164,7 +164,7 @@ When the client socket reports `POLLOUT`, [`Worker::onWritable()`](../srcs/Worke
 conn.outbuf.data() + conn.sent
 ```
 
-`conn.sent` is the partial-write cursor. A positive write refreshes the client's activity time. If a write transfers only part of the response, the cursor advances and the rest stays queued for a later `POLLOUT`. When all bytes have been written, the worker clears the output buffer and resets `conn.sent`. For a parser failure, `close_after_write` is set and the worker closes only that connection at this point. Otherwise it resets `conn.txn`, returns the phase to `READING`, and switches the client interest back to `POLLIN`.
+`conn.sent` is the partial-write cursor. A positive write refreshes the client's activity time. If a write transfers only part of the response, the cursor advances and the rest stays queued for a later `POLLOUT`. When all bytes have been written, the worker clears the output buffer and resets `conn.sent`. For a parser failure, `close_after_write` is set and the worker closes only that connection at this point. Otherwise it resets `conn.txn`, returns the phase to `READING`, switches the client interest back to `POLLIN`, and immediately dispatches one complete request already retained in `conn.inbuf`. HTTP/1.1 `Connection` header policy remains the next connection-lifecycle task.
 
 This is the foundation for non-blocking output: no response assumes it can be sent in one system call.
 
