@@ -30,7 +30,7 @@ class Worker {
 		StaticFile                 &files;
 		Logger                     &logger;
 
-		void acceptNew(int listen_fd);
+		void acceptNew(int listen_fd, size_t serverIndex);
 		void onReadable(Connection &conn);
 		void onWritable(Connection &conn);
 		void onCgiReadable(Connection &conn);

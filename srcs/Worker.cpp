@@ -26,7 +26,7 @@ Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &
 
 Worker::~Worker() {}
 
-static int setupListener(int port) {
+static int setupListener(const ServerConfig &server) {
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0)
 		throw std::runtime_error(std::string("socket: ") + strerror(errno));
@@ -39,8 +39,11 @@ static int setupListener(int port) {
 	std::memset(&addr, 0, sizeof(addr));
 
 	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons(port);
+	if (inet_pton(AF_INET, server.host.c_str(), &addr.sin_addr) != 1) {
+		close(fd);
+		throw std::runtime_error("invalid IPv4 listener address");
+	}
+	addr.sin_port = htons(server.port);
 
 	if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
 		throw std::runtime_error(std::string("bind: ") + strerror(errno));
@@ -126,13 +129,16 @@ static const time_t kCgiTimeoutSeconds = 15;
 static const time_t kCgiTerminationGraceSeconds = 2;
 
 void Worker::run() {
-	// setup listener
-	// @todo take port from config
-	// @todo server must be able to listen on multiple ports at the same time
-	const int port = 8080;
-	int listen_fd = setupListener(port);
-	poller.add(listen_fd, POLLIN);
-	logger.debug() << "Worker: " << "fd: " << listen_fd << " listening on :" << port;
+	std::map<int, size_t> listeners;
+	const std::vector<ServerConfig> &servers = config.servers();
+	if (servers.empty())
+		throw std::runtime_error("configuration has no servers");
+	for (size_t index = 0; index < servers.size(); ++index) {
+		int listenFd = setupListener(servers[index]);
+		poller.add(listenFd, POLLIN);
+		listeners[listenFd] = index;
+		logger.debug() << "Worker: " << "fd: " << listenFd << " listening on :" << servers[index].port;
+	}
 
 	// loop
 		// poll to get ready fds
@@ -160,14 +166,19 @@ void Worker::run() {
 		for (size_t i = 0; i < ready_fds.size(); i++) {
 			if (ready_fds[i].revents == 0)
 				continue;
-			if (ready_fds[i].fd == listen_fd) {
+			std::map<int, size_t>::iterator listener = listeners.find(ready_fds[i].fd);
+			if (listener != listeners.end()) {
 				if (ready_fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
 					logger.error("listener received a poll error event");
-					poller.remove(listen_fd);
-					close(listen_fd);
+					int failedFd = listener->first;
+					size_t serverIndex = listener->second;
+					poller.remove(failedFd);
+					close(failedFd);
+					listeners.erase(listener);
 					try {
-						listen_fd = setupListener(port);
-						poller.add(listen_fd, POLLIN);
+						int replacementFd = setupListener(servers[serverIndex]);
+						poller.add(replacementFd, POLLIN);
+						listeners[replacementFd] = serverIndex;
 					}
 					catch (const std::exception &e) {
 						logger.error(e.what());
@@ -176,8 +187,7 @@ void Worker::run() {
 					continue;
 				}
 				if (ready_fds[i].revents & POLLIN) {
-					logger.debug() << "Worker: " << "fd: " << listen_fd << " listener: incoming connection found! accepting...";
-					acceptNew(listen_fd);
+					acceptNew(ready_fds[i].fd, listener->second);
 				}
 				continue;
 			}
@@ -228,7 +238,7 @@ void Worker::run() {
 	}
 }
 
-void Worker::acceptNew(int listen_fd) {
+void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 	sockaddr_in client_addr;
 	socklen_t len = sizeof(client_addr);
 
@@ -247,6 +257,7 @@ void Worker::acceptNew(int listen_fd) {
 
 	Connection connection;
 	connection.fd = client_fd;
+	connection.server_index = serverIndex;
 	connection.phase = READING;
 	connection.last_activity = time(NULL);
 	connections[client_fd] = connection;
@@ -295,7 +306,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 		return ;
 
 	int parseStatus = 0;
-	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, config.bodyLimit(), parseStatus);
+	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, config.bodyLimit(conn.server_index), parseStatus);
 	if (req_size < 0) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected request with status " << parseStatus;
 		queueParserError(conn, parseStatus);
@@ -308,7 +319,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.inbuf.erase(0, static_cast<size_t>(req_size));
 	conn.close_after_write = requestWantsClose(conn.txn.request);
 	conn.keep_alive = !conn.close_after_write;
-	conn.txn.route = config.route(conn.txn.request);
+	conn.txn.route = config.route(conn.server_index, conn.txn.request);
 
 	if (!routeAllowsMethod(conn.txn.route, conn.txn.request.method)) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " rejected method "

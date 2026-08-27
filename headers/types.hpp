@@ -126,6 +126,7 @@ struct Transaction {
 // Per-socket state; outlives individual requests on keep-alive connections.
 struct Connection {
 	int          fd;
+	size_t       server_index;
 	Phase        phase;
 	std::string  inbuf;
 	std::string  outbuf;
@@ -135,7 +136,7 @@ struct Connection {
 	time_t       last_activity;
 	Transaction  txn;
 
-	Connection() : fd(-1), phase(IDLE), sent(0), keep_alive(false), close_after_write(false), last_activity(0) {}
+	Connection() : fd(-1), server_index(0), phase(IDLE), sent(0), keep_alive(false), close_after_write(false), last_activity(0) {}
 
 	bool hasClientTimedOut(time_t now, time_t timeout) const {
 		if (phase == RUNNING_CGI || last_activity == 0 || now < last_activity)

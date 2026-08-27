@@ -8,7 +8,7 @@ Each `ServerConfig` represents one listener and its server-level defaults.
 
 | Field | Runtime meaning |
 | --- | --- |
-| `host`, `port` | Interface and port for the future multi-listener worker. |
+| `host`, `port` | Interface and port bound by one worker listener. |
 | `server_name` | Server identity used by future request selection. |
 | `root` | Default document root. |
 | `client_max_body_size` | Maximum decoded request-body size. |
@@ -42,6 +42,6 @@ Until #4 parses configuration text, `Config` explicitly builds a reference in-me
 | `0.0.0.0:8080` | `/redirect` | `302` redirect target. |
 | `127.0.0.1:8081` | `/` | A second listener/server model. |
 
-`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server, and `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero while `Worker` still runs only the first listener. #47 will bind each accepted connection to its listener server index and pass it to these APIs.
+`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server, and `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
 
 The mock is not a future parse-error fallback. Once #4 supplies parsing, an unreadable or invalid configuration must report an error instead of constructing this fixture.

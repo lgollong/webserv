@@ -62,7 +62,7 @@ static bool writeDeleteFixture() {
 	return written == static_cast<ssize_t>(sizeof(body) - 1);
 }
 
-static int connectToServer() {
+static int connectToServer(int port = kPort) {
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0)
 		return -1;
@@ -70,7 +70,7 @@ static int connectToServer() {
 	sockaddr_in address;
 	std::memset(&address, 0, sizeof(address));
 	address.sin_family = AF_INET;
-	address.sin_port = htons(kPort);
+	address.sin_port = htons(port);
 	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	if (connect(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0) {
 		close(fd);
@@ -259,10 +259,21 @@ int main() {
 		return 1;
 	}
 
-	int fragmented = connectToServer();
-	expect(fragmented >= 0, "fragmented client connects");
 	std::string pending;
 	std::string response;
+	int secondary = connectToServer(8081);
+	expect(secondary >= 0, "secondary configured listener accepts a client");
+	pending.clear();
+	if (secondary >= 0) {
+		expect(sendAll(secondary, request("/", "")), "secondary listener request is sent");
+		expect(takeResponse(secondary, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+			response.find("Secondary index") != std::string::npos,
+			"secondary listener resolves the secondary server root");
+		close(secondary);
+	}
+
+	int fragmented = connectToServer();
+	expect(fragmented >= 0, "fragmented client connects");
 	if (fragmented >= 0) {
 		expect(sendAll(fragmented, "GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n"),
 			"fragmented request prefix is sent");
