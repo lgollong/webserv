@@ -91,6 +91,26 @@ static std::string extensionOf(const std::string &path) {
 	return path.substr(dot);
 }
 
+static bool selectCgiHandler(const std::string &path,
+	const std::map<std::string, std::string> &handlers, std::string &scriptName,
+	std::string &handlerPath) {
+	std::string::size_type end = path.find('/', 1);
+	while (true) {
+		std::string candidate = (end == std::string::npos) ? path : path.substr(0, end);
+		std::map<std::string, std::string>::const_iterator handler =
+			handlers.find(extensionOf(candidate));
+		if (handler != handlers.end()) {
+			scriptName = candidate;
+			handlerPath = handler->second;
+			return true;
+		}
+		if (end == std::string::npos)
+			break;
+		end = path.find('/', end + 1);
+	}
+	return false;
+}
+
 Route Config::route(const Request &request) const {
 	return route(0, request);
 }
@@ -115,11 +135,10 @@ Route Config::route(size_t serverIndex, const Request &request) const {
 
 	selected.is_cgi = false;
 	selected.cgi_pass.clear();
-	std::map<std::string, std::string>::const_iterator handler =
-		selected.cgi_handlers.find(extensionOf(request.path));
-	if (handler != selected.cgi_handlers.end()) {
+	selected.cgi_script_name.clear();
+	if (selectCgiHandler(request.path, selected.cgi_handlers, selected.cgi_script_name,
+		selected.cgi_pass)) {
 		selected.is_cgi = true;
-		selected.cgi_pass = handler->second;
 	}
 	return selected;
 }

@@ -61,8 +61,13 @@ int main() {
 		"redirect route supplies redirect status, target, and method policy");
 
 	Route cgi = config.route(requestFor("/test.sh"));
-	expect(cgi.location == "/" && cgi.is_cgi && cgi.cgi_pass == "./contents/cgi/test.sh",
-		"CGI extension selects the configured handler");
+	expect(cgi.location == "/" && cgi.is_cgi && cgi.cgi_pass == "./contents/cgi/test.sh" &&
+		cgi.cgi_script_name == "/test.sh", "CGI extension selects the configured handler and URL script");
+
+	Route cgiPathInfo = config.route(requestFor("/test.sh/extra"));
+	expect(cgiPathInfo.is_cgi && cgiPathInfo.cgi_script_name == "/test.sh" &&
+		cgiPathInfo.cgi_pass == "./contents/cgi/test.sh",
+		"CGI script selection preserves a suffix for PATH_INFO");
 
 	Route boundary = config.route(requestFor("/uploads-elsewhere"));
 	expect(boundary.location == "/", "location prefix matching respects path boundaries");

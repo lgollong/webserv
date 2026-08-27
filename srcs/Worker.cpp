@@ -396,7 +396,8 @@ void Worker::processBufferedRequest(Connection &conn) {
 
 	if (conn.txn.route.is_cgi == true) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
-		conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
+		conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route,
+			config.servers()[conn.server_index]);
 		if (conn.txn.cgi.failed) {
 			failCgiJob(conn);
 			return ;

@@ -202,6 +202,27 @@ int main() {
 		"CGI receives and returns a request body");
 
 	response.clear();
+	std::string contextBody = "full request context";
+	std::string context = "POST /test.sh/extra?context HTTP/1.1\r\nHost: client.example\r\n"
+		"Content-Type: text/plain\r\nX-Cgi-Test: accepted\r\nContent-Length: ";
+	snprintf(length, sizeof(length), "%lu", static_cast<unsigned long>(contextBody.size()));
+	context += length;
+	context += "\r\n\r\n" + contextBody;
+	expect(request(context, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("REQUEST_METHOD=POST\n") != std::string::npos &&
+		response.find("SCRIPT_NAME=/test.sh\n") != std::string::npos &&
+		response.find("PATH_INFO=/extra\n") != std::string::npos &&
+		response.find("QUERY_STRING=context\n") != std::string::npos &&
+		response.find("SERVER_NAME=localhost\n") != std::string::npos &&
+		response.find("SERVER_PORT=8080\n") != std::string::npos &&
+		response.find("SERVER_PROTOCOL=HTTP/1.1\n") != std::string::npos &&
+		response.find("CONTENT_TYPE=text/plain\n") != std::string::npos &&
+		response.find("HTTP_X_CGI_TEST=accepted\n") != std::string::npos &&
+		response.find("BODY=" + contextBody + "\n") != std::string::npos &&
+		response.find("RELATIVE_FILE=CGI working directory is correct.\n") != std::string::npos,
+		"CGI receives complete request context and runs in its script directory");
+
+	response.clear();
 	expect(request(getRequest("/test.sh?delayed"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
 		response.find("You sent:") != std::string::npos,
 		"CGI delayed output completes through readiness events");
