@@ -124,6 +124,7 @@ main
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
 - `Connection` owns socket identity, input/output buffers, partial-write position, per-response persistence/close state, last activity, and its current transaction. Client read/write phases use its last-activity timestamp for the 30-second client timeout.
 - `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion/failure state, start/progress timestamps, and termination state.
+- `SessionStore` is process-local state owned by `Worker`. It parses the `webserv_session` request cookie, creates opaque `/dev/urandom`-backed identifiers, builds one `HttpOnly` cookie value with a 30-minute lifetime, and removes expired entries during the existing maintenance sweep. `Planned`: #49 will attach this reusable store to one reference-mock demonstration route.
 - `Partial`: client and registered CGI fds now have an explicit shared cleanup path. One response owns its transaction until it flushes; later buffered request bytes are retained and dispatched only after that reset. HTTP/1.1 persistence/close policy is active; remaining CGI protocol edge cases are incomplete.
 
 ## Current Request Flow
@@ -172,6 +173,10 @@ The pipe/body/EOF flow and request context are wired and covered end to end. Con
 ## CGI Pipe Verification
 
 `make cgi-pipe-test` builds and runs a focused C++98 loopback suite. It verifies CGI request-body forwarding; CGI/1.1 method, URL script name, path info, query, server, protocol, content type, and custom-header context; and a fixture file opened relative to the script directory. It also covers delayed output, output larger than one 4096-byte collection read, a CGI response with no CGI-provided `Content-Length` (the HTTP serializer frames it), early CGI stdin closure with a controlled `502 Bad Gateway`, and listener survival afterward.
+
+## Session Store Verification
+
+`make session-store-test` builds a focused C++98 unit suite for the process-local session foundation. It covers cookie parsing and whitespace, missing/empty/duplicate cookie rejection, entropy-backed 256-bit identifier creation, `Set-Cookie` construction, request lookup, expiry, and periodic cleanup. No HTTP route exposes sessions until #49.
 
 ## Non-Blocking Rules
 

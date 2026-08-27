@@ -34,12 +34,15 @@ Before reading the loop, it helps to know the data structs in [`headers/types.hp
 | `Response` | Outgoing status, headers, and body. | One `Transaction`; serialized by `Http`. |
 | `Route` | Resolved root, CGI settings, and allowed methods. | One `Transaction`; returned by `Config`. |
 | `CgiJob` | Child pid, stdin/stdout fds, output, write progress, and failure state. | One `Transaction` while a CGI request runs. |
+| `SessionStore` | Process-local opaque sessions and cookie helpers. | Owned by `Worker`; not yet attached to a request route. |
 | `Transaction` | One request-to-response cycle. | Nested inside `Connection`. |
 | `Connection` | Client fd, input/output buffers, partial-write cursor, and current transaction. | Owned by `Worker` for one client socket. |
 
 The important split is **connection versus transaction**. A connection can outlive one request, so its input buffer, output buffer, and fd live in `Connection`. A parsed request, route, response, and CGI state belong to its `Transaction`.
 
 `Worker` owns connections by value in `std::map<int, Connection> connections`. A second map, `fdToConnection`, maps a client fd and any CGI pipe fds back to the owning connection. This lets one client connection be found when `poll()` reports activity on its socket or a related CGI pipe.
+
+`Worker` also owns a process-local `SessionStore` for the optional cookie/session bonus. It accepts only one well-formed `webserv_session` cookie value, creates opaque 256-bit identifiers from `/dev/urandom`, and removes expired entries during the existing maintenance sweep. The store is deliberately not part of `Connection` or `Transaction`, because a later cookie-bearing request must find the same server-side state. #49 will add the reference-mock route that actually uses it.
 
 ## 3. Why the Server Uses `poll()`
 

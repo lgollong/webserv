@@ -9,6 +9,7 @@
 #include "Cgi.hpp"
 #include "StaticFile.hpp"
 #include "Logger.hpp"
+#include "Session.hpp"
 
 class WorkerEventLoopTests;
 
@@ -33,6 +34,7 @@ class Worker {
 		Cgi                        &cgi;
 		StaticFile                 &files;
 		Logger                     &logger;
+		SessionStore               sessions;
 
 		void acceptNew(int listen_fd, size_t serverIndex);
 		void dispatchReadyEvents(const std::vector<pollfd> &readyFds, std::map<int, size_t> &listeners,
