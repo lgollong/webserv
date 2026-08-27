@@ -184,6 +184,6 @@ The project still needs the following mandatory behavior:
 4. Redirection and configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
 6. Hardened CGI execution and full request-body/EOF handling.
-7. Repeatable compliance tests and a subject-compliant README.
+7. Repeatable compliance tests.
 
 The optional bonus work remains cookie/session support and multiple CGI types.
