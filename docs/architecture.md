@@ -43,6 +43,7 @@ main
 - Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
 - Rejects a request absent from the selected non-empty route method set with a framed `405 Method Not Allowed` response and a deterministic `Allow` header before redirect, CGI, or static dispatch.
 - Dispatches a route-approved `DELETE` to `StaticFile`, which removes only a route-relative regular disk file and returns `204 No Content`; directories and rejected paths remain errors.
+- Dispatches POST to a route with `upload_store` to exclusive, safe single-filename disk storage; success returns `201 Created` and duplicate or invalid targets are rejected.
 - Queues a selected route's configured 3xx response with `Location` before it can enter CGI or static-file handling.
 - `To Fix`: CGI route selection still comes from the mock configuration rather than parsed server/location directives.
 
