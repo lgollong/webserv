@@ -112,6 +112,16 @@ int main() {
 		"delete traversal is rejected before disk access");
 	std::remove(fixturePath.c_str());
 
+	Route uploads = routeFor("/uploads", "./contents");
+	uploads.upload_store = "./contents/uploads";
+	Request upload = requestFor("/uploads/focused-upload.txt");
+	upload.body = "focused upload body";
+	expect(files.upload(uploads, upload).status == 201, "stores an authorized upload");
+	expect(files.upload(uploads, upload).status == 403, "does not overwrite an existing upload");
+	expect(files.upload(uploads, requestFor("/uploads/../unsafe.txt")).status == 400,
+		"rejects traversal upload names");
+	std::remove("./contents/uploads/focused-upload.txt");
+
 	if (failures == 0)
 		std::cout << "static file tests passed" << std::endl;
 	return failures == 0 ? 0 : 1;

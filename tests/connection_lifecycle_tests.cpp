@@ -317,7 +317,7 @@ int main() {
 			"method rejection runs before redirect handling");
 
 		expect(sendAll(persistent, requestWithMethod("POST", "/uploads", "")), "allowed upload-route POST is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 400 Bad Request") == 0,
 			"allowed methods continue to their existing downstream handler");
 
 		expect(sendAll(persistent, requestWithMethod("DELETE", "/delete-lifecycle-fixture.txt", "")),

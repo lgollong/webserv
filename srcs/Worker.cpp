@@ -338,6 +338,19 @@ void Worker::processBufferedRequest(Connection &conn) {
 		poller.setEvents(conn.fd, POLLOUT);
 		return ;
 	}
+	if (conn.txn.request.method == "POST" && !conn.txn.route.upload_store.empty()) {
+		Content content = files.upload(conn.txn.route, conn.txn.request);
+		conn.txn.response.status = content.status;
+		conn.txn.response.body = content.body;
+		conn.txn.response.headers["Content-Type"] = content.mime_type;
+		addDefaultErrorBody(http, conn.txn.response);
+		applyConnectionPolicy(conn, conn.txn.response);
+		conn.outbuf = http.build(conn.txn.response);
+		conn.sent = 0;
+		conn.phase = WRITING;
+		poller.setEvents(conn.fd, POLLOUT);
+		return ;
+	}
 
 	if (conn.txn.route.redirect_status >= 300 && conn.txn.route.redirect_status < 400 &&
 		!conn.txn.route.redirect_target.empty()) {

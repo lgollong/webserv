@@ -247,3 +247,42 @@ Content StaticFile::erase(const Route &route, const Request &request) {
 	content.status = 204;
 	return content;
 }
+
+static bool safeUploadName(const std::string &name) {
+	if (name.empty() || name == "." || name == ".." || name.find('/') != std::string::npos)
+		return false;
+	for (std::string::size_type i = 0; i < name.size(); ++i) {
+		unsigned char character = static_cast<unsigned char>(name[i]);
+		if (!std::isalnum(character) && character != '.' && character != '_' && character != '-')
+			return false;
+	}
+	return true;
+}
+
+Content StaticFile::upload(const Route &route, const Request &request) {
+	if (route.upload_store.empty() || !matchesLocation(request.path, route.location))
+		return errorContent(403);
+	std::string name = request.path.substr(route.location.size());
+	while (!name.empty() && name[0] == '/')
+		name.erase(0, 1);
+	if (!safeUploadName(name))
+		return errorContent(400);
+	std::string path = joinPath(route.upload_store, name);
+	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (fd < 0)
+		return errorContent(403);
+	std::string::size_type written = 0;
+	while (written < request.body.size()) {
+		ssize_t count = write(fd, request.body.data() + written, request.body.size() - written);
+		if (count <= 0) {
+			close(fd);
+			std::remove(path.c_str());
+			return errorContent(500);
+		}
+		written += static_cast<std::string::size_type>(count);
+	}
+	close(fd);
+	Content content;
+	content.status = 201;
+	return content;
+}
