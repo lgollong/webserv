@@ -12,7 +12,7 @@ Each `ServerConfig` represents one listener and its server-level defaults.
 | `server_name` | Server identity used by future request selection. |
 | `root` | Default document root. |
 | `client_max_body_size` | Maximum decoded request-body size. |
-| `error_pages` | HTTP status to configured error-page path mapping. |
+| `error_pages` | HTTP status to configured error-page file path mapping. `Worker` selects from the accepted connection's server; an unavailable file falls back to the default error body. |
 | `locations` | Normalized `Route` records for this server. |
 
 ## `Route`
@@ -43,5 +43,7 @@ Until #4 parses configuration text, `Config` explicitly builds a reference in-me
 | `127.0.0.1:8081` | `/` | A second listener/server model. |
 
 `Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server, and `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
+
+`Config::errorPage(serverIndex, status)` returns the selected server's configured path for an error status. `Worker` reads that regular file through `StaticFile`, preserves the original response status, and uses the file's MIME type. Missing, non-regular, unreadable, or unconfigured pages retain the deterministic `Http::defaultErrorResponse()` fallback.
 
 The mock is not a future parse-error fallback. Once #4 supplies parsing, an unreadable or invalid configuration must report an error instead of constructing this fixture.

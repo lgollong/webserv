@@ -52,6 +52,13 @@ int main() {
 		binary.body.size() > 32 && binary.body[0] == '\0',
 		"serves binary bytes with the matching MIME type");
 
+	Content errorPage = files.readErrorPage("./contents/errors/404.html");
+	expect(errorPage.status == 200 && errorPage.mime_type == "text/html" &&
+		errorPage.body.find("Primary custom 404") != std::string::npos,
+		"reads a configured regular error page with its MIME type");
+	expect(files.readErrorPage("./contents/errors/missing.html").status != 200,
+		"reports a missing configured error page without serving content");
+
 	expect(files.serve(root, requestFor("/files/missing.txt")).status == 404,
 		"missing files return 404");
 	Content rootIndex = files.serve(root, requestFor("/"));

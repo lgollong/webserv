@@ -56,9 +56,21 @@ static int setupListener(const ServerConfig &server) {
 	return fd;
 }
 
-static void addDefaultErrorBody(Http &http, Response &response) {
-	if (response.status >= 400 && response.body.empty())
-		response = http.defaultErrorResponse(response.status);
+static void addErrorBody(Config &config, StaticFile &files, Http &http, size_t serverIndex,
+	Response &response) {
+	if (response.status < 400 || !response.body.empty())
+		return ;
+
+	std::string path = config.errorPage(serverIndex, response.status);
+	if (!path.empty()) {
+		Content content = files.readErrorPage(path);
+		if (content.status == 200) {
+			response.body = content.body;
+			response.headers["Content-Type"] = content.mime_type;
+			return ;
+		}
+	}
+	response = http.defaultErrorResponse(response.status);
 }
 
 static bool routeAllowsMethod(const Route &route, const std::string &method) {
@@ -291,7 +303,8 @@ void Worker::onCgiWritable(Connection &conn) {
 void Worker::queueParserError(Connection &conn, int status) {
 	conn.inbuf.clear();
 	conn.txn = Transaction();
-	conn.txn.response = http.defaultErrorResponse(status);
+	conn.txn.response.status = status;
+	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 	conn.keep_alive = false;
 	conn.close_after_write = true;
 	applyConnectionPolicy(conn, conn.txn.response);
@@ -325,7 +338,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " rejected method "
 			<< conn.txn.request.method;
 		conn.txn.response.status = 405;
-		addDefaultErrorBody(http, conn.txn.response);
+		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 		conn.txn.response.headers["Allow"] = allowedMethodsValue(conn.txn.route);
 		applyConnectionPolicy(conn, conn.txn.response);
 		conn.outbuf = http.build(conn.txn.response);
@@ -341,7 +354,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 		conn.txn.response.status = content.status;
 		conn.txn.response.body = content.body;
 		conn.txn.response.headers["Content-Type"] = content.mime_type;
-		addDefaultErrorBody(http, conn.txn.response);
+		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 		applyConnectionPolicy(conn, conn.txn.response);
 		conn.outbuf = http.build(conn.txn.response);
 		conn.sent = 0;
@@ -354,7 +367,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 		conn.txn.response.status = content.status;
 		conn.txn.response.body = content.body;
 		conn.txn.response.headers["Content-Type"] = content.mime_type;
-		addDefaultErrorBody(http, conn.txn.response);
+		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 		applyConnectionPolicy(conn, conn.txn.response);
 		conn.outbuf = http.build(conn.txn.response);
 		conn.sent = 0;
@@ -402,7 +415,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.txn.response.status = content.status;
 	conn.txn.response.body = content.body;
 	conn.txn.response.headers["Content-Type"] = content.mime_type;
-	addDefaultErrorBody(http, conn.txn.response);
+	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 	applyConnectionPolicy(conn, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
 	conn.sent = 0;
@@ -517,7 +530,7 @@ void Worker::finishCgiResponse(Connection &conn) {
 	closeManagedFd(conn.txn.cgi.out_fd);
 	closeManagedFd(conn.txn.cgi.in_fd);
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
-	addDefaultErrorBody(http, conn.txn.response);
+	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 	applyConnectionPolicy(conn, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
 	conn.phase = WRITING;
