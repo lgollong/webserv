@@ -36,6 +36,7 @@ int main() {
 			"secondary listener is configured");
 	}
 	expect(config.bodyLimit() == 10000000, "active reference server supplies the parser body limit");
+	expect(config.bodyLimit(1) == 1000000, "secondary server supplies its body limit");
 
 	Route gallery = config.route(requestFor("/gallery/photos/image.jpg"));
 	expect(gallery.location == "/gallery" && gallery.root == "./contents/gallery",
@@ -63,6 +64,12 @@ int main() {
 	Route fallback = config.route(requestFor("/unknown"));
 	expect(fallback.location == "/" && !fallback.is_cgi && allows(fallback, "DELETE"),
 		"root route remains the static method-policy fallback");
+
+	Route secondary = config.route(1, requestFor("/anything"));
+	expect(secondary.location == "/" && secondary.root == "./contents/secondary" && allows(secondary, "GET"),
+		"explicit secondary server resolves its own root route");
+	expect(config.route(2, requestFor("/anything")).location.empty(),
+		"invalid server index has a predictable empty route");
 
 	if (failures == 0)
 		std::cout << "configuration model tests passed" << std::endl;

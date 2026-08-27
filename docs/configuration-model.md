@@ -42,6 +42,6 @@ Until #4 parses configuration text, `Config` explicitly builds a reference in-me
 | `0.0.0.0:8080` | `/redirect` | `302` redirect target. |
 | `127.0.0.1:8081` | `/` | A second listener/server model. |
 
-The current `Worker` still runs only the first reference server and does not yet create all configured listeners. `Config::route()` therefore resolves the longest matching location on that first server. #7 will consume `Config::servers()` to create listeners, and #13 will select the server associated with a connection before resolving its location.
+`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server, and `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero while `Worker` still runs only the first listener. #47 will bind each accepted connection to its listener server index and pass it to these APIs.
 
 The mock is not a future parse-error fallback. Once #4 supplies parsing, an unreadable or invalid configuration must report an error instead of constructing this fixture.

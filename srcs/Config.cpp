@@ -91,10 +91,14 @@ static std::string extensionOf(const std::string &path) {
 }
 
 Route Config::route(const Request &request) const {
-	if (server_configs.empty())
+	return route(0, request);
+}
+
+Route Config::route(size_t serverIndex, const Request &request) const {
+	if (serverIndex >= server_configs.size())
 		return Route();
 
-	const ServerConfig &server = server_configs[0];
+	const ServerConfig &server = server_configs[serverIndex];
 	Route selected;
 	bool found = false;
 	for (std::vector<Route>::const_iterator it = server.locations.begin(); it != server.locations.end(); ++it) {
@@ -124,7 +128,11 @@ const std::vector<ServerConfig>& Config::servers() const {
 }
 
 size_t Config::bodyLimit() const {
-	if (server_configs.empty())
+	return bodyLimit(0);
+}
+
+size_t Config::bodyLimit(size_t serverIndex) const {
+	if (serverIndex >= server_configs.size())
 		return 10000000;
-	return server_configs[0].client_max_body_size;
+	return server_configs[serverIndex].client_max_body_size;
 }
