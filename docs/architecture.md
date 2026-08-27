@@ -151,6 +151,10 @@ Configured custom error-page bodies remain planned work; they will replace the d
 
 The flow is wired end to end, but it needs the reliability work listed above before it meets the subject's non-blocking and no-hang requirements.
 
+## Resilience Verification
+
+`make resilience-test` builds and runs a repository-local C++98 loopback integration suite against `./webserv`. It starts and reaps its own server process, keeps a silent client and an incomplete request connected until the 30-second client deadline, confirms normal requests still receive `200 OK`, exercises the test CGI fixture's controlled `?stall` mode until the 15-second CGI deadline produces `502 Bad Gateway`, and confirms the listener serves another request. It also disconnects an active stalled CGI client, verifies the recorded child PID disappears within the two-second termination grace plus polling allowance, and checks that the listener remains available. The suite is bounded and exits non-zero for any missed deadline, wrong status, early server exit, or unreaped CGI child.
+
 ## Non-Blocking Rules
 
 - `Implemented`: listening sockets, client sockets, and the parent ends of CGI pipes are set non-blocking.
