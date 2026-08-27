@@ -10,6 +10,8 @@
 #include "StaticFile.hpp"
 #include "Logger.hpp"
 
+class WorkerEventLoopTests;
+
 // Runs the loop; owns all connections; dispatches on phase; orchestrates the other services.
 // Every other class is a passive service Worker calls; services never call each other.
 class Worker {
@@ -20,6 +22,8 @@ class Worker {
 		void run();
 
 	private:
+		friend class WorkerEventLoopTests;
+
 		std::map<int, Connection>  connections;
 		std::map<int, Connection*> fdToConnection;
 		std::map<pid_t, time_t>    pendingCgiReaps;
@@ -31,6 +35,8 @@ class Worker {
 		Logger                     &logger;
 
 		void acceptNew(int listen_fd, size_t serverIndex);
+		void dispatchReadyEvents(const std::vector<pollfd> &readyFds, std::map<int, size_t> &listeners,
+			const std::vector<ServerConfig> &servers);
 		void onReadable(Connection &conn);
 		void onWritable(Connection &conn);
 		void onCgiReadable(Connection &conn);

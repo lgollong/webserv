@@ -12,6 +12,8 @@ CONNECTION_LIFECYCLE_TEST = /private/tmp/webserv-connection-lifecycle-tests
 CGI_PIPE_TEST = /private/tmp/webserv-cgi-pipe-tests
 CONFIG_MODEL_TEST = /private/tmp/webserv-config-model-tests
 STATIC_FILE_TEST = /private/tmp/webserv-static-file-tests
+EVENT_LOOP_STRESS_TEST = /private/tmp/webserv-event-loop-stress-tests
+CORE_SRC = $(filter-out $(SRC_DIR)/main.cpp,$(SRC))
 
 all: $(NAME)
 
@@ -35,7 +37,7 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test config-model-test static-file-test
+.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test config-model-test static-file-test event-loop-stress-test
 
 resilience-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/resilience_tests.cpp -o $(RESILIENCE_TEST)
@@ -56,3 +58,7 @@ config-model-test: $(NAME)
 static-file-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/static_file_tests.cpp srcs/StaticFile.cpp -o $(STATIC_FILE_TEST)
 	@$(STATIC_FILE_TEST)
+
+event-loop-stress-test: $(NAME)
+	@$(CXX) $(CXXFLAGS) tests/event_loop_stress_tests.cpp $(CORE_SRC) -o $(EVENT_LOOP_STRESS_TEST)
+	@$(EVENT_LOOP_STRESS_TEST)
