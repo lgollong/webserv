@@ -74,10 +74,10 @@ main
 
 `Partial`.
 
-- Defines `ServerConfig` and `Route` data structures and exposes `route(const Request&)`.
-- The current constructor ignores the supplied config path and creates mock values.
-- The current resolver returns a mock static route, except for `.sh` paths which are treated as CGI.
-- `Planned`: parse the required configuration file syntax, validate it, resolve server and location blocks, and support all mandatory directives.
+- Defines normalized `ServerConfig` and `Route` data structures for listeners, server defaults, location prefixes, methods, redirects, directory behavior, uploads, error pages, request limits, and CGI extension handlers.
+- The explicit reference mock contains two listener/server records and routes for static content, CGI, autoindex/index, uploads, and redirects. `make config-model-test` verifies that contract and longest-prefix resolution on the first reference server.
+- The current resolver selects the first reference server and resolves its longest matching location. It derives the current CGI handler from the request extension and that route's handler map.
+- `Planned`: #4 must parse and validate configuration text into this same normalized model; #7 must create all configured listeners; #13 must select the connection's server before location resolution. Invalid parser input must not fall back to the reference mock.
 
 ### `StaticFile`
 

@@ -31,7 +31,7 @@ The executable currently requires one configuration-file argument:
 ./webserv config/req.config
 ```
 
-At this stage, the `Config` implementation still uses mock routing data and the worker listens on port `8080`; the supplied configuration files document the target configuration format but are not parsed yet. A basic development request can be made with:
+At this stage, the `Config` implementation explicitly builds a reference in-memory configuration model and the worker listens only on its first server (`8080`); supplied configuration files document the target format but are not parsed yet. A basic development request can be made with:
 
 ```sh
 curl -i http://127.0.0.1:8080/
@@ -40,6 +40,7 @@ curl -i http://127.0.0.1:8080/
 ### Tests
 
 ```sh
+make config-model-test
 make connection-lifecycle-test
 make cgi-pipe-test
 make resilience-test
@@ -59,6 +60,7 @@ make re
 
 - [Project subject](docs/subject/en.subject.md)
 - [Architecture and implementation status](docs/architecture.md)
+- [Runtime configuration model](docs/configuration-model.md)
 - [Code walkthrough](docs/code-walkthrough.md)
 - [Contribution workflow for coding agents](AGENTS.md)
 
