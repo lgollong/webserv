@@ -83,9 +83,10 @@ main
 
 `Partial`.
 
-- Provides a MIME-type map and a `serve()` API used by `Worker`.
-- The current implementation returns generated placeholder HTML rather than files from disk.
-- `Planned`: securely resolve paths under configured roots, read static files, implement index files and autoindex, and support upload and `DELETE` behavior.
+- Resolves route-relative request paths under `Route::root`, rejects lexical `.` and `..` traversal segments before disk access, and serves regular disk files through `Content`.
+- Uses filename-based MIME detection, returns `404` for missing files, `403` for rejected, directory, non-regular, or unopenable paths, and `500` for a disk read failure.
+- `make static-file-test` verifies text and binary reads, MIME detection, missing/directory/traversal errors, location-prefix stripping, and location/root rejection.
+- `Planned`: implement index files and autoindex for directory paths, then add method enforcement, uploads, and `DELETE` behavior.
 
 ### `Cgi`
 
@@ -126,7 +127,7 @@ main
 1. `Worker` receives a readiness event for a client socket and reads bytes into `Connection::inbuf`.
 2. `Http` parses a complete `Request` when enough bytes are buffered.
 3. `Config` returns a route.
-4. `StaticFile` creates `Content`, currently placeholder HTML.
+4. `StaticFile` resolves the request relative to the selected route root and creates `Content` from a regular disk file or an error status.
 5. `Http` serializes a `Response` into `Connection::outbuf`.
 6. `Worker` changes the client interest to `POLLOUT` and writes until the buffer is complete.
 
@@ -180,7 +181,7 @@ The project still needs the following mandatory behavior:
 
 1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
 2. Finish configuration-driven request-body limits, accurate errors, and method restrictions.
-3. Static file serving from configured roots, index files, autoindex, uploads, `POST`, and `DELETE`.
+3. Directory index/autoindex, uploads, `POST`, and `DELETE` behavior.
 4. Redirection and configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
 6. Hardened CGI execution and full request-body/EOF handling.

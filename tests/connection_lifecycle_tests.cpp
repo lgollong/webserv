@@ -221,12 +221,12 @@ int main() {
 	std::string pending;
 	std::string response;
 	if (fragmented >= 0) {
-		expect(sendAll(fragmented, "GET /fragmented HTTP/1.1\r\nHost: localhost\r\n"),
+		expect(sendAll(fragmented, "GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n"),
 			"fragmented request prefix is sent");
 		expect(!waitForFd(fragmented, POLLIN, 300), "fragmented request receives no early response");
 		expect(sendAll(fragmented, "\r\n"), "fragmented request is completed");
 		expect(takeResponse(fragmented, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
-			response.find("mock content for /fragmented") != std::string::npos,
+			response.find("<h1>HI</h1>") != std::string::npos,
 			"completed fragmented request receives one response");
 		close(fragmented);
 	}
@@ -235,30 +235,30 @@ int main() {
 	expect(persistent >= 0, "persistent client connects");
 	pending.clear();
 	if (persistent >= 0) {
-		expect(sendAll(persistent, request("/first", "")), "first persistent request is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("mock content for /first") != std::string::npos,
+		expect(sendAll(persistent, request("/files/index.html", "")), "first persistent request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"first persistent request receives a response");
 
 		int secondClient = connectToServer();
 		expect(secondClient >= 0, "second client connects while persistent client remains open");
 		if (secondClient >= 0) {
 			std::string secondPending;
-			expect(sendAll(secondClient, request("/second-client", "")), "second client request is sent");
+			expect(sendAll(secondClient, request("/files/index.html", "")), "second client request is sent");
 			expect(takeResponse(secondClient, secondPending, response) &&
-				response.find("mock content for /second-client") != std::string::npos,
+				response.find("<h1>HI</h1>") != std::string::npos,
 				"second client remains served while persistent client is open");
 			close(secondClient);
 		}
 
-		expect(sendAll(persistent, request("/second", "")), "second persistent request is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("mock content for /second") != std::string::npos,
+		expect(sendAll(persistent, request("/files/index.html", "")), "second persistent request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"second persistent request receives a response");
 
-		std::string buffered = request("/test.sh", "") + request("/after-cgi", "");
+		std::string buffered = request("/test.sh", "") + request("/files/index.html", "");
 		expect(sendAll(persistent, buffered), "buffered CGI and static requests are sent together");
 		expect(takeResponse(persistent, pending, response) && response.find("You sent:") != std::string::npos,
 			"buffered CGI request receives its response first");
-		expect(takeResponse(persistent, pending, response) && response.find("mock content for /after-cgi") != std::string::npos,
+		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"buffered static request receives its distinct response");
 		close(persistent);
 	}
@@ -267,7 +267,7 @@ int main() {
 	expect(closing >= 0, "close-policy client connects");
 	pending.clear();
 	if (closing >= 0) {
-		expect(sendAll(closing, request("/close", "keep-alive, Close")), "close-policy request is sent");
+		expect(sendAll(closing, request("/files/index.html", "keep-alive, Close")), "close-policy request is sent");
 		expect(takeResponse(closing, pending, response) && countOccurrences(response, "Connection: close\r\n") == 1,
 			"close-policy response contains one close header");
 		expect(waitForClose(closing, pending), "close-policy connection closes after its response");
