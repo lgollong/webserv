@@ -42,6 +42,7 @@ main
 - `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
 - Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
 - Rejects a request absent from the selected non-empty route method set with a framed `405 Method Not Allowed` response and a deterministic `Allow` header before redirect, CGI, or static dispatch.
+- Dispatches a route-approved `DELETE` to `StaticFile`, which removes only a route-relative regular disk file and returns `204 No Content`; directories and rejected paths remain errors.
 - Queues a selected route's configured 3xx response with `Location` before it can enter CGI or static-file handling.
 - `To Fix`: CGI route selection still comes from the mock configuration rather than parsed server/location directives.
 
@@ -89,7 +90,7 @@ main
 - For a directory, serves the configured safe index filename when it is a regular file; otherwise returns a deterministic, escaped HTML listing only when autoindex is enabled.
 - Uses filename-based MIME detection, returns `404` for missing files, `403` for rejected, non-regular, unopenable, or non-autoindexed directories, and `500` for a disk read failure.
 - `make static-file-test` verifies text and binary reads, MIME detection, route-root and directory indexes, autoindex, missing/directory/traversal errors, location-prefix stripping, and location/root rejection.
-- `Planned`: add method enforcement, uploads, and `DELETE` behavior.
+- `Planned`: add uploads and POST behavior.
 
 ### `Cgi`
 
@@ -183,7 +184,7 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 The project still needs the following mandatory behavior:
 
 1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
-2. Finish configuration-driven request-body limits, accurate errors, and permitted method behavior.
+2. Finish configuration-driven request-body limits, accurate errors, and upload behavior.
 3. Directory index/autoindex, uploads, `POST`, and `DELETE` behavior.
 4. Configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.

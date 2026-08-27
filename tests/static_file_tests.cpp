@@ -1,6 +1,9 @@
 #include "../headers/StaticFile.hpp"
 
+#include <cstdio>
+#include <fcntl.h>
 #include <iostream>
+#include <unistd.h>
 
 static int failures = 0;
 
@@ -22,6 +25,16 @@ static Request requestFor(const std::string &path) {
 	Request request;
 	request.path = path;
 	return request;
+}
+
+static bool writeFixture(const std::string &path) {
+	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+	if (fd < 0)
+		return false;
+	const char body[] = "disposable static delete fixture\n";
+	ssize_t written = write(fd, body, sizeof(body) - 1);
+	close(fd);
+	return written == static_cast<ssize_t>(sizeof(body) - 1);
 }
 
 int main() {
@@ -84,6 +97,20 @@ int main() {
 		"requests outside the selected location are rejected");
 	expect(files.serve(routeFor("/", ""), requestFor("/files/index.html")).status == 403,
 		"an empty root is rejected");
+
+	const std::string fixturePath = "./contents/static-delete-fixture.txt";
+	expect(writeFixture(fixturePath), "creates a disposable static delete fixture");
+	Content deleted = files.erase(root, requestFor("/static-delete-fixture.txt"));
+	expect(deleted.status == 204 && deleted.body.empty(), "deletes a regular route-relative file without a body");
+	expect(files.serve(root, requestFor("/static-delete-fixture.txt")).status == 404,
+		"deleted static file is no longer served");
+	expect(files.erase(root, requestFor("/files")).status == 403,
+		"directory deletion is rejected");
+	expect(files.erase(root, requestFor("/missing-delete.txt")).status == 404,
+		"missing delete target returns 404");
+	expect(files.erase(root, requestFor("/../AGENTS.md")).status == 403,
+		"delete traversal is rejected before disk access");
+	std::remove(fixturePath.c_str());
 
 	if (failures == 0)
 		std::cout << "static file tests passed" << std::endl;

@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <cstdio>
 #include <csignal>
 #include <cstring>
 #include <fcntl.h>
@@ -49,6 +50,16 @@ static bool serverRunning(pid_t &pid) {
 		return true;
 	pid = -1;
 	return false;
+}
+
+static bool writeDeleteFixture() {
+	int fd = open("./contents/delete-lifecycle-fixture.txt", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+	if (fd < 0)
+		return false;
+	const char body[] = "disposable lifecycle delete fixture\n";
+	ssize_t written = write(fd, body, sizeof(body) - 1);
+	close(fd);
+	return written == static_cast<ssize_t>(sizeof(body) - 1);
 }
 
 static int connectToServer() {
@@ -216,11 +227,13 @@ static int countOccurrences(const std::string &value, const std::string &wanted)
 }
 
 int main() {
+	expect(writeDeleteFixture(), "creates a disposable delete lifecycle fixture");
 	pid_t server = startServer();
 	bool started = server > 0 && waitForServer(server);
 	expect(started, "server starts on loopback port 8080");
 	if (!started) {
 		stopServer(server);
+		std::remove("./contents/delete-lifecycle-fixture.txt");
 		return 1;
 	}
 
@@ -290,6 +303,21 @@ int main() {
 		expect(sendAll(persistent, requestWithMethod("POST", "/uploads", "")), "allowed upload-route POST is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
 			"allowed methods continue to their existing downstream handler");
+
+		expect(sendAll(persistent, requestWithMethod("DELETE", "/delete-lifecycle-fixture.txt", "")),
+			"permitted DELETE request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 204 No Content") == 0 &&
+			response.find("Content-Length: 0\r\n") != std::string::npos,
+			"permitted DELETE removes a file with an empty response");
+
+		expect(sendAll(persistent, request("/delete-lifecycle-fixture.txt", "")),
+			"post-delete GET request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 404 Not Found") == 0,
+			"deleted file is no longer served");
+
+		expect(sendAll(persistent, requestWithMethod("DELETE", "/files", "")), "directory DELETE request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
+			"directory DELETE is rejected without removing the directory");
 
 		expect(sendAll(persistent, request("/gallery", "")), "autoindex request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
@@ -367,6 +395,7 @@ int main() {
 
 	expect(serverRunning(server), "server survives connection lifecycle cases");
 	stopServer(server);
+	std::remove("./contents/delete-lifecycle-fixture.txt");
 	if (failures == 0)
 		std::cout << "connection lifecycle tests passed" << std::endl;
 	return failures == 0 ? 0 : 1;

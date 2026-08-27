@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -227,4 +228,22 @@ Content StaticFile::serve(const Route &route, const Request &request) {
 	if (route.autoindex)
 		return directoryListing(path, request.path);
 	return errorContent(403);
+}
+
+Content StaticFile::erase(const Route &route, const Request &request) {
+	std::string path;
+	if (!resolvePath(route, request, path))
+		return errorContent(403);
+
+	struct stat info;
+	if (stat(path.c_str(), &info) != 0)
+		return errorContent(404);
+	if (!S_ISREG(info.st_mode))
+		return errorContent(403);
+	if (std::remove(path.c_str()) != 0)
+		return errorContent(500);
+
+	Content content;
+	content.status = 204;
+	return content;
 }
