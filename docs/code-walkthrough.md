@@ -168,6 +168,8 @@ conn.outbuf.data() + conn.sent
 
 This is the foundation for non-blocking output: no response assumes it can be sent in one system call.
 
+`make connection-lifecycle-test` starts a separate loopback server and checks this state machine end to end: fragmented input, sequential persistent requests, buffered CGI/static follow-up responses, close-after-flush behavior, and listener survival with another client.
+
 If a write returns zero or a negative value, `onWritable()` closes only that managed connection without inspecting `errno`. Client inactivity and CGI timeout handling are implemented; complete keep-alive policy remains unfinished.
 
 ## 10. CGI Response Path
