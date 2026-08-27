@@ -197,6 +197,14 @@ static std::string request(const std::string &path, const std::string &connectio
 	return value + "\r\n";
 }
 
+static std::string requestWithMethod(const std::string &method, const std::string &path,
+	const std::string &connection) {
+	std::string value = method + " " + path + " HTTP/1.1\r\nHost: localhost\r\n";
+	if (!connection.empty())
+		value += "Connection: " + connection + "\r\n";
+	return value + "\r\n";
+}
+
 static int countOccurrences(const std::string &value, const std::string &wanted) {
 	int count = 0;
 	std::string::size_type pos = 0;
@@ -253,6 +261,35 @@ int main() {
 		expect(sendAll(persistent, request("/files/index.html", "")), "second persistent request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"second persistent request receives a response");
+
+		expect(sendAll(persistent, requestWithMethod("POST", "/gallery", "")), "disallowed POST request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
+			countOccurrences(response, "Allow: GET\r\n") == 1,
+			"disallowed static-route method returns one deterministic Allow header");
+
+		expect(sendAll(persistent, requestWithMethod("DELETE", "/gallery", "")), "disallowed DELETE request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
+			countOccurrences(response, "Allow: GET\r\n") == 1,
+			"disallowed DELETE request is rejected before static handling");
+
+		expect(sendAll(persistent, requestWithMethod("GET", "/uploads", "")), "disallowed upload-route GET is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
+			countOccurrences(response, "Allow: POST\r\n") == 1,
+			"disallowed upload-route method returns its route policy");
+
+		expect(sendAll(persistent, requestWithMethod("PUT", "/files/index.html", "")), "disallowed root-route PUT is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
+			countOccurrences(response, "Allow: DELETE, GET, POST\r\n") == 1,
+			"multi-method route returns one deterministically ordered Allow header");
+
+		expect(sendAll(persistent, requestWithMethod("POST", "/redirect", "")), "disallowed redirect POST is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
+			response.find("Location:") == std::string::npos,
+			"method rejection runs before redirect handling");
+
+		expect(sendAll(persistent, requestWithMethod("POST", "/uploads", "")), "allowed upload-route POST is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
+			"allowed methods continue to their existing downstream handler");
 
 		expect(sendAll(persistent, request("/gallery", "")), "autoindex request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&

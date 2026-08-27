@@ -49,8 +49,8 @@ int main() {
 		"upload route supplies method policy");
 
 	Route redirect = config.route(requestFor("/redirect"));
-	expect(redirect.redirect_status == 302 && redirect.redirect_target == "/gallery",
-		"redirect route supplies redirect status and target");
+	expect(redirect.redirect_status == 302 && redirect.redirect_target == "/gallery" && allows(redirect, "GET"),
+		"redirect route supplies redirect status, target, and method policy");
 
 	Route cgi = config.route(requestFor("/test.sh"));
 	expect(cgi.location == "/" && cgi.is_cgi && cgi.cgi_pass == "./contents/cgi/test.sh",
