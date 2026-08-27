@@ -41,7 +41,7 @@ main
 - `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
 - `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
 - Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
-- `To Fix`: CGI state is not fully coordinated with connection phases or child lifecycle.
+- `To Fix`: CGI route selection still comes from the mock configuration rather than parsed server/location directives.
 
 ### `Poller`
 
@@ -89,17 +89,16 @@ main
 
 ### `Cgi`
 
-`Partial`.
+`Partial`, with the event-loop pipe lifecycle implemented.
 
 - Creates stdin/stdout pipes, forks, runs a configured script with `execve`, and sets the parent pipe ends non-blocking.
 - Builds CGI environment variables from the request and parses CGI response headers and body.
 - `Worker` registers the CGI pipes in the same `Poller` as sockets and transfers the request body/output through readiness callbacks.
 - Reports pipe, fork, and non-blocking setup failures through `CgiJob`, and the child exits if `execve` fails.
-- Treats failed pipe reads/writes as a controlled CGI failure without inspecting `errno` after I/O; the response path produces `502` when no valid CGI result exists.
+- Treats failed pipe reads/writes, invalid pipe readiness, and CGI EOF before the complete request body is accepted as controlled CGI failures without inspecting `errno` after I/O; the response path produces `502` when no valid CGI result exists.
 - Records CGI start and progress timestamps. `Worker` limits an active CGI job to 15 seconds, closes its pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, and reaps it with `waitpid(..., WNOHANG)` before emitting a `502` response.
 - Reaps normal completed children before resetting their transaction. On client disconnect, it retains the terminated PID and termination time in a worker-owned pending-reap map, where the same two-second `SIGKILL` escalation and non-blocking reap continue after the transaction is gone.
-- `To Fix`: complete the remaining CGI pipe and response cleanup edge cases.
-- `Planned`: fully support request-body edge cases, including chunked input and CGI EOF behavior.
+- `To Fix`: choose CGI handlers from parsed configuration and harden CGI response-header validation.
 
 ### `Logger`
 
@@ -150,10 +149,10 @@ Configured custom error-page bodies remain planned work; they will replace the d
 1. `Worker` identifies a CGI route from `Config`.
 2. `Cgi` starts the child and returns its pipe fds in `CgiJob`.
 3. `Worker` registers CGI stdin for `POLLOUT` and stdout for `POLLIN` in the same `Poller`.
-4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks.
+4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks. It closes stdin after the entire body is accepted. Stdout EOF before that point, plus pipe error or invalid-fd readiness, marks the job as failed instead of accepting a partial-body CGI response.
 5. `Cgi` records its start time and `Worker` checks its 15-second lifetime during the periodic maintenance sweep. On normal completion, `Worker` reaps the child non-blockingly before converting the CGI output into a `Response`. On timeout or failure, it closes CGI pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, reaps the child, then sends the default `502` response.
 
-The flow is wired end to end, but it needs the reliability work listed above before it meets the subject's non-blocking and no-hang requirements.
+The pipe/body/EOF flow is wired and covered end to end. Configuration-driven handler selection and CGI response validation remain before full subject compliance.
 
 ## Resilience Verification
 
@@ -163,13 +162,17 @@ The flow is wired end to end, but it needs the reliability work listed above bef
 
 `make connection-lifecycle-test` builds and runs a separate fast C++98 loopback suite. It starts and reaps its own server, verifies fragmented requests receive no early response, checks sequential default-persistent requests and a concurrent second client, and reads two responses from one buffered CGI-plus-static request sequence. It also verifies that static, CGI, and parser-error close cases return exactly one `Connection: close` header and EOF only after their complete response. The command exits non-zero for an incorrect response boundary, missing/early EOF, unavailable listener, or server failure.
 
+## CGI Pipe Verification
+
+`make cgi-pipe-test` builds and runs a focused C++98 loopback suite. It verifies CGI request-body forwarding, delayed output, output larger than one 4096-byte collection read, and a CGI response with no CGI-provided `Content-Length` (the HTTP serializer frames it). It also makes the fixture close stdin before accepting a 256 KiB request body, verifies the client receives the controlled `502 Bad Gateway` response, and then confirms the listener serves a later request.
+
 ## Non-Blocking Rules
 
 - `Implemented`: listening sockets, client sockets, and the parent ends of CGI pipes are set non-blocking.
 - `Implemented`: one `Poller` drives socket and CGI pipe readiness.
 - `Implemented`: socket and pipe read/write paths use their return values and do not inspect `errno` after `read`, `recv`, `write`, or `send`.
-- `Partial`: client and CGI error/hangup events close their managed fds without throwing, while partial writes retain their cursor. Client inactivity and CGI job expiry are implemented; broader stress behavior still needs work.
-- `To Fix`: complete remaining CGI pipe/body/EOF edge cases and resilience coverage.
+- `Implemented`: CGI body writes and output reads run only after pipe readiness. A stdout EOF is accepted only after the complete body was sent; CGI pipe error, hangup, or invalid-fd events enter the controlled failure/reap path and preserve a connected client for its `502` response.
+- `To Fix`: broaden non-blocking stress coverage and complete configuration-driven CGI selection.
 
 ## Subject-Critical Gaps
 
