@@ -64,13 +64,13 @@ main
 - Parses `Content-Length` as one or more decimal digits with checked `size_t` conversion; signs, whitespace within the value, trailing data, and overflow are rejected.
 - Waits for the complete declared body, returns the exact consumed count before any pipelined bytes, and rejects body/request sizes that cannot be represented by the parser contract.
 - Decodes chunked bodies before assigning `Request::body`, supports chunk extensions and syntax-checked trailers, and applies the body limit to decoded bytes. Chunk trailers are not merged into request headers.
-- Exposes a body-limit overload for future configuration integration. The current two-argument parser uses a temporary 10,000,000-byte default, matching the first server limit in `config/req.config`, until #5 supplies `client_max_body_size`.
+- Receives the active reference server's `client_max_body_size` from `Worker` through its limit-aware parse overload before a body is buffered. #7/#13 must preserve that selected-server handoff once multiple listeners are active.
 - Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request. Its error-status overload reports `400` for malformed syntax/framing, `413` for a declared body over the limit, and `431` for header limits.
 - Builds a complete HTTP/1.1 response envelope for supported status codes, falling back to `500` for an unsupported status.
 - Owns case-insensitive `Content-Type` selection and calculated `Content-Length`, suppresses unsafe or conflicting caller-supplied framing headers, preserves valid extension headers, and omits bodies for `204` and `304`.
 - `Http::defaultErrorResponse()` creates deterministic HTML bodies for known error statuses; unknown or non-error inputs fall back to `500`.
 - `Worker` queues parser failures through the normal output path with a default HTML error body and closes that connection after its response flushes. It also substitutes this default for an otherwise-empty static or CGI error response.
-- `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and provide configured custom error pages.
+- `To Fix`: have parsed server/location configuration preserve selected-server body limits once multiple listeners are active, and provide configured custom error pages.
 - `To Fix`: add handler-specific response headers and complete status/error-page behavior with the relevant handler work.
 
 ### `Config`
