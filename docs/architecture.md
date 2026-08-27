@@ -85,9 +85,10 @@ main
 `Partial`.
 
 - Resolves route-relative request paths under `Route::root`, rejects lexical `.` and `..` traversal segments before disk access, and serves regular disk files through `Content`.
-- Uses filename-based MIME detection, returns `404` for missing files, `403` for rejected, directory, non-regular, or unopenable paths, and `500` for a disk read failure.
-- `make static-file-test` verifies text and binary reads, MIME detection, missing/directory/traversal errors, location-prefix stripping, and location/root rejection.
-- `Planned`: implement index files and autoindex for directory paths, then add method enforcement, uploads, and `DELETE` behavior.
+- For a directory, serves the configured safe index filename when it is a regular file; otherwise returns a deterministic, escaped HTML listing only when autoindex is enabled.
+- Uses filename-based MIME detection, returns `404` for missing files, `403` for rejected, non-regular, unopenable, or non-autoindexed directories, and `500` for a disk read failure.
+- `make static-file-test` verifies text and binary reads, MIME detection, route-root and directory indexes, autoindex, missing/directory/traversal errors, location-prefix stripping, and location/root rejection.
+- `Planned`: add method enforcement, uploads, and `DELETE` behavior.
 
 ### `Cgi`
 
@@ -162,7 +163,7 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 
 ## Connection Lifecycle Verification
 
-`make connection-lifecycle-test` builds and runs a separate fast C++98 loopback suite. It starts and reaps its own server, verifies fragmented requests receive no early response, checks sequential default-persistent requests and a concurrent second client, verifies the configured `/redirect` response has `302 Found`, `Location: /gallery`, empty framing, and persistence, and reads two responses from one buffered CGI-plus-static request sequence. It also verifies that static, redirect, CGI, and parser-error close cases return exactly one `Connection: close` header and EOF only after their complete response. The command exits non-zero for an incorrect response boundary, missing/early EOF, unavailable listener, or server failure.
+`make connection-lifecycle-test` builds and runs a separate fast C++98 loopback suite. It starts and reaps its own server, verifies fragmented requests receive no early response, checks sequential default-persistent requests and a concurrent second client, verifies the configured `/gallery` autoindex response and the `/redirect` response with `302 Found`, `Location: /gallery`, empty framing, and persistence, and reads two responses from one buffered CGI-plus-static request sequence. It also verifies that static, redirect, CGI, and parser-error close cases return exactly one `Connection: close` header and EOF only after their complete response. The command exits non-zero for an incorrect response boundary, missing/early EOF, unavailable listener, or server failure.
 
 ## CGI Pipe Verification
 

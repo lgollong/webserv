@@ -254,6 +254,12 @@ int main() {
 		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"second persistent request receives a response");
 
+		expect(sendAll(persistent, request("/gallery", "")), "autoindex request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+			response.find("Index of /gallery") != std::string::npos &&
+			response.find("href=\"/gallery/alpha.txt\"") != std::string::npos,
+			"configured autoindex route receives an HTML directory listing");
+
 		expect(sendAll(persistent, request("/redirect", "")), "redirect request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 302 Found") == 0 &&
 			response.find("Location: /gallery\r\n") != std::string::npos &&
