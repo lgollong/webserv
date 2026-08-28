@@ -47,6 +47,20 @@ int main() {
 		text.body.find("<h1>HI</h1>") != std::string::npos,
 		"serves a text file from the route root");
 
+	Content dashboardPage = files.serve(root, requestFor("/index.html"));
+	expect(dashboardPage.status == 200 && dashboardPage.mime_type == "text/html" &&
+		dashboardPage.body.find("browser-served project dashboard") != std::string::npos,
+		"serves the project dashboard from the default document root");
+	Content dashboardStyle = files.serve(root, requestFor("/dashboard.css"));
+	expect(dashboardStyle.status == 200 && dashboardStyle.mime_type == "text/css" &&
+		!dashboardStyle.body.empty(), "serves the dashboard stylesheet");
+	Content dashboardScript = files.serve(root, requestFor("/dashboard.js"));
+	expect(dashboardScript.status == 200 && dashboardScript.mime_type == "application/javascript" &&
+		!dashboardScript.body.empty(), "serves the dashboard request inspector script");
+	Content dashboardImage = files.serve(root, requestFor("/assets/request-path.png"));
+	expect(dashboardImage.status == 200 && dashboardImage.mime_type == "image/png" &&
+		!dashboardImage.body.empty(), "serves the dashboard request-path image");
+
 	Content binary = files.serve(root, requestFor("/files/favicon.ico"));
 	expect(binary.status == 200 && binary.mime_type == "image/x-icon" &&
 		binary.body.size() > 32 && binary.body[0] == '\0',
@@ -63,7 +77,7 @@ int main() {
 		"missing files return 404");
 	Content rootIndex = files.serve(root, requestFor("/"));
 	expect(rootIndex.status == 200 && rootIndex.mime_type == "text/html" &&
-		rootIndex.body.find("Root index") != std::string::npos,
+		rootIndex.body.find("browser-served project dashboard") != std::string::npos,
 		"serves the configured index for the route root");
 
 	Content directoryIndex = files.serve(root, requestFor("/files"));

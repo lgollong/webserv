@@ -48,6 +48,8 @@ Start the server in one terminal:
 
 The current reference model listens on ports `8080` and `8081` and does not read configuration-file contents yet.
 
+Open `http://127.0.0.1:8080/` for the project dashboard. It is served by `webserv` and provides direct route links plus a same-origin response inspector for presentation use.
+
 ### Browser and Curl
 
 Open `http://127.0.0.1:8080/files/index.html` in a browser, then check a static response and an autoindex route:

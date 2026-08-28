@@ -266,7 +266,7 @@ int main() {
 	if (primaryRoot >= 0) {
 		expect(sendAll(primaryRoot, request("/", "")), "primary root request is sent");
 		expect(takeResponse(primaryRoot, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
-			response.find("Root index") != std::string::npos,
+			response.find("browser-served project dashboard") != std::string::npos,
 			"primary listener resolves the primary server root");
 		close(primaryRoot);
 	}
