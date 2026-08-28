@@ -7,3 +7,5 @@ nginx.conf
 tester
 cgi_tester
 webserv
+contents/cgi/test.cgi
+contents/cgi/test.cgi.dSYM/
