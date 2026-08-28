@@ -49,7 +49,8 @@ int main() {
 
 	Content dashboardPage = files.serve(root, requestFor("/index.html"));
 	expect(dashboardPage.status == 200 && dashboardPage.mime_type == "text/html" &&
-		dashboardPage.body.find("browser-served project dashboard") != std::string::npos,
+		dashboardPage.body.find("browser-served project dashboard") != std::string::npos &&
+		dashboardPage.body.find("Runtime contract and current boundaries") != std::string::npos,
 		"serves the project dashboard from the default document root");
 	Content dashboardStyle = files.serve(root, requestFor("/dashboard.css"));
 	expect(dashboardStyle.status == 200 && dashboardStyle.mime_type == "text/css" &&

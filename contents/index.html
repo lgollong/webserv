@@ -11,7 +11,7 @@
 	<a class="skip-link" href="#main">Skip to content</a>
 	<header class="site-header">
 		<a class="wordmark" href="/" aria-label="webserv dashboard home">webserv</a>
-		<nav aria-label="Primary navigation"><a href="#demos">Demos</a><a href="#inspector">Inspector</a><a href="#testing">Testing</a></nav>
+		<nav aria-label="Primary navigation"><a href="#technical">Runtime</a><a href="#demos">Demos</a><a href="#testing">Testing</a></nav>
 	</header>
 	<main id="main">
 		<section class="hero" aria-labelledby="page-title">
@@ -19,7 +19,7 @@
 				<p class="eyebrow"><span class="status-mark" aria-hidden="true"></span>browser-served project dashboard</p>
 				<h1 id="page-title">webserv</h1>
 				<p class="hero-copy">A C++98 HTTP server built around one readiness-driven event loop. This page is served by the server it describes.</p>
-				<div class="hero-actions"><a class="button button-primary" href="#demos">Explore working routes</a><a class="button button-quiet" href="#testing">Run the suite</a></div>
+				<div class="hero-actions"><a class="button button-primary" href="#technical">Read the runtime contract</a><a class="button button-quiet" href="#testing">Run the suite</a></div>
 			</div>
 			<div class="hero-foot page-width"><span>Port 8080</span><span>HTTP/1.1</span><span>Reference model active</span></div>
 		</section>
@@ -40,6 +40,24 @@
 				<li><span>03</span><strong>Handler</strong><small>Static, CGI, redirect, upload, or session.</small></li>
 				<li><span>04</span><strong>Response</strong><small>HTTP bytes flush without blocking the loop.</small></li>
 			</ol>
+		</div></section>
+		<section id="technical" class="section technical-section" aria-labelledby="technical-title"><div class="page-width">
+			<div class="section-heading"><p class="eyebrow eyebrow-dark">Evaluator notes</p><h2 id="technical-title">Runtime contract and current boundaries</h2><p>This is the model implemented by the current code, not a target architecture diagram. The server remains one process; only CGI execution forks a child.</p></div>
+			<div class="technical-layout">
+				<div class="runtime-list" role="list">
+					<div role="listitem"><strong>FD ownership</strong><p><code>Poller</code> owns one <code>poll()</code> set for listening sockets, client sockets, and parent CGI pipe ends. <code>Worker</code> dispatches the resulting readiness events.</p></div>
+					<div role="listitem"><strong>Connection state</strong><p>Each client has a <code>Connection</code> with input/output buffers, write cursor, keep-alive policy, listener-selected server index, and one <code>Transaction</code>.</p></div>
+					<div role="listitem"><strong>I/O rule</strong><p>Socket and pipe descriptors are non-blocking. Reads and writes happen only after readiness, and their return values drive control flow without inspecting <code>errno</code>.</p></div>
+					<div role="listitem"><strong>CGI boundary</strong><p><code>CgiJob</code> owns the child PID and pipe progress. Handler and script target are distinct; the script path is checked beneath the route root before <code>execve</code>.</p></div>
+				</div>
+				<div class="status-ledger"><table><caption>Implementation ledger</caption><thead><tr><th>Area</th><th>Current behavior</th><th>Evidence</th></tr></thead><tbody>
+					<tr><td>HTTP</td><td>HTTP/1.1 parsing, chunked decoding, framing, error responses, and persistence.</td><td><code>http-*-test</code></td></tr>
+					<tr><td>Static routes</td><td>Roots, MIME types, indexes, autoindex, uploads, DELETE, redirects, and error pages.</td><td><code>static-file-test</code></td></tr>
+					<tr><td>CGI</td><td>Non-blocking pipes, request context, timeouts, shell and direct executable types.</td><td><code>cgi-*-test</code></td></tr>
+					<tr><td>Config</td><td>Reference in-memory model only. Parsing configuration files is still pending.</td><td>#4, #5, #6</td></tr>
+					<tr><td>Resilience</td><td>Controlled client cleanup, bounded CGI termination/reap, and listener survival.</td><td><code>resilience-test</code></td></tr>
+				</tbody></table></div>
+			</div>
 		</div></section>
 		<section id="demos" class="section page-width" aria-labelledby="demos-title">
 			<div class="section-heading"><p class="eyebrow eyebrow-dark">Live demonstrations</p><h2 id="demos-title">Open a route the server actually handles</h2><p>Each route below is part of the active in-memory reference model. The configuration-file parser is still planned, so the supplied config file is not read yet.</p></div>
