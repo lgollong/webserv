@@ -10,6 +10,7 @@ NAME = webserv
 RESILIENCE_TEST = /private/tmp/webserv-resilience-tests
 CONNECTION_LIFECYCLE_TEST = /private/tmp/webserv-connection-lifecycle-tests
 CGI_PIPE_TEST = /private/tmp/webserv-cgi-pipe-tests
+CGI_LIFECYCLE_TEST = /private/tmp/webserv-cgi-lifecycle-tests
 CONFIG_MODEL_TEST = /private/tmp/webserv-config-model-tests
 STATIC_FILE_TEST = /private/tmp/webserv-static-file-tests
 EVENT_LOOP_STRESS_TEST = /private/tmp/webserv-event-loop-stress-tests
@@ -39,7 +40,7 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test config-model-test static-file-test event-loop-stress-test session-store-test cookie-session-test
+.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test static-file-test event-loop-stress-test session-store-test cookie-session-test
 
 resilience-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/resilience_tests.cpp -o $(RESILIENCE_TEST)
@@ -52,6 +53,10 @@ connection-lifecycle-test: $(NAME)
 cgi-pipe-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/cgi_pipe_tests.cpp -o $(CGI_PIPE_TEST)
 	@$(CGI_PIPE_TEST)
+
+cgi-lifecycle-test: $(NAME)
+	@$(CXX) $(CXXFLAGS) tests/cgi_lifecycle_tests.cpp srcs/Cgi.cpp -o $(CGI_LIFECYCLE_TEST)
+	@$(CGI_LIFECYCLE_TEST)
 
 config-model-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/config_model_tests.cpp srcs/Config.cpp -o $(CONFIG_MODEL_TEST)

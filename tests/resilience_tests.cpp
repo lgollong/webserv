@@ -240,7 +240,7 @@ int main() {
 	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after client expiry");
 
-	expect(requestHasStatus("GET /test.sh?stall HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 502 Bad Gateway", kCgiTimeoutMs),
+	expect(requestHasStatus("GET /cgi/test.sh?stall HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 502 Bad Gateway", kCgiTimeoutMs),
 		"stalled CGI is terminated and returns 502");
 	expect(serverRunning(server), "server survives CGI timeout cleanup");
 	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
@@ -250,7 +250,7 @@ int main() {
 	int cgiClient = connectToServer();
 	expect(cgiClient >= 0, "CGI disconnect client connects");
 	if (cgiClient >= 0) {
-		expect(sendAll(cgiClient, "GET /test.sh?stall HTTP/1.1\r\nHost: localhost\r\n\r\n", 1000),
+		expect(sendAll(cgiClient, "GET /cgi/test.sh?stall HTTP/1.1\r\nHost: localhost\r\n\r\n", 1000),
 			"CGI disconnect request is sent");
 		pid_t cgiPid = -1;
 		expect(waitForCgiPid(server, cgiPid), "stalled CGI records its pid");

@@ -192,7 +192,7 @@ int main() {
 
 	std::string response;
 	std::string body = "body through a non-blocking CGI pipe";
-	std::string post = "POST /test.sh HTTP/1.1\r\nHost: localhost\r\nContent-Length: ";
+	std::string post = "POST /cgi/test.sh HTTP/1.1\r\nHost: localhost\r\nContent-Length: ";
 	char length[32];
 	snprintf(length, sizeof(length), "%lu", static_cast<unsigned long>(body.size()));
 	post += length;
@@ -203,14 +203,14 @@ int main() {
 
 	response.clear();
 	std::string contextBody = "full request context";
-	std::string context = "POST /test.sh/extra?context HTTP/1.1\r\nHost: client.example\r\n"
+	std::string context = "POST /cgi/test.sh/extra?context HTTP/1.1\r\nHost: client.example\r\n"
 		"Content-Type: text/plain\r\nX-Cgi-Test: accepted\r\nContent-Length: ";
 	snprintf(length, sizeof(length), "%lu", static_cast<unsigned long>(contextBody.size()));
 	context += length;
 	context += "\r\n\r\n" + contextBody;
 	expect(request(context, response) && response.find("HTTP/1.1 200 OK") == 0 &&
 		response.find("REQUEST_METHOD=POST\n") != std::string::npos &&
-		response.find("SCRIPT_NAME=/test.sh\n") != std::string::npos &&
+		response.find("SCRIPT_NAME=/cgi/test.sh\n") != std::string::npos &&
 		response.find("PATH_INFO=/extra\n") != std::string::npos &&
 		response.find("QUERY_STRING=context\n") != std::string::npos &&
 		response.find("SERVER_NAME=localhost\n") != std::string::npos &&
@@ -223,18 +223,18 @@ int main() {
 		"CGI receives complete request context and runs in its script directory");
 
 	response.clear();
-	expect(request(getRequest("/test.sh?delayed"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
+	expect(request(getRequest("/cgi/test.sh?delayed"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
 		response.find("You sent:") != std::string::npos,
 		"CGI delayed output completes through readiness events");
 
 	response.clear();
-	expect(request(getRequest("/test.sh?large"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
+	expect(request(getRequest("/cgi/test.sh?large"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
 		response.size() >= 20000 && response.find(std::string(128, 'x')) != std::string::npos,
 		"CGI output larger than one read is fully framed without a CGI Content-Length");
 
 	response.clear();
 	std::string closedInputBody(262144, 'x');
-	std::string closedInput = "POST /test.sh?close-input HTTP/1.1\r\nHost: localhost\r\nContent-Length: ";
+	std::string closedInput = "POST /cgi/test.sh?close-input HTTP/1.1\r\nHost: localhost\r\nContent-Length: ";
 	snprintf(length, sizeof(length), "%lu", static_cast<unsigned long>(closedInputBody.size()));
 	closedInput += length;
 	closedInput += "\r\n\r\n" + closedInputBody;

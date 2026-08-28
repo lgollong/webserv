@@ -37,7 +37,7 @@ void Config::buildReferenceMock() {
 	allow(root, "POST");
 	allow(root, "DELETE");
 	root.index_file = "index.html";
-	root.cgi_handlers[".sh"] = "./contents/cgi/test.sh";
+	root.cgi_handlers[".sh"] = "/bin/sh";
 	primary.locations.push_back(root);
 
 	Route gallery = makeRoute("/gallery", "./contents/gallery");
@@ -96,6 +96,38 @@ static std::string extensionOf(const std::string &path) {
 	return path.substr(dot);
 }
 
+static bool hasUnsafeSegment(const std::string &path) {
+	std::string::size_type start = 0;
+	while (start < path.size()) {
+		std::string::size_type end = path.find('/', start);
+		if (end == std::string::npos)
+			end = path.size();
+		std::string segment = path.substr(start, end - start);
+		if (segment == "." || segment == "..")
+			return true;
+		if (end == path.size())
+			break;
+		start = end + 1;
+	}
+	return false;
+}
+
+static bool resolveCgiScriptPath(const Route &route, const std::string &scriptName,
+	std::string &scriptPath) {
+	if (route.root.empty() || !matchesLocation(scriptName, route.location))
+		return false;
+	std::string relative = scriptName.substr(route.location.size());
+	while (!relative.empty() && relative[0] == '/')
+		relative.erase(0, 1);
+	if (relative.empty() || hasUnsafeSegment(relative))
+		return false;
+	scriptPath = route.root;
+	if (scriptPath[scriptPath.size() - 1] != '/')
+		scriptPath += '/';
+	scriptPath += relative;
+	return true;
+}
+
 static bool selectCgiHandler(const std::string &path,
 	const std::map<std::string, std::string> &handlers, std::string &scriptName,
 	std::string &handlerPath) {
@@ -139,10 +171,12 @@ Route Config::route(size_t serverIndex, const Request &request) const {
 		return Route();
 
 	selected.is_cgi = false;
-	selected.cgi_pass.clear();
+	selected.cgi_handler.clear();
 	selected.cgi_script_name.clear();
+	selected.cgi_script_path.clear();
 	if (selectCgiHandler(request.path, selected.cgi_handlers, selected.cgi_script_name,
-		selected.cgi_pass)) {
+		selected.cgi_handler) && resolveCgiScriptPath(selected, selected.cgi_script_name,
+		selected.cgi_script_path)) {
 		selected.is_cgi = true;
 	}
 	return selected;

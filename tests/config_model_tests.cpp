@@ -64,14 +64,18 @@ int main() {
 	expect(session.session_demo && allows(session, "GET") && !allows(session, "POST"),
 		"reference mock supplies a GET-only cookie session demonstration route");
 
-	Route cgi = config.route(requestFor("/test.sh"));
-	expect(cgi.location == "/" && cgi.is_cgi && cgi.cgi_pass == "./contents/cgi/test.sh" &&
-		cgi.cgi_script_name == "/test.sh", "CGI extension selects the configured handler and URL script");
+	Route cgi = config.route(requestFor("/cgi/test.sh"));
+	expect(cgi.location == "/" && cgi.is_cgi && cgi.cgi_handler == "/bin/sh" &&
+		cgi.cgi_script_name == "/cgi/test.sh" && cgi.cgi_script_path == "./contents/cgi/test.sh",
+		"CGI extension selects a handler and a route-root-resolved script target");
 
-	Route cgiPathInfo = config.route(requestFor("/test.sh/extra"));
-	expect(cgiPathInfo.is_cgi && cgiPathInfo.cgi_script_name == "/test.sh" &&
-		cgiPathInfo.cgi_pass == "./contents/cgi/test.sh",
+	Route cgiPathInfo = config.route(requestFor("/cgi/test.sh/extra"));
+	expect(cgiPathInfo.is_cgi && cgiPathInfo.cgi_script_name == "/cgi/test.sh" &&
+		cgiPathInfo.cgi_script_path == "./contents/cgi/test.sh" && cgiPathInfo.cgi_handler == "/bin/sh",
 		"CGI script selection preserves a suffix for PATH_INFO");
+
+	Route unsafeCgi = config.route(requestFor("/cgi/../test.sh"));
+	expect(!unsafeCgi.is_cgi, "CGI script resolution rejects parent-directory traversal");
 
 	Route boundary = config.route(requestFor("/uploads-elsewhere"));
 	expect(boundary.location == "/", "location prefix matching respects path boundaries");
