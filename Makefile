@@ -1,5 +1,9 @@
 CXX = c++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++98 -g -fsanitize=address -Iheaders
+CXXFLAGS = -Wall -Wextra -Werror -std=c++98 -Iheaders
+
+ifneq ($(SANITIZE),)
+CXXFLAGS += -g -fsanitize=$(SANITIZE)
+endif
 
 SRC_DIR = srcs
 SRC = $(shell find $(SRC_DIR) -type f -name "*.cpp")

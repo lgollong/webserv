@@ -21,7 +21,15 @@ The current implementation includes HTTP/1.1 request parsing and response serial
 make
 ```
 
-The normal build uses `c++ -Wall -Wextra -Werror -std=c++98` together with the repository's current development flags.
+The normal build uses only `c++ -Wall -Wextra -Werror -std=c++98` and the project include path.
+
+For an optional AddressSanitizer diagnostic build, rebuild with:
+
+```sh
+make SANITIZE=address re
+```
+
+`SANITIZE=address` applies the compiler's AddressSanitizer instrumentation for that build only; plain `make` remains the subject-compliant default.
 
 ### Run
 
