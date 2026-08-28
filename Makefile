@@ -21,6 +21,9 @@ STATIC_FILE_TEST = /private/tmp/webserv-static-file-tests
 EVENT_LOOP_STRESS_TEST = /private/tmp/webserv-event-loop-stress-tests
 SESSION_STORE_TEST = /private/tmp/webserv-session-store-tests
 COOKIE_SESSION_TEST = /private/tmp/webserv-cookie-session-tests
+HTTP_REQUEST_LINE_TEST = /private/tmp/webserv-http-request-line-tests
+HTTP_RESPONSE_TEST = /private/tmp/webserv-http-response-tests
+CONNECTION_TIMEOUT_TEST = /private/tmp/webserv-connection-timeout-tests
 CORE_SRC = $(filter-out $(SRC_DIR)/main.cpp,$(SRC))
 
 all: $(NAME)
@@ -48,7 +51,33 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test static-file-test event-loop-stress-test session-store-test cookie-session-test
+.PHONY: all clean fclean re test resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test static-file-test event-loop-stress-test session-store-test cookie-session-test http-request-line-test http-response-test connection-timeout-test
+
+test:
+	@$(MAKE) http-request-line-test
+	@$(MAKE) http-response-test
+	@$(MAKE) connection-timeout-test
+	@$(MAKE) config-model-test
+	@$(MAKE) static-file-test
+	@$(MAKE) session-store-test
+	@$(MAKE) event-loop-stress-test
+	@$(MAKE) cgi-lifecycle-test
+	@$(MAKE) connection-lifecycle-test
+	@$(MAKE) cgi-pipe-test
+	@$(MAKE) cookie-session-test
+	@$(MAKE) resilience-test
+
+http-request-line-test:
+	@$(CXX) $(CXXFLAGS) tests/http_request_line_tests.cpp srcs/Http.cpp -o $(HTTP_REQUEST_LINE_TEST)
+	@$(HTTP_REQUEST_LINE_TEST)
+
+http-response-test:
+	@$(CXX) $(CXXFLAGS) tests/http_response_tests.cpp srcs/Http.cpp -o $(HTTP_RESPONSE_TEST)
+	@$(HTTP_RESPONSE_TEST)
+
+connection-timeout-test:
+	@$(CXX) $(CXXFLAGS) tests/connection_timeout_tests.cpp -o $(CONNECTION_TIMEOUT_TEST)
+	@$(CONNECTION_TIMEOUT_TEST)
 
 resilience-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/resilience_tests.cpp -o $(RESILIENCE_TEST)
