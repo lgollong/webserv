@@ -80,7 +80,7 @@ main
 
 - Defines normalized `ServerConfig` and `Route` data structures for listeners, server defaults, location prefixes, methods, redirects, directory behavior, uploads, error pages, request limits, and CGI extension handlers.
 - The explicit reference mock contains two listener/server records and routes for static content, CGI, autoindex/index, uploads, redirects, and the optional GET-only `/session` demonstration. `make config-model-test` verifies that contract and longest-prefix resolution on the first reference server.
-- The default root document is an implemented browser presentation dashboard with static CSS, JavaScript, and a request-path image. It links to active routes and fetches same-origin endpoint responses; it is static content served through the normal `StaticFile` path, not a separate runtime or control plane.
+- The default root document is an implemented browser presentation dashboard with static CSS and JavaScript. It links to active routes and fetches same-origin endpoint responses; it is static content served through the normal `StaticFile` path, not a separate runtime or control plane.
 - The resolver accepts an explicit server index, resolves that server's longest matching location, and derives the current CGI handler and URL script name from the request extension and that route's handler map. A suffix after the script name remains available as CGI `PATH_INFO`. `Worker` assigns that index from the listener that accepted the connection and uses it for request-body limits, route resolution, and CGI server context.
 - `Planned`: #4 must parse and validate configuration text into this same normalized model. Invalid parser input must not fall back to the reference mock.
 
