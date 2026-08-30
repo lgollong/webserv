@@ -88,6 +88,16 @@ void Worker::run() {
 			if (ready_fds[i].fd == listen_fd) {
 				if (ready_fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
 					logger.error("listener received a poll error event");
+					poller.remove(listen_fd);
+					close(listen_fd);
+					try {
+						listen_fd = setupListener(port);
+						poller.add(listen_fd, POLLIN);
+					}
+					catch (const std::exception &e) {
+						logger.error(e.what());
+						return ;
+					}
 					continue;
 				}
 				if (ready_fds[i].revents & POLLIN) {
