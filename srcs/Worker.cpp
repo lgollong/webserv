@@ -173,6 +173,7 @@ void Worker::onCgiReadable(Connection &conn) {
 
 	logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi collection complete. building response...";
 	closeManagedFd(conn.txn.cgi.out_fd);
+	closeManagedFd(conn.txn.cgi.in_fd);
 
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
 	conn.outbuf = http.build(conn.txn.response);
@@ -212,6 +213,12 @@ void Worker::onReadable(Connection &conn) {
 		if (conn.txn.route.is_cgi == true) {
 			logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
+			if (conn.txn.cgi.failed) {
+				conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+				conn.outbuf = http.build(conn.txn.response);
+				poller.setEvents(conn.fd, POLLOUT);
+				return ;
+			}
 			poller.add(conn.txn.cgi.in_fd, POLLOUT);
 			poller.add(conn.txn.cgi.out_fd, POLLIN);
 			fdToConnection[conn.txn.cgi.in_fd] = &conn;

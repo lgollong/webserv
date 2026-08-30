@@ -5,8 +5,6 @@
 #include <sstream>
 #include <vector>
 #include <fcntl.h>
-#include <sys/wait.h>
-#include <cerrno>
 
 // augmented BNF for CGI:
 //   Meta-Variables (request → env)
@@ -50,6 +48,18 @@ Cgi::Cgi() {}
 
 Cgi::~Cgi() {}
 
+static bool setNonBlocking(int fd) {
+	int flags = fcntl(fd, F_GETFL, 0);
+	if (flags < 0)
+		return false;
+	return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+
+static void closePipe(int pipe_fds[2]) {
+	close(pipe_fds[0]);
+	close(pipe_fds[1]);
+}
+
 static std::vector<std::string> buildEnv(const Request &request, const Route &route) {
 		std::vector<std::string> env;
 
@@ -81,15 +91,23 @@ static std::vector<std::string> buildEnv(const Request &request, const Route &ro
 }
 
 CgiJob Cgi::start(const Request &request, const Route &route) {
-	int inPipe[2], outPipe[2];
-	pipe(inPipe);
-	pipe(outPipe);	
 	CgiJob job;
+	int inPipe[2] = {-1, -1};
+	int outPipe[2] = {-1, -1};
+	if (pipe(inPipe) < 0) {
+		job.failed = true;
+		return job;
+	}
+	if (pipe(outPipe) < 0) {
+		closePipe(inPipe);
+		job.failed = true;
+		return job;
+	}
 	
 	pid_t pid = fork();
 	if (pid == 0) {
-		dup2(inPipe[0], STDIN_FILENO);
-		dup2(outPipe[1], STDOUT_FILENO);
+		if (dup2(inPipe[0], STDIN_FILENO) < 0 || dup2(outPipe[1], STDOUT_FILENO) < 0)
+			_exit(127);
 		close(inPipe[0]);
 		close(inPipe[1]);
 		close(outPipe[0]);
@@ -104,21 +122,30 @@ CgiJob Cgi::start(const Request &request, const Route &route) {
 		char *argv[] = { const_cast<char*>(route.cgi_pass.c_str()), NULL };
 
 		execve(route.cgi_pass.c_str(), argv, &envp[0]);
-		perror("execve"); // if execve fails, print reason
+		_exit(127);
 	}
-	else {
-		close(inPipe[0]);
-		close(outPipe[1]);
-		job.pid = pid;
-		job.in_fd = inPipe[1];
-		job.out_fd = outPipe[0];
-		fcntl(job.in_fd, F_SETFL, O_NONBLOCK);
-		fcntl(job.out_fd, F_SETFL, O_NONBLOCK);
+	if (pid < 0) {
+		closePipe(inPipe);
+		closePipe(outPipe);
+		job.failed = true;
+		return job;
+	}
+
+	close(inPipe[0]);
+	close(outPipe[1]);
+	job.pid = pid;
+	job.in_fd = inPipe[1];
+	job.out_fd = outPipe[0];
+	if (!setNonBlocking(job.in_fd) || !setNonBlocking(job.out_fd)) {
+		close(job.in_fd);
+		close(job.out_fd);
+		job.in_fd = -1;
+		job.out_fd = -1;
+		job.failed = true;
 	}
 	return job;
 }
 
-// @todo waitpid missing
 bool Cgi::collect(CgiJob &cgi) {
 	char buf[4096];
 	ssize_t n = read(cgi.out_fd, buf, sizeof(buf));
@@ -128,9 +155,8 @@ bool Cgi::collect(CgiJob &cgi) {
 		return false;
 	}
 	if (n < 0) {
-		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-			return false;
-		cgi.done = true; // real read error, stop waiting, treat as complete
+		cgi.failed = true;
+		cgi.done = true;
 		return true;
 	}
 	cgi.done = true;
@@ -141,9 +167,8 @@ bool Cgi::sendBody(CgiJob &job, const std::string &body) {
 	if (job.sent >= body.size())
 		return true;
 	ssize_t n = write(job.in_fd, body.data() + job.sent, body.size() - job.sent);
-	if (n < 0) {
-		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-			return false;
+	if (n <= 0) {
+		job.failed = true;
 		return true;
 	}
 
@@ -194,7 +219,7 @@ Response Cgi::buildResponse(const CgiJob &job) const {
 
 	// expect non-empty job output
 	Response response;
-	if (raw.empty()) {
+	if (job.failed || raw.empty()) {
 		response.status = 502; // empty output is not a valid cgi response
 		return response;
 	}
