@@ -54,7 +54,7 @@ class WorkerEventLoopTests {
 				return false;
 
 			std::ostringstream log;
-			Config config("ignored-by-reference-mock");
+			Config config("./config/req.config");
 			Http http;
 			Cgi cgi;
 			StaticFile files;
@@ -93,7 +93,7 @@ class WorkerEventLoopTests {
 			}
 
 			std::ostringstream log;
-			Config config("ignored-by-reference-mock");
+			Config config("./config/req.config");
 			Http http;
 			Cgi cgi;
 			StaticFile files;
@@ -149,7 +149,7 @@ class WorkerEventLoopTests {
 			}
 
 			std::ostringstream log;
-			Config config("ignored-by-reference-mock");
+			Config config("./config/req.config");
 			Http http;
 			Cgi cgi;
 			StaticFile files;
