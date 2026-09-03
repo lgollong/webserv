@@ -351,11 +351,11 @@ int main() {
 
 	/*
 	 * /api has no root directive.
-	 * parseLocation() therefore assigns "./contents".
+	 * parseLocation() therefore assigns "./contents"; autoindex is enabled.
 	 */
 	expect(api.location == "/api" &&
 		api.root == "./contents" &&
-		!api.autoindex,
+		api.autoindex,
 		"server 2 /api route resolves correctly");
 
 	expect(allows(api, "GET") &&

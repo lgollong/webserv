@@ -90,6 +90,6 @@ main
 
 ## Verification Status
 
-Focused tests currently passing include HTTP parser/response tests, static-file tests, session-store tests, event-loop stress tests, CGI lifecycle tests, and connection-lifecycle tests.
+Focused tests currently passing include HTTP parser/response tests, parsed configuration model and malformed-input tests, static-file tests, session-store tests, event-loop stress tests, CGI lifecycle tests, and connection-lifecycle tests.
 
-`make test` is currently **not green**. `config-model-test` has a stale expectation for the configured `/api` autoindex behavior. Older CGI-pipe, cookie-session, and resilience integration tests still launch `config/req.config` while assuming the retired port-8080 mock routes. Parser-specific valid/invalid configuration coverage is also still missing. These are tracked work, not evidence that the parser is still mock-backed.
+`make test` is currently **not green**. It passes both parser targets and currently stops at `cgi-pipe-test`: that test, along with cookie-session and resilience integration coverage, still launches `config/req.config` while assuming retired port-8080 mock routes. These are tracked integration-test migrations, not evidence that the parser is still mock-backed.
