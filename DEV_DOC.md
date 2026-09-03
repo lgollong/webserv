@@ -1,8 +1,9 @@
 # DEV_DOC
 
-A small HTTP/1.1 web server that serves static files and runs CGI scripts, driven by an
+A small HTTP/1.1 web server that serves static files and runs CGI scripts, driven by a parsed
 nginx-style configuration file. It is modeled on nginx's architecture but deliberately keeps
-only the parts that matter at single-machine scale.
+only the parts that matter at single-machine scale. The code remains a work in progress; the
+current limitations are recorded in `docs/architecture.md`.
 
 ---
 
@@ -63,13 +64,13 @@ Dependency arrows point one way: `Worker → services`.
 
 | Class | Responsibility | Owns (structs) | Key functions |
 |---|---|---|---|
-| **Worker** | Runs the loop; owns all connections; dispatches on phase; orchestrates. | `map<int, Connection>` | `start`, `on_readable`, `on_writable`, `accept_new`, `reset_for_keepalive` |
-| **Poller** | Thin `poll()` wrapper; maintains the fd set and per-fd interest. | `vector<pollfd>` | `add`, `remove`, `set_interest`, `poll` |
-| **HTTP** | Byte stream ↔ structured message, both directions; renders status codes (incl. errors). | `Request`, `Response` | `parse`, `build` |
-| **Config** | Parses the config file (startup); resolves a request to its location (per request). | `ServerConfig`, `Route` | `route` |
-| **CGI** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `collect` |
-| **StaticFile** | Reads a file from disk, resolves its MIME type, autoindex/upload. | `Content` | `serve` |
-| **Logger** | Access log (one line per completed request) and error/diagnostic log. | — | `access`, `error` |
+| **Worker** | Runs the loop; owns all connections; dispatches on phase; orchestrates. | `map<int, Connection>`, `SessionStore` | `run`, `acceptNew`, `onReadable`, `onWritable` |
+| **Poller** | Thin `poll()` wrapper; maintains the fd set and per-fd interest. | `vector<pollfd>` | `add`, `remove`, `setEvents`, `poll` |
+| **Http** | Byte stream ↔ structured message, both directions; renders status codes (incl. errors). | `Request`, `Response` | `parse`, `build` |
+| **Config** | Parses the startup file and resolves a request to its listener-selected location. | `ServerConfig`, `Route` | `servers`, `route`, `bodyLimit`, `errorPage` |
+| **Cgi** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `sendBody`, `collect`, `reap` |
+| **StaticFile** | Reads a file from disk, resolves its MIME type, autoindex/upload/delete. | `Content` | `serve`, `upload`, `erase` |
+| **Logger** | Error and diagnostic logging. Access logging is currently a stub. | — | `debug`, `error` |
 
 ### State objects (the nesting)
 
@@ -79,11 +80,13 @@ belongs to one request → `Transaction`.**
 ```cpp
 struct Connection {           // per socket; outlives individual requests
     int          fd;
+    size_t       server_index;
     Phase        phase;       // READING, RUNNING_CGI, WRITING, IDLE
     std::string  inbuf;       // unconsumed bytes (may straddle keep-alive requests)
     std::string  outbuf;
     size_t       sent;        // partial-write cursor
     bool         keep_alive;
+    bool         close_after_write;
     time_t       last_activity;
     Transaction  txn;         // current request cycle; reset per request
 };
@@ -99,19 +102,17 @@ struct Transaction {          // one request → response cycle
 };
 ```
 
-Keep-alive reset is one line: `conn.txn = Transaction{};`.
+Keep-alive reset is one line: `conn.txn = Transaction();`.
 
 ### Ownership
 
 - **Instances:** the Worker owns every `Connection` **by value** in `connections` (keyed by fd).
-  Each `Connection` owns its `Transaction` **by value** (nested member). Create on accept
-  (`emplace`), destroy on close (`erase`) — RAII cascades cleanup. Services receive pieces of a
+  Each `Connection` owns its `Transaction` **by value** (nested member). Create on accept with
+  `connections[fd] = connection`, destroy on close with `erase`; services receive pieces of a
   connection **by reference** and never take ownership. (`std::map` keeps element references
   stable across other inserts/erases — don't keep a reference to a connection you just erased.)
-- **Types:** not global. Each data struct is declared in a header grouped with its concern
-  (`Request`/`Response` in `Http.hpp`, `Route` in `Config.hpp`, …). Optionally, the pure data
-  structs live in a dependency-free `types.hpp` as shared vocabulary, so classes own only their
-  *functions* and private state.
+- **Types:** the shared data structs live in dependency-free `types.hpp`; classes own behavior
+  and private state rather than the public data vocabulary.
 
 ---
 
@@ -125,23 +126,22 @@ next step would block.
 **Static — `GET /index.html`**
 
 1. `Poller.poll()` → client fd readable.
-2. `Connection.read(fd)` → raw bytes appended to `conn.inbuf`.
-3. `HTTP.parse(inbuf, txn.request)` → `INCOMPLETE` (return to loop) or a filled `Request`.
-4. `Config.route(txn.request)` → `Route` (root, `is_cgi=false`, allowed methods).
-5. `StaticFile.serve(route, request)` → `Content{status, body, mime_type}` (or 404).
-6. `HTTP.build(txn.response)` → response bytes into `conn.outbuf`; `phase = WRITING`, set POLLOUT.
-7. On writable: `Connection.write(fd, outbuf, sent)` until fully sent → keep-alive reset or close.
-8. `Logger.access(conn)` once, at completion.
+2. `Worker::onReadable()` → raw bytes appended to `conn.inbuf`.
+3. `Http::parse(inbuf, txn.request, Config::bodyLimit(server_index))` → incomplete, malformed, or a filled `Request`.
+4. `Config::route(server_index, txn.request)` → `Route` (root, optional CGI state, allowed methods).
+5. `StaticFile::serve(route, request)` → `Content{status, body, mime_type}` (or an error status).
+6. `Http::build(txn.response)` → response bytes into `conn.outbuf`; `phase = WRITING`, set `POLLOUT`.
+7. On writable: `Worker::onWritable()` advances `sent` until fully sent, then resets for keep-alive or closes.
 
 **Dynamic — `POST /login.php`** (differs at the content step)
 
-4. `Config.route` → `Route` with `is_cgi=true`, optional `cgi_handler`, URL `cgi_script_name`, and route-root `cgi_script_path` set.
-5. `CGI.start(request, route)` → `CgiJob{pid, out_fd}`; **register `out_fd` in the Poller**,
-   `phase = RUNNING_CGI`, return to loop (no blocking `waitpid`).
-6. On `out_fd` events: `CGI.collect(txn.cgi)` accumulates output; on child exit, parse the
+4. `Config::route` → `Route` with `is_cgi=true`, optional `cgi_handler`, URL `cgi_script_name`, and route-root `cgi_script_path` set.
+5. `Cgi::start(request, route, server)` → `CgiJob{pid, in_fd, out_fd}`; register the pipe fds in the Poller,
+   set `phase = RUNNING_CGI`, and return to the loop without blocking in `waitpid`.
+6. On pipe events, `Cgi::sendBody()` forwards POST data and `Cgi::collect()` accumulates output; on child exit, parse the
    script's `Status:` / `Content-Type:` header block into `txn.response`.
-7. `HTTP.build` → bytes; then `WRITING` and `write` as above.
+7. `Http::build` → bytes; then `WRITING` and partial writes as above.
 
-**Errors ride the same path:** any service returns a non-OK *status* (400/403/404/502);
-the Worker feeds it to `HTTP.build`, which emits the configured `error_page` or a default page,
-and the connection proceeds through the normal `WRITING` phase. One exit for success and error alike.
+**Errors ride the same path:** handlers return a non-OK status (400/403/404/502); `Worker` first
+looks up the selected server's configured error page when the response body is empty, then passes
+the result through `Http::build` and the normal `WRITING` phase.

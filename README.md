@@ -4,9 +4,9 @@
 
 ## Description
 
-`webserv` is a dependency-free HTTP server written in C++98 for the 42 curriculum. The project is being built around one non-blocking, `poll()`-driven event loop that owns listener sockets, client sockets, and CGI pipes.
+`webserv` is a dependency-free HTTP server written in C++98 for the 42 curriculum. It runs one non-blocking, `poll()`-driven event loop which owns listener sockets, client sockets, and CGI pipes.
 
-The current implementation includes HTTP/1.1 request parsing and response serialization, persistent connection handling, readiness-driven CGI pipes, CGI timeout/reaping behavior, static files, uploads, `DELETE`, redirects, custom error pages, and focused loopback tests. It is not yet feature-complete for the subject: configuration files are represented by an in-memory reference model rather than parsed, and some CGI response validation remains incomplete. The source-accurate status is documented in [Architecture](docs/architecture.md).
+The implementation parses nginx-style `server` and `location` blocks from the configuration file passed on the command line. It currently supports static files, directory indexes and autoindex, uploads, `DELETE`, redirects, custom error pages, request-body limits, CGI handler mappings, persistent HTTP/1.1 connections, and focused loopback tests. The parser and several handlers still have known limitations; [Architecture](docs/architecture.md) records the current source-backed status.
 
 ## Instructions
 
@@ -29,23 +29,23 @@ For an optional AddressSanitizer diagnostic build, rebuild with:
 make SANITIZE=address re
 ```
 
-`SANITIZE=address` applies the compiler's AddressSanitizer instrumentation for that build only; plain `make` remains the subject-compliant default.
+`SANITIZE=address` instruments that build only; plain `make` remains the subject-compliant default.
 
 ### Run
 
-The executable currently requires one configuration-file argument:
+The executable requires one configuration-file argument. The default demonstration configuration listens on `0.0.0.0:8080`:
 
 ```sh
-./webserv config/req.config
+./webserv config/default.config
 ```
 
-At this stage, the `Config` implementation explicitly builds a reference in-memory configuration model and the worker binds each of its configured listeners (`8080` and `8081`); supplied configuration files document the target format but are not parsed yet. Open the browser-served project dashboard with:
+Open the dashboard at:
 
 ```sh
 open http://127.0.0.1:8080/
 ```
 
-The dashboard is served by `webserv` itself. It links to real static, autoindex, redirect, CGI, and session routes, and includes a same-origin response inspector for presentation use.
+`config/req.config` is a multi-server integration fixture. It listens on `127.0.0.1:8002`, `:8003`, `:8008`, and `:8001`; it is not the configuration for the dashboard command above. See [Runtime Configuration Model](docs/configuration-model.md) for supported directives and their current semantics.
 
 ### Tests
 
@@ -53,7 +53,7 @@ The dashboard is served by `webserv` itself. It links to real static, autoindex,
 make test
 ```
 
-`make test` runs every repository test sequentially, including the slow client-idle and CGI-timeout resilience suite. See [Testing and Evaluation](docs/testing.md) for coverage, individual targets, and manual verification.
+The test target is sequential because several suites bind fixed loopback ports. **Current status:** it is not green after the parser migration: `config-model-test` has a stale `/api` autoindex expectation, and some older CGI/session/resilience tests still assume the retired mock listener on port `8080`. [Testing and Evaluation](docs/testing.md) records the affected targets and useful passing focused tests.
 
 ### Cleanup
 
