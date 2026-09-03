@@ -16,7 +16,7 @@ Server directives:
 | `host <IPv4-address>;` | Listener address. Missing host defaults to `0.0.0.0`. |
 | `server_name <name>;` | Value provided to CGI as `SERVER_NAME`. It is not Host-header virtual-host routing. |
 | `root <path>;` | Default document root for locations that omit `root`, and for the synthesized fallback location when a server has no locations. An explicit location root overrides it. |
-| `client_max_body_size <bytes|k|m|g>;` | Decoded request-body limit passed to `Http`. Missing values default to 1 MiB. |
+| `client_max_body_size <unsigned-decimal>[k|m|g];` | Decoded request-body limit passed to `Http`. `0` is valid; suffixes are case-insensitive, and malformed or overflowing values fail startup. Missing values default to 1 MiB. |
 | `error_page <100-599> <path>;` | Maps an error status to a static error-page file. |
 
 Location directives:

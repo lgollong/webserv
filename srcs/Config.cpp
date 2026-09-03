@@ -7,16 +7,6 @@
 #include <stdexcept>
 #include <iostream>
 
-static std::string trim(const std::string &value) {
-	std::string::size_type start = 0;
-	while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start])))
-		++start;
-	std::string::size_type end = value.size();
-	while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1])))
-		--end;
-	return value.substr(start, end - start);
-}
-
 static std::string toLowerCopy(const std::string &value) {
 	std::string out;
 	for (std::string::size_type i = 0; i < value.size(); ++i)
@@ -222,12 +212,11 @@ int Config::parsePort(const std::string &value, const std::string &configPath, s
 }
 
 size_t Config::parseBodySize(const std::string &value, const std::string &configPath, std::size_t line) const {
-	std::string cleaned = trim(value);
-	if (cleaned.empty())
+	if (value.empty())
 		throw std::runtime_error(formatError(configPath, line, "invalid body size"));
 
 	size_t multiplier = 1;
-	std::string number = cleaned;
+	std::string number = value;
 	if (!number.empty()) {
 		char last = number[number.size() - 1];
 		if (last == 'k' || last == 'K') {
@@ -244,11 +233,15 @@ size_t Config::parseBodySize(const std::string &value, const std::string &config
 	if (number.empty())
 		throw std::runtime_error(formatError(configPath, line, "invalid body size"));
 
-	std::stringstream stream(number);
 	size_t parsed = 0;
-	char extra = 0;
-	if (!(stream >> parsed) || (stream >> extra))
-		throw std::runtime_error(formatError(configPath, line, "invalid body size"));
+	for (std::string::size_type i = 0; i < number.size(); ++i) {
+		if (number[i] < '0' || number[i] > '9')
+			throw std::runtime_error(formatError(configPath, line, "invalid body size"));
+		size_t digit = static_cast<size_t>(number[i] - '0');
+		if (parsed > (std::numeric_limits<size_t>::max() - digit) / 10)
+			throw std::runtime_error(formatError(configPath, line, "body size overflow"));
+		parsed = parsed * 10 + digit;
+	}
 	if (parsed > std::numeric_limits<size_t>::max() / multiplier)
 		throw std::runtime_error(formatError(configPath, line, "body size overflow"));
 	return parsed * multiplier;
