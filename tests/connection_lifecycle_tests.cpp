@@ -235,6 +235,10 @@ static bool storedBodyMatches(const std::string &path, const std::string &expect
 		std::string(buffer, static_cast<size_t>(count)) == expected;
 }
 
+static bool fileDoesNotExist(const std::string &path) {
+	return access(path.c_str(), F_OK) != 0;
+}
+
 static int countOccurrences(const std::string &value, const std::string &wanted) {
 	int count = 0;
 	std::string::size_type pos = 0;
@@ -294,6 +298,22 @@ int main() {
 			"location without root serves from its configured server root");
 		close(inherited);
 	}
+
+	const std::string disabledUploadPath = "./contents/uploads/disabled-upload.txt";
+	std::remove(disabledUploadPath.c_str());
+	int disabledUpload = connectToServer(8008);
+	expect(disabledUpload >= 0, "disabled-upload listener accepts a client");
+	pending.clear();
+	if (disabledUpload >= 0) {
+		expect(sendAll(disabledUpload,
+			uploadRequest("/uploads-disabled/disabled-upload.txt", "must not be stored")),
+			"disabled-upload request is sent");
+		expect(takeResponse(disabledUpload, pending, response) &&
+			response.find("HTTP/1.1 404 Not Found") == 0 && fileDoesNotExist(disabledUploadPath),
+			"upload off prevents a write even with upload_store configured");
+		close(disabledUpload);
+	}
+	std::remove(disabledUploadPath.c_str());
 
 	int fragmented = connectToServer();
 	expect(fragmented >= 0, "fragmented client connects");

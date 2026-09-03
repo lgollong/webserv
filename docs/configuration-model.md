@@ -23,12 +23,12 @@ Location directives:
 
 | Directive | Meaning |
 | --- | --- |
-| `root <path>;` | Filesystem root for this location. Missing values currently default to `./contents`. |
+| `root <path>;` | Filesystem root for this location. Missing values inherit the containing server root, or `./contents`. |
 | `index <file>;` | Safe index file to serve from a directory. |
 | `autoindex on|off;` | Enables or disables generated directory listings. |
 | `allowed_methods <method> ...;` | Permitted request methods. `allow_methods` is accepted as an alias. Missing values default to `GET`. |
-| `upload_store <path>;` | Enables Worker upload dispatch for POST and names its storage directory. |
-| `upload on|off;` | Parsed and syntax-validated, but currently does not independently enable or disable uploads; `upload_store` controls runtime behavior. |
+| `upload_store <path>;` | Storage directory for uploads. It does not enable upload dispatch by itself. |
+| `upload on|off;` | `on` authorizes POST uploads and requires `upload_store`; `off` prevents uploads even when a store is configured. |
 | `return [300-399] <target>;` | Configured redirect. The status defaults to `302`. |
 | `cgi <extension> <handler>;` | Maps a script extension to an interpreter/executable path. |
 
@@ -56,7 +56,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 | `allowed_methods` | Method policy enforced before a handler runs. |
 | `redirect_status`, `redirect_target` | A configured redirect, or status `0`. |
 | `autoindex`, `index_file` | Directory-serving behavior. |
-| `upload_store` | Storage directory that enables POST uploads. |
+| `upload_store`, `upload_enabled` | Storage directory and authorization policy used together before POST upload dispatch. |
 | `cgi_handlers` | Extension-to-handler mappings from the configuration. |
 | `is_cgi`, `cgi_handler`, `cgi_script_name`, `cgi_script_path` | Per-request CGI selection derived during route resolution. `Cgi` canonicalizes the script and rejects it if it escapes the route root. |
 
@@ -74,8 +74,5 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 
 ## Current Limitations
 
-- The parser does not validate malformed configuration through a dedicated test suite yet.
-- `upload off` has no runtime effect.
-- Parsed location roots do not inherit a server-level `root` value.
 - Duplicate host/port pairs are not rejected before `Worker` attempts to bind them.
 - `server_name` does not select a server from the HTTP `Host` header.

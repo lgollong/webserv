@@ -140,6 +140,24 @@ int main() {
 	}
 	std::remove(fallbackPath.c_str());
 
+	const std::string uploadPath = temporaryPath("upload-policy");
+	expect(writeFile(uploadPath,
+		"server {\n"
+		"  location /enabled { upload on; upload_store ./contents/uploads; }\n"
+		"  location /disabled { upload_store ./contents/uploads; upload off; }\n"
+		"}\n"), "write upload policy fixture");
+	try {
+		Config config(uploadPath);
+		expect(config.route(0, requestFor("/enabled/file.txt")).upload_enabled,
+			"parses upload on into the resolved route");
+		expect(!config.route(0, requestFor("/disabled/file.txt")).upload_enabled,
+			"parses upload off into the resolved route");
+	} catch (const std::exception &error) {
+		std::cerr << "failure: upload policy fixture threw: " << error.what() << std::endl;
+		++g_failures;
+	}
+	std::remove(uploadPath.c_str());
+
 	expectConfigError(temporaryPath("missing"), "unable to open config file",
 		"rejects unreadable configuration files");
 
@@ -165,6 +183,13 @@ int main() {
 	expect(writeFile(portPath, "server { listen 0; }\n"), "write invalid port fixture");
 	expectConfigError(portPath, "port out of range", "rejects invalid ports");
 	std::remove(portPath.c_str());
+
+	const std::string uploadErrorPath = temporaryPath("upload-missing-store");
+	expect(writeFile(uploadErrorPath, "server { location /uploads { upload on; } }\n"),
+		"write upload without store fixture");
+	expectConfigError(uploadErrorPath, "upload on requires upload_store",
+		"rejects enabled uploads without a storage directory");
+	std::remove(uploadErrorPath.c_str());
 
 	const std::string emptyPath = temporaryPath("empty");
 	expect(writeFile(emptyPath, "# no servers\n"), "write empty parser fixture");
