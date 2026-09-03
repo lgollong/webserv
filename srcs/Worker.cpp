@@ -71,12 +71,35 @@ void Worker::run() {
 			// else if ready fd revents = POLLOUT
 				// write logic
 	while (true) {
-		std::vector<pollfd> &ready_fds = poller.poll();
+		int ready_count = poller.poll();
+		if (ready_count < 0) {
+			logger.error("poll failed");
+			continue;
+		}
+		if (ready_count == 0)
+			continue;
+
+		// Callbacks can remove fds, so iterate a stable snapshot of poll results.
+		std::vector<pollfd> ready_fds = poller.events();
 
 		for (size_t i = 0; i < ready_fds.size(); i++) {
 			if (ready_fds[i].revents == 0)
 				continue;
 			if (ready_fds[i].fd == listen_fd) {
+				if (ready_fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+					logger.error("listener received a poll error event");
+					poller.remove(listen_fd);
+					close(listen_fd);
+					try {
+						listen_fd = setupListener(port);
+						poller.add(listen_fd, POLLIN);
+					}
+					catch (const std::exception &e) {
+						logger.error(e.what());
+						return ;
+					}
+					continue;
+				}
 				if (ready_fds[i].revents & POLLIN) {
 					logger.debug() << "Worker: " << "fd: " << listen_fd << " listener: incoming connection found! accepting...";
 					acceptNew(listen_fd);
@@ -84,25 +107,46 @@ void Worker::run() {
 				continue;
 			}
 
-			Connection *conn = fdToConnection[ready_fds[i].fd];
-			if (!conn)
-				throw std::runtime_error(std::string("no connection object found in map, this should never happen"));
+			std::map<int, Connection*>::iterator found = fdToConnection.find(ready_fds[i].fd);
+			if (found == fdToConnection.end()) {
+				poller.remove(ready_fds[i].fd);
+				continue;
+			}
+			Connection *conn = found->second;
 
 			if (ready_fds[i].fd == conn->txn.cgi.out_fd) {
 				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi out fd";
-				onCgiReadable(*conn);
+				if (ready_fds[i].revents & (POLLERR | POLLNVAL))
+					closeConnection(*conn);
+				else if (ready_fds[i].revents & (POLLIN | POLLHUP))
+					onCgiReadable(*conn);
 			}
 			else if (ready_fds[i].fd == conn->txn.cgi.in_fd) {
 				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi in fd";
-				onCgiWritable(*conn);
+				if (ready_fds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
+					closeConnection(*conn);
+				else if (ready_fds[i].revents & POLLOUT)
+					onCgiWritable(*conn);
 			}
-			else if (ready_fds[i].revents & POLLIN) {
-				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking reading fd";
-				onReadable(*conn);
-			}
-			else if (ready_fds[i].revents & POLLOUT) {
-				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking writing fd";
-				onWritable(*conn);
+			else {
+				if (ready_fds[i].revents & (POLLERR | POLLNVAL)) {
+					closeConnection(*conn);
+					continue;
+				}
+				if (ready_fds[i].revents & POLLIN) {
+					logger.debug() << "Worker: " << "fd: " << conn->fd << " checking reading fd";
+					onReadable(*conn);
+				}
+				else if (ready_fds[i].revents & POLLOUT) {
+					logger.debug() << "Worker: " << "fd: " << conn->fd << " checking writing fd";
+					onWritable(*conn);
+				}
+
+				if (ready_fds[i].revents & POLLHUP) {
+					std::map<int, Connection*>::iterator current = fdToConnection.find(ready_fds[i].fd);
+					if (current != fdToConnection.end())
+						closeConnection(*current->second);
+				}
 			}
 		}
 	}
@@ -113,11 +157,16 @@ void Worker::acceptNew(int listen_fd) {
 	socklen_t len = sizeof(client_addr);
 
 	int client_fd = accept(listen_fd, reinterpret_cast<sockaddr*>(&client_addr), &len);
-	if (client_fd < 0)
-		throw std::runtime_error(std::string("accept: ") + strerror(errno));
+	if (client_fd < 0) {
+		logger.error("accept failed");
+		return ;
+	}
 	
-	if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
-		throw std::runtime_error(std::string("fcntl: ") + strerror(errno));
+	if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0) {
+		close(client_fd);
+		logger.error("failed to make client socket non-blocking");
+		return ;
+	}
 	poller.add(client_fd, POLLIN);
 
 	Connection connection;
@@ -133,9 +182,8 @@ void Worker::onCgiReadable(Connection &conn) {
 		return ;
 
 	logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi collection complete. building response...";
-	poller.remove(conn.txn.cgi.out_fd);
-	close (conn.txn.cgi.out_fd);
-	fdToConnection.erase(conn.txn.cgi.out_fd);
+	closeManagedFd(conn.txn.cgi.out_fd);
+	closeManagedFd(conn.txn.cgi.in_fd);
 
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
 	conn.outbuf = http.build(conn.txn.response);
@@ -147,9 +195,7 @@ void Worker::onCgiWritable(Connection &conn) {
 		return ;
 
 	logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi body fully sent.";
-	poller.remove(conn.txn.cgi.in_fd);
-	close (conn.txn.cgi.in_fd);
-	fdToConnection.erase(conn.txn.cgi.in_fd);
+	closeManagedFd(conn.txn.cgi.in_fd);
 }
 
 // read logic
@@ -159,15 +205,10 @@ void Worker::onCgiWritable(Connection &conn) {
 void Worker::onReadable(Connection &conn) {
 	char buf[4096];
 	ssize_t n = read(conn.fd, buf, sizeof(buf));
-	if (n < 0)
-		throw std::runtime_error(std::string("read: ") + strerror(errno));
 
 	if (n <= 0) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " closing (read returned " << n << ")";
-		close(conn.fd);
-		poller.remove(conn.fd);
-		fdToConnection.erase(conn.fd);
-		connections.erase(conn.fd);
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " closing after read result " << n;
+		closeConnection(conn);
 		return ;
 	}
 	logger.debug() << "Worker: " << "fd: " << conn.fd << " read " << n << " bytes:\n"
@@ -182,6 +223,12 @@ void Worker::onReadable(Connection &conn) {
 		if (conn.txn.route.is_cgi == true) {
 			logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
+			if (conn.txn.cgi.failed) {
+				conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+				conn.outbuf = http.build(conn.txn.response);
+				poller.setEvents(conn.fd, POLLOUT);
+				return ;
+			}
 			poller.add(conn.txn.cgi.in_fd, POLLOUT);
 			poller.add(conn.txn.cgi.out_fd, POLLIN);
 			fdToConnection[conn.txn.cgi.in_fd] = &conn;
@@ -211,8 +258,11 @@ void Worker::onReadable(Connection &conn) {
 	// keep track of what has been written and what remains
 void Worker::onWritable(Connection &conn) {
 	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
-	if (n < 0)
-		throw std::runtime_error(std::string("write: ") + strerror(errno));
+	if (n <= 0) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " closing after write result " << n;
+		closeConnection(conn);
+		return ;
+	}
 	logger.debug() << "Worker: " << "fd: " << conn.fd << " wrote " << n << " bytes:\n"
 	            << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
 
@@ -223,4 +273,21 @@ void Worker::onWritable(Connection &conn) {
 		conn.txn = Transaction();
 		poller.setEvents(conn.fd, POLLIN);
 	}
+}
+
+void Worker::closeManagedFd(int &fd) {
+	if (fd < 0)
+		return ;
+	poller.remove(fd);
+	fdToConnection.erase(fd);
+	close(fd);
+	fd = -1;
+}
+
+void Worker::closeConnection(Connection &conn) {
+	int client_fd = conn.fd;
+	closeManagedFd(conn.txn.cgi.in_fd);
+	closeManagedFd(conn.txn.cgi.out_fd);
+	closeManagedFd(conn.fd);
+	connections.erase(client_fd);
 }
