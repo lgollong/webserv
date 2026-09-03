@@ -43,13 +43,13 @@ After parsing, `Worker` asks `Config` for the route using the connection's serve
 For allowed requests, dispatch order is:
 
 1. `DELETE` goes to `StaticFile::erase()`.
-2. `POST` on a route with `upload_store` goes to `StaticFile::upload()`.
+2. `POST` on a route with both `upload on` and `upload_store` goes to `StaticFile::upload()`.
 3. A configured `session_demo` route goes to `SessionStore`; no supplied parsed configuration currently uses this flag.
 4. A configured `return` becomes a redirect response.
 5. A resolved CGI route starts a `CgiJob`.
 6. All other requests go to `StaticFile::serve()`.
 
-This makes `upload_store`, not the parsed `upload on|off` token, the current upload switch. That is a known parser/runtime mismatch.
+The parser preserves the upload authorization flag, so `upload off` prevents writes even when a storage path is present.
 
 ## 6. Static Responses
 
@@ -73,4 +73,4 @@ Every handler result becomes `Response`, then `Http::build()` produces `Connecti
 
 ## 9. Current Verification State
 
-The focused HTTP, parser-model/malformed-config, static-file, event-loop, CGI lifecycle, and connection-lifecycle targets exercise the paths above. The full `make test` target currently reaches `cgi-pipe-test` before stopping because that integration test still has mock-era port-8080 expectations. See [Testing and Evaluation](testing.md) for the exact status and outstanding coverage.
+The focused HTTP, parser-model/malformed-config, static-file, event-loop, CGI lifecycle, CGI-pipe, resilience, and connection-lifecycle targets exercise the paths above. The full `make test` target currently reaches `cookie-session-test` before stopping because the optional session demonstration still has mock-era configuration expectations. See [Testing and Evaluation](testing.md) for the exact status and outstanding coverage.

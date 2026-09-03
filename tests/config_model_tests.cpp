@@ -204,13 +204,14 @@ int main() {
 	expect(cgi.is_cgi,
 		"server 0 PHP request is marked as CGI");
 
-	expect(cgi.cgi_handlers.size() == 3,
-		"server 0 cgi contains three CGI handlers");
+	expect(cgi.cgi_handlers.size() == 4,
+		"server 0 cgi contains four CGI handlers");
 
 	expect(cgi.cgi_handlers.find(".php") != cgi.cgi_handlers.end() &&
 		cgi.cgi_handlers.find(".py") != cgi.cgi_handlers.end() &&
-		cgi.cgi_handlers.find(".sh") != cgi.cgi_handlers.end(),
-		"server 0 contains PHP Python and SH CGI mappings");
+		cgi.cgi_handlers.find(".sh") != cgi.cgi_handlers.end() &&
+		cgi.cgi_handlers.find(".txt") != cgi.cgi_handlers.end(),
+		"server 0 contains PHP Python SH and text CGI mappings");
 
 	expect(cgi.cgi_handlers.find(".php")->second ==
 		"/usr/bin/php-cgi",
@@ -224,6 +225,10 @@ int main() {
 		"/bin/bash",
 		"SH CGI handler is /bin/bash");
 
+	expect(cgi.cgi_handlers.find(".txt")->second ==
+		"/bin/cat",
+		"text CGI handler is /bin/cat");
+
 	expect(allows(cgi, "GET") &&
 		allows(cgi, "POST") &&
 		!allows(cgi, "DELETE"),
@@ -235,12 +240,8 @@ int main() {
 	expect(cgi.cgi_handler == "/usr/bin/php-cgi",
 		"PHP CGI handler is resolved");
 
-	/*
-	 * The parser currently gives locations without an explicit
-	 * root the default "./contents".
-	 */
 	expect(cgi.root == "./contents",
-		"server 0 CGI route uses default location root");
+		"server 0 CGI route uses the default server root");
 
 	Route redirect = config.route(0, requestFor("/redirect-test"));
 
@@ -516,7 +517,7 @@ int main() {
 	/*
 	 * Unknown extension must not select CGI.
 	 */
-	Route unknownCgi = config.route(0, requestFor("/cgi/test.txt"));
+	Route unknownCgi = config.route(0, requestFor("/cgi/test.unknown"));
 
 	expect(!unknownCgi.is_cgi,
 		"unknown CGI extension is not treated as CGI");

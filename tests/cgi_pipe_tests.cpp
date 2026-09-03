@@ -11,7 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static const int kPort = 8080;
+static const int kPort = 8002;
 static const int kStartupTimeoutMs = 5000;
 static const int kResponseTimeoutMs = 6000;
 static int failures = 0;
@@ -184,7 +184,7 @@ static std::string getRequest(const std::string &path) {
 int main() {
 	pid_t server = startServer();
 	bool started = server > 0 && waitForServer(server);
-	expect(started, "server starts on loopback port 8080");
+	expect(started, "server starts on configured loopback port 8002");
 	if (!started) {
 		stopServer(server);
 		return 1;
@@ -213,8 +213,8 @@ int main() {
 		response.find("SCRIPT_NAME=/cgi/test.sh\n") != std::string::npos &&
 		response.find("PATH_INFO=/extra\n") != std::string::npos &&
 		response.find("QUERY_STRING=context\n") != std::string::npos &&
-		response.find("SERVER_NAME=localhost\n") != std::string::npos &&
-		response.find("SERVER_PORT=8080\n") != std::string::npos &&
+		response.find("SERVER_NAME=mywebsite.com\n") != std::string::npos &&
+		response.find("SERVER_PORT=8002\n") != std::string::npos &&
 		response.find("SERVER_PROTOCOL=HTTP/1.1\n") != std::string::npos &&
 		response.find("CONTENT_TYPE=text/plain\n") != std::string::npos &&
 		response.find("HTTP_X_CGI_TEST=accepted\n") != std::string::npos &&
@@ -223,9 +223,9 @@ int main() {
 		"CGI receives complete request context and runs in its script directory");
 
 	response.clear();
-	expect(request(getRequest("/cgi/test.cgi"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
-		response.find("Direct CGI type\n") != std::string::npos,
-		"directly executable CGI type runs through the shared event-loop path");
+	expect(request(getRequest("/cgi/context.txt"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("CGI working directory is correct.\n") != std::string::npos,
+		"configured text CGI handler runs through the shared event-loop path");
 
 	response.clear();
 	expect(request(getRequest("/cgi/test.sh?delayed"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
@@ -247,7 +247,7 @@ int main() {
 		"early CGI stdin closure returns the controlled 502 response");
 
 	response.clear();
-	expect(serverRunning(server) && request(getRequest("/files/index.html"), response) &&
+	expect(serverRunning(server) && request(getRequest("/static/index.html"), response) &&
 		response.find("HTTP/1.1 200 OK") == 0,
 		"server survives CGI pipe failure and serves a later request");
 

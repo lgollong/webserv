@@ -53,7 +53,7 @@ open http://127.0.0.1:8080/
 make test
 ```
 
-The test target is sequential because several suites bind fixed loopback ports. **Current status:** parser model and malformed-configuration coverage pass. The combined target still stops at `cgi-pipe-test`, because older CGI/session/resilience integration tests assume the retired mock listener on port `8080`. [Testing and Evaluation](docs/testing.md) records the affected targets and useful passing focused tests.
+The test target is sequential because several suites bind fixed loopback ports. **Current status:** parser model, CGI-pipe, and resilience coverage use parser-backed fixtures. The combined target still stops at `cookie-session-test`, because that optional session demonstration intentionally remains tied to the retired mock configuration. [Testing and Evaluation](docs/testing.md) records the affected target and useful passing focused tests.
 
 ### Cleanup
 
