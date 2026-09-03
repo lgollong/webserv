@@ -6,8 +6,7 @@ Logger::Logger(std::ostream &access_log, std::ostream &error_log, int level)
 Logger::~Logger() {}
 
 void Logger::error(const std::string &msg) {
-	if (this->level <= ERROR)
-		error_log << "ERROR: " << msg;
+	error_log << "ERROR: " << msg << std::endl;
 }
 
 void Logger::access(const Connection &conn) {
