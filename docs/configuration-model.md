@@ -15,7 +15,7 @@ Server directives:
 | `listen <port>;` | TCP listener port. |
 | `host <IPv4-address>;` | Listener address. Missing host defaults to `0.0.0.0`. |
 | `server_name <name>;` | Value provided to CGI as `SERVER_NAME`. It is not Host-header virtual-host routing. |
-| `root <path>;` | Stored server-level root. It is used by the route fallback when no location matches; parsed locations currently default independently to `./contents`. |
+| `root <path>;` | Default document root for locations that omit `root`, and for the synthesized fallback location when a server has no locations. An explicit location root overrides it. |
 | `client_max_body_size <bytes|k|m|g>;` | Decoded request-body limit passed to `Http`. Missing values default to 1 MiB. |
 | `error_page <100-599> <path>;` | Maps an error status to a static error-page file. |
 
@@ -42,7 +42,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 | --- | --- |
 | `host`, `port` | IPv4 interface and port bound by one listener. |
 | `server_name` | CGI `SERVER_NAME`. |
-| `root` | Server-level root used by the route fallback when no location matches. |
+| `root` | Server-level default root inherited by locations that omit `root`. |
 | `client_max_body_size` | Maximum decoded request-body size. |
 | `error_pages` | Status-to-static-file mapping for empty error responses. |
 | `locations` | Parsed `Route` records. |

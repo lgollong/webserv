@@ -84,8 +84,11 @@ int main() {
 		expect(servers[1].locations.size() == 6,
 			"server 1 has six locations");
 
-		expect(servers[2].locations.size() == 3,
-			"server 2 has three locations");
+		expect(servers[2].root == "./contents/files",
+			"server 2 has a configured inherited root");
+
+		expect(servers[2].locations.size() == 4,
+			"server 2 has four locations");
 
 		expect(servers[3].locations.size() == 2,
 			"server 3 has two locations");
@@ -350,11 +353,10 @@ int main() {
 	Route api = config.route(2, requestFor("/api/resource"));
 
 	/*
-	 * /api has no root directive.
-	 * parseLocation() therefore assigns "./contents"; autoindex is enabled.
+	 * /api has no root directive and inherits the server root.
 	 */
 	expect(api.location == "/api" &&
-		api.root == "./contents" &&
+		api.root == "./contents/files" &&
 		api.autoindex,
 		"server 2 /api route resolves correctly");
 
@@ -367,11 +369,10 @@ int main() {
 	Route apiUpload = config.route(2, requestFor("/api/upload/file.txt"));
 
 	/*
-	 * /api/upload also has no root directive,
-	 * therefore its parsed root is "./contents".
+	 * /api/upload also inherits the server root.
 	 */
 	expect(apiUpload.location == "/api/upload" &&
-		apiUpload.root == "./contents" &&
+		apiUpload.root == "./contents/files" &&
 		apiUpload.upload_store == "./contents/uploads",
 		"server 2 /api/upload route resolves correctly");
 
@@ -391,6 +392,12 @@ int main() {
 
 	expect(api.location == "/api",
 		"server 2 /api request selects /api");
+
+	Route inherited = config.route(2, requestFor("/inherited/index.html"));
+
+	expect(inherited.location == "/inherited" &&
+		inherited.root == "./contents/files",
+		"server 2 inherited route uses the server root");
 
 	/* ============================================================
 	 * SERVER 3 / PORT 8001 / admin.local
