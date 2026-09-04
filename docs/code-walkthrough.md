@@ -111,14 +111,14 @@ ssize_t req_size = http.parse(conn.inbuf, conn.txn.request);
 ```text
 positive value  a full request was parsed; value is bytes consumed
 0               more input is needed
--1              malformed request line
+-1              malformed or unsupported request data
 ```
 
-It looks for the HTTP header terminator, `\r\n\r\n`. When present, it strictly validates an exact `method SP origin-form-target SP HTTP/1.1` request line, separates a `?query` from the path, stores the HTTP version, collects header fields, then uses `Content-Length` to decide whether the body is complete. On success, it assigns a local parsed request to `conn.txn.request` and returns the number of bytes that belong to that request.
+It looks for the HTTP header terminator, `\r\n\r\n`, and rejects an unfinished header block once it grows beyond 16 KiB. When present, it strictly validates an exact `method SP origin-form-target SP HTTP/1.1` request line, separates a `?query` from the path, and stores the HTTP version. Each header name must be a token, and the parser canonicalizes it to lowercase, trims optional outer whitespace from its value, and rejects malformed line endings and control bytes. It limits a request to 100 header fields, rejects duplicate `Content-Length`, and rejects `Transfer-Encoding` until #21 supplies chunk decoding. It then uses `Content-Length` to decide whether the body is complete. On success, it assigns a local parsed request to `conn.txn.request` and returns the number of bytes that belong to that request.
 
 `Worker` removes exactly that many bytes from `conn.inbuf` only after a complete result. This is the key ownership rule: **`Worker` owns the byte buffer; `Http` interprets it.**
 
-Current-state note: request-line validation is implemented. Header validation, safe `Content-Length` handling, chunked bodies, and parser-error responses are still incomplete.
+Current-state note: request-line and header syntax/framing validation are implemented. Numeric `Content-Length` validation, body-size policy, chunked bodies, and parser-error responses are still incomplete.
 
 ## 7. Resolving the Route
 
