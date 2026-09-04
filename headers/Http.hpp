@@ -10,7 +10,8 @@ class Http {
 	public:
 		enum {
 			MAX_HEADER_BYTES = 16384,
-			MAX_HEADER_FIELDS = 100
+			MAX_HEADER_FIELDS = 100,
+			DEFAULT_MAX_BODY_BYTES = 10000000
 		};
 
 		Http();
@@ -21,6 +22,7 @@ class Http {
 		//  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
 		// Never mutates `inbuf`; the caller (Worker) owns trimming consumed bytes.
 		ssize_t      parse(const std::string &inbuf, Request &request);
+		ssize_t      parse(const std::string &inbuf, Request &request, size_t maxBodyBytes);
 		std::string  build(const Response &response);
 };
 
