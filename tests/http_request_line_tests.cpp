@@ -51,6 +51,26 @@ static void expectIncomplete(Http &http, const std::string &raw, const std::stri
 	expect(isUnchanged(request), name + " does not mutate request state");
 }
 
+static void expectParseStatus(Http &http, const std::string &raw, int expectedStatus,
+		const std::string &name) {
+	Request request = unchangedRequest();
+	int status = 0;
+	ssize_t result = http.parse(raw, request, status);
+	expect(result < 0, name + " is rejected");
+	expect(status == expectedStatus, name + " reports the expected status");
+	expect(isUnchanged(request), name + " does not mutate request state");
+}
+
+static void expectParseStatusWithLimit(Http &http, const std::string &raw, size_t maxBodyBytes,
+		int expectedStatus, const std::string &name) {
+	Request request = unchangedRequest();
+	int status = 0;
+	ssize_t result = http.parse(raw, request, maxBodyBytes, status);
+	expect(result < 0, name + " is rejected");
+	expect(status == expectedStatus, name + " reports the expected status");
+	expect(isUnchanged(request), name + " does not mutate request state");
+}
+
 int main() {
 	Http http;
 	Request request;
@@ -140,6 +160,22 @@ int main() {
 	std::ostringstream defaultLimit;
 	defaultLimit << static_cast<size_t>(Http::DEFAULT_MAX_BODY_BYTES) + 1;
 	expectMalformed(http, "POST / HTTP/1.1\r\nContent-Length: " + defaultLimit.str() + "\r\n\r\n", "body over default limit");
+
+	expectParseStatus(http, requestWithLine("GET  / HTTP/1.1"), 400, "malformed request line");
+	expectParseStatus(http, "GET / HTTP/1.1\r\nBad Header\r\n\r\n", 400, "malformed header");
+	expectParseStatusWithLimit(http, "GET / HTTP/1.1\r\nContent-Length: 4\r\n\r\n", 3, 413,
+		"body over explicit limit status");
+
+	std::string oversizedHeader = "GET / HTTP/1.1\r\nX-Test: " + std::string(Http::MAX_HEADER_BYTES, 'x');
+	expectParseStatus(http, oversizedHeader, 431, "oversized header");
+
+	Response errorResponse;
+	errorResponse.status = 413;
+	expect(http.build(errorResponse).find("HTTP/1.1 413 Payload Too Large\r\n") == 0,
+		"payload-too-large response has a reason phrase");
+	errorResponse.status = 431;
+	expect(http.build(errorResponse).find("HTTP/1.1 431 Request Header Fields Too Large\r\n") == 0,
+		"header-too-large response has a reason phrase");
 
 	if (failures == 0)
 		std::cout << "http parser tests passed" << std::endl;

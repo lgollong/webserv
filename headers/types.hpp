@@ -104,10 +104,11 @@ struct Connection {
 	std::string  outbuf;
 	size_t       sent;
 	bool         keep_alive; // @note needed?
+	bool         close_after_write;
 	time_t       last_activity;
 	Transaction  txn;
 
-	Connection() : fd(-1), phase(IDLE), sent(0), keep_alive(false), last_activity(0) {}
+	Connection() : fd(-1), phase(IDLE), sent(0), keep_alive(false), close_after_write(false), last_activity(0) {}
 };
 
 #endif
