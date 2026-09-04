@@ -60,9 +60,10 @@ main
 - Parses `Content-Length` as one or more decimal digits with checked `size_t` conversion; signs, whitespace within the value, trailing data, and overflow are rejected.
 - Waits for the complete declared body, returns the exact consumed count before any pipelined bytes, and rejects body/request sizes that cannot be represented by the parser contract.
 - Exposes a body-limit overload for future configuration integration. The current two-argument parser uses a temporary 10,000,000-byte default, matching the first server limit in `config/req.config`, until #5 supplies `client_max_body_size`.
-- Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request.
-- Builds HTTP/1.1 responses with a default content type and calculated `Content-Length`.
-- `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and turn malformed requests into appropriate status responses.
+- Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request. Its error-status overload reports `400` for malformed syntax/framing, `413` for a declared body over the limit, and `431` for header limits.
+- Builds HTTP/1.1 responses with a default content type and calculated `Content-Length`, including reasons for `413` and `431`.
+- `Worker` queues parser failures through the normal output path and closes that connection after its error response flushes.
+- `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and provide configured/default error pages.
 - `Planned`: support chunked request bodies and unchunk them before CGI input.
 - `To Fix`: expand status handling and response headers to cover the subject's required behavior.
 
@@ -110,7 +111,7 @@ main
 - `Response` holds status, headers, and body.
 - `Route` holds a root, CGI settings, and allowed methods.
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
-- `Connection` owns socket identity, input/output buffers, partial-write position, last activity, and its current transaction.
+- `Connection` owns socket identity, input/output buffers, partial-write position, parser-error close-after-write state, last activity, and its current transaction.
 - `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion state, and failure state.
 - `Partial`: client and registered CGI fds now have an explicit shared cleanup path; `Phase`, `keep_alive`, `last_activity`, and child-process cleanup remain incomplete.
 
@@ -125,7 +126,15 @@ main
 5. `Http` serializes a `Response` into `Connection::outbuf`.
 6. `Worker` changes the client interest to `POLLOUT` and writes until the buffer is complete.
 
-This establishes the intended ownership flow, but static file serving, route resolution, errors, and connection handling remain incomplete.
+This establishes the intended ownership flow, but static file serving, route resolution, and general connection handling remain incomplete.
+
+### Parser Failure
+
+1. `Http` returns `-1` and an error status to `Worker`.
+2. `Worker` drops the malformed input, appends a serialized error response, marks the connection to close after its output flushes, and waits for `POLLOUT`.
+3. `Worker` closes only that client fd after the normal non-blocking write path completes.
+
+Configured and custom error-page bodies remain planned work.
 
 ### CGI Request
 

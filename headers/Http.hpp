@@ -23,6 +23,8 @@ class Http {
 		// Never mutates `inbuf`; the caller (Worker) owns trimming consumed bytes.
 		ssize_t      parse(const std::string &inbuf, Request &request);
 		ssize_t      parse(const std::string &inbuf, Request &request, size_t maxBodyBytes);
+		ssize_t      parse(const std::string &inbuf, Request &request, int &errorStatus);
+		ssize_t      parse(const std::string &inbuf, Request &request, size_t maxBodyBytes, int &errorStatus);
 		std::string  build(const Response &response);
 };
 
