@@ -8,21 +8,55 @@ Http::~Http() {}
 
 // request-line = method SP request-target SP HTTP-version CRLF
 // request-target = path [ "?" query ]
+static bool isTokenChar(char value) {
+	unsigned char c = static_cast<unsigned char>(value);
+	if (std::isalnum(c))
+		return true;
+	return value == '!' || value == '#' || value == '$' || value == '%' ||
+		value == '&' || value == '\'' || value == '*' || value == '+' ||
+		value == '-' || value == '.' || value == '^' || value == '_' ||
+		value == '`' || value == '|' || value == '~';
+}
+
+static bool isMethodToken(const std::string &method) {
+	if (method.empty())
+		return false;
+	for (std::string::size_type i = 0; i < method.size(); ++i) {
+		if (!isTokenChar(method[i]))
+			return false;
+	}
+	return true;
+}
+
+static bool isOriginFormTarget(const std::string &target) {
+	if (target.empty() || target[0] != '/')
+		return false;
+	for (std::string::size_type i = 0; i < target.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(target[i]);
+		if (c <= 0x20 || c >= 0x7f || target[i] == '#')
+			return false;
+	}
+	return true;
+}
+
 static bool parseRequestLine(const std::string &line, Request &request) {
 	std::string::size_type sp1 = line.find(' ');
-	if (sp1 == std::string::npos)
+	if (sp1 == std::string::npos || sp1 == 0)
 		return false;
 	std::string::size_type sp2 = line.find(' ', sp1 + 1);
-	if (sp2 == std::string::npos)
+	if (sp2 == std::string::npos || sp2 == sp1 + 1)
+		return false;
+	if (line.find(' ', sp2 + 1) != std::string::npos)
 		return false;
 
 	std::string method = line.substr(0, sp1);
 	std::string target  = line.substr(sp1 + 1, sp2 - sp1 - 1);
 	std::string version = line.substr(sp2 + 1);
-	if (method.empty() || target.empty() || version.empty())
+	if (!isMethodToken(method) || !isOriginFormTarget(target) || version != "HTTP/1.1")
 		return false;
 
 	request.method = method;
+	request.version = version;
 
 	std::string::size_type qpos = target.find('?');
 	if (qpos == std::string::npos) {

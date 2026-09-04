@@ -30,7 +30,7 @@ Before reading the loop, it helps to know the data structs in [`headers/types.hp
 
 | Struct | Meaning | Lifetime / owner |
 | --- | --- | --- |
-| `Request` | Incoming method, path, query, headers, and body. | One `Transaction`; filled by `Http`. |
+| `Request` | Incoming method, path, query, HTTP version, headers, and body. | One `Transaction`; filled by `Http`. |
 | `Response` | Outgoing status, headers, and body. | One `Transaction`; serialized by `Http`. |
 | `Route` | Resolved root, CGI settings, and allowed methods. | One `Transaction`; returned by `Config`. |
 | `CgiJob` | Child pid, stdin/stdout fds, output, write progress, and failure state. | One `Transaction` while a CGI request runs. |
@@ -114,11 +114,11 @@ positive value  a full request was parsed; value is bytes consumed
 -1              malformed request line
 ```
 
-It looks for the HTTP header terminator, `\r\n\r\n`. When present, it splits the request line into method, target, and version; separates a `?query` from the path; collects header fields; then uses `Content-Length` to decide whether the body is complete. On success, it assigns a local parsed request to `conn.txn.request` and returns the number of bytes that belong to that request.
+It looks for the HTTP header terminator, `\r\n\r\n`. When present, it strictly validates an exact `method SP origin-form-target SP HTTP/1.1` request line, separates a `?query` from the path, stores the HTTP version, collects header fields, then uses `Content-Length` to decide whether the body is complete. On success, it assigns a local parsed request to `conn.txn.request` and returns the number of bytes that belong to that request.
 
 `Worker` removes exactly that many bytes from `conn.inbuf` only after a complete result. This is the key ownership rule: **`Worker` owns the byte buffer; `Http` interprets it.**
 
-Current-state note: request-line/header validation, safe `Content-Length` handling, chunked bodies, and parser-error responses are still incomplete on this branch.
+Current-state note: request-line validation is implemented. Header validation, safe `Content-Length` handling, chunked bodies, and parser-error responses are still incomplete.
 
 ## 7. Resolving the Route
 
