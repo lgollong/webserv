@@ -55,10 +55,12 @@ main
 `Partial`.
 
 - Strictly parses a buffered HTTP/1.1 request line into method, origin-form path, query, and version state.
-- Parses headers and a `Content-Length` body with only baseline validation.
-- Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed request line.
+- Strictly parses CRLF-delimited request headers with token field names, lowercase canonical names, and trimmed optional whitespace.
+- Rejects malformed header syntax, more than 100 fields, headers larger than 16 KiB, duplicate `Content-Length`, and all `Transfer-Encoding` requests until chunk decoding is implemented.
+- Parses a `Content-Length` body with only baseline numeric validation.
+- Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request.
 - Builds HTTP/1.1 responses with a default content type and calculated `Content-Length`.
-- `To Fix`: validate header syntax and limits, body framing/limits, and malformed requests with appropriate status responses.
+- `To Fix`: validate `Content-Length` values and body limits, and turn malformed requests into appropriate status responses.
 - `Planned`: support chunked request bodies and unchunk them before CGI input.
 - `To Fix`: expand status handling and response headers to cover the subject's required behavior.
 

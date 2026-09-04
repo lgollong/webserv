@@ -8,6 +8,11 @@
 // Byte stream <-> structured message, both directions; renders status codes (incl. errors).
 class Http {
 	public:
+		enum {
+			MAX_HEADER_BYTES = 16384,
+			MAX_HEADER_FIELDS = 100
+		};
+
 		Http();
 		~Http();
 

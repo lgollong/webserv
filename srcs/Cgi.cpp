@@ -73,7 +73,7 @@ static std::vector<std::string> buildEnv(const Request &request, const Route &ro
 		len << request.body.size();
 		env.push_back("CONTENT_LENGTH=" + len.str());
 
-		std::map<std::string, std::string>::const_iterator it = request.headers.find("Content-Type");
+		std::map<std::string, std::string>::const_iterator it = request.headers.find("content-type");
 		if (it != request.headers.end())
 				env.push_back("CONTENT_TYPE=" + it->second);
 
