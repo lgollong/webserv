@@ -57,10 +57,12 @@ main
 - Strictly parses a buffered HTTP/1.1 request line into method, origin-form path, query, and version state.
 - Strictly parses CRLF-delimited request headers with token field names, lowercase canonical names, and trimmed optional whitespace.
 - Rejects malformed header syntax, more than 100 fields, headers larger than 16 KiB, duplicate `Content-Length`, and all `Transfer-Encoding` requests until chunk decoding is implemented.
-- Parses a `Content-Length` body with only baseline numeric validation.
+- Parses `Content-Length` as one or more decimal digits with checked `size_t` conversion; signs, whitespace within the value, trailing data, and overflow are rejected.
+- Waits for the complete declared body, returns the exact consumed count before any pipelined bytes, and rejects body/request sizes that cannot be represented by the parser contract.
+- Exposes a body-limit overload for future configuration integration. The current two-argument parser uses a temporary 10,000,000-byte default, matching the first server limit in `config/req.config`, until #5 supplies `client_max_body_size`.
 - Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request.
 - Builds HTTP/1.1 responses with a default content type and calculated `Content-Length`.
-- `To Fix`: validate `Content-Length` values and body limits, and turn malformed requests into appropriate status responses.
+- `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and turn malformed requests into appropriate status responses.
 - `Planned`: support chunked request bodies and unchunk them before CGI input.
 - `To Fix`: expand status handling and response headers to cover the subject's required behavior.
 
@@ -148,7 +150,7 @@ The flow is wired end to end, but it needs the reliability work listed above bef
 The project still needs the following mandatory behavior:
 
 1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
-2. Complete HTTP validation, request-body limits, chunked-body decoding, accurate errors, and method restrictions.
+2. Finish configuration-driven request-body limits, chunked-body decoding, accurate errors, and method restrictions.
 3. Static file serving from configured roots, index files, autoindex, uploads, `POST`, and `DELETE`.
 4. Redirection and configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, timeouts, and no unexpected termination.

@@ -1,7 +1,7 @@
 #include "Http.hpp"
 #include <sstream>
-#include <cstdlib>
 #include <cctype>
+#include <limits>
 
 Http::Http() {}
 
@@ -152,10 +152,31 @@ static bool parseHeaderFields(const std::string &headerBlock, std::string::size_
 	return !hasTransferEncoding;
 }
 
+static bool parseContentLength(const std::string &value, size_t &contentLength) {
+	if (value.empty())
+		return false;
+
+	contentLength = 0;
+	const size_t maxSize = std::numeric_limits<size_t>::max();
+	for (std::string::size_type i = 0; i < value.size(); ++i) {
+		if (value[i] < '0' || value[i] > '9')
+			return false;
+		size_t digit = static_cast<size_t>(value[i] - '0');
+		if (contentLength > (maxSize - digit) / 10)
+			return false;
+		contentLength = contentLength * 10 + digit;
+	}
+	return true;
+}
+
 // > 0: bytes consumed, a complete request was parsed into `request`.
 //   0: `inbuf` doesn't contain a complete request yet -- wait for more data.
 //  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
 ssize_t Http::parse(const std::string &inbuf, Request &request) {
+	return parse(inbuf, request, DEFAULT_MAX_BODY_BYTES);
+}
+
+ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBytes) {
 	std::string::size_type headerEnd = inbuf.find("\r\n\r\n");
 	if (headerEnd == std::string::npos) {
 		if (inbuf.size() > MAX_HEADER_BYTES)
@@ -181,16 +202,25 @@ ssize_t Http::parse(const std::string &inbuf, Request &request) {
 
 	size_t contentLength = 0;
 	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("content-length");
-	if (it != parsed.headers.end())
-		contentLength = static_cast<size_t>(std::atoi(it->second.c_str()));
+	if (it != parsed.headers.end() && !parseContentLength(it->second, contentLength))
+		return -1; // invalid Content-Length
+	if (contentLength > maxBodyBytes)
+		return -1; // request body is larger than the configured limit
 
-	if (inbuf.size() < bodyStart + contentLength)
+	const size_t maxSize = std::numeric_limits<size_t>::max();
+	if (contentLength > maxSize - bodyStart)
+		return -1; // full request length cannot be represented
+	const size_t requestSize = bodyStart + contentLength;
+	if (requestSize > static_cast<size_t>(std::numeric_limits<ssize_t>::max()))
+		return -1; // parser contract cannot return this consumed count
+
+	if (inbuf.size() < requestSize)
 		return 0; // body not fully buffered yet
 
 	parsed.body = inbuf.substr(bodyStart, contentLength);
 	request = parsed;
 
-	return static_cast<ssize_t>(bodyStart + contentLength);
+	return static_cast<ssize_t>(requestSize);
 }
 
 std::string Http::build(const Response &response) {
