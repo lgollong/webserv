@@ -56,15 +56,15 @@ main
 
 - Strictly parses a buffered HTTP/1.1 request line into method, origin-form path, query, and version state.
 - Strictly parses CRLF-delimited request headers with token field names, lowercase canonical names, and trimmed optional whitespace.
-- Rejects malformed header syntax, more than 100 fields, headers larger than 16 KiB, duplicate `Content-Length`, and all `Transfer-Encoding` requests until chunk decoding is implemented.
+- Rejects malformed header syntax, more than 100 fields, headers larger than 16 KiB, duplicate `Content-Length`, and unsupported or conflicting transfer codings. It accepts only a sole `Transfer-Encoding: chunked` field.
 - Parses `Content-Length` as one or more decimal digits with checked `size_t` conversion; signs, whitespace within the value, trailing data, and overflow are rejected.
 - Waits for the complete declared body, returns the exact consumed count before any pipelined bytes, and rejects body/request sizes that cannot be represented by the parser contract.
+- Decodes chunked bodies before assigning `Request::body`, supports chunk extensions and syntax-checked trailers, and applies the body limit to decoded bytes. Chunk trailers are not merged into request headers.
 - Exposes a body-limit overload for future configuration integration. The current two-argument parser uses a temporary 10,000,000-byte default, matching the first server limit in `config/req.config`, until #5 supplies `client_max_body_size`.
 - Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request. Its error-status overload reports `400` for malformed syntax/framing, `413` for a declared body over the limit, and `431` for header limits.
 - Builds HTTP/1.1 responses with a default content type and calculated `Content-Length`, including reasons for `413` and `431`.
 - `Worker` queues parser failures through the normal output path and closes that connection after its error response flushes.
 - `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and provide configured/default error pages.
-- `Planned`: support chunked request bodies and unchunk them before CGI input.
 - `To Fix`: expand status handling and response headers to cover the subject's required behavior.
 
 ### `Config`
@@ -141,7 +141,7 @@ Configured and custom error-page bodies remain planned work.
 1. `Worker` identifies a CGI route from `Config`.
 2. `Cgi` starts the child and returns its pipe fds in `CgiJob`.
 3. `Worker` registers CGI stdin for `POLLOUT` and stdout for `POLLIN` in the same `Poller`.
-4. `Cgi` sends the request body and collects CGI output through readiness callbacks.
+4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks.
 5. `Cgi` converts the CGI response into `Response`, which `Http` serializes for the client.
 
 The flow is wired end to end, but it needs the reliability work listed above before it meets the subject's non-blocking and no-hang requirements.
@@ -159,7 +159,7 @@ The flow is wired end to end, but it needs the reliability work listed above bef
 The project still needs the following mandatory behavior:
 
 1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
-2. Finish configuration-driven request-body limits, chunked-body decoding, accurate errors, and method restrictions.
+2. Finish configuration-driven request-body limits, accurate errors, and method restrictions.
 3. Static file serving from configured roots, index files, autoindex, uploads, `POST`, and `DELETE`.
 4. Redirection and configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, timeouts, and no unexpected termination.
