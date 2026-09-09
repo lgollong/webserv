@@ -118,11 +118,11 @@ It looks for the HTTP header terminator, `\r\n\r\n`, and rejects an unfinished h
 
 The normal call currently uses a temporary 10,000,000-byte body limit. `Http` also exposes `parse(inbuf, request, maxBodyBytes)` so #5 can pass a parsed `client_max_body_size` before the body is buffered; the parser rejects an over-limit declaration without copying body bytes.
 
-`Worker` uses the error-status overload. On a `-1` result, it receives `400` for malformed syntax/framing, `413` for a body over the parser limit, or `431` for a header limit. It clears the unprocessable input, serializes that status through `Http::build()`, marks `Connection::close_after_write`, and switches the fd to `POLLOUT`. This prevents malformed data from leaving the connection waiting in `POLLIN` forever.
+`Worker` uses the error-status overload. On a `-1` result, it receives `400` for malformed syntax/framing, `413` for a body over the parser limit, or `431` for a header limit. It clears the unprocessable input, asks `Http::defaultErrorResponse()` for a matching HTML `Response`, serializes it through `Http::build()`, marks `Connection::close_after_write`, and switches the fd to `POLLOUT`. This prevents malformed data from leaving the connection waiting in `POLLIN` forever while still returning a complete HTTP response.
 
 `Worker` removes exactly that many bytes from `conn.inbuf` only after a complete result. This is the key ownership rule: **`Worker` owns the byte buffer; `Http` interprets it.**
 
-Current-state note: request-line, header syntax/framing, fixed-limit `Content-Length` and chunked-body assembly, and parser-error responses are implemented. Configuration-driven body-size policy and configured error-page bodies remain incomplete.
+Current-state note: request-line, header syntax/framing, fixed-limit `Content-Length` and chunked-body assembly, and default parser-error responses are implemented. Configuration-driven body-size policy and configured custom error-page bodies remain incomplete.
 
 ## 7. Resolving the Route
 
@@ -150,7 +150,7 @@ StaticFile::serve(route, request)
 
 [`StaticFile::serve()`](../srcs/StaticFile.cpp) currently has a MIME-type map, but it does not read from disk. It creates placeholder HTML that includes the requested path. `Worker` places that body and MIME type in `conn.txn.response`.
 
-[`Http::build()`](../srcs/Http.cpp) serializes `Response` into HTTP bytes. It supplies `200` when no status is given and falls back to `500` for an unsupported status. It selects one case-insensitive `Content-Type` or uses `text/html`, calculates and owns one `Content-Length`, filters malformed header names or values, preserves valid extension headers, then writes the status line, headers, separator, and body. `204` and `304` responses discard body bytes before calculating the length.
+[`Http::build()`](../srcs/Http.cpp) serializes `Response` into HTTP bytes. It supplies `200` when no status is given and falls back to `500` for an unsupported status. It selects one case-insensitive `Content-Type` or uses `text/html`, calculates and owns one `Content-Length`, filters malformed header names or values, preserves valid extension headers, then writes the status line, headers, separator, and body. `204` and `304` responses discard body bytes before calculating the length. For an error status with no body, the worker first uses `Http::defaultErrorResponse()`; this produces fixed HTML for known 4xx/5xx statuses and falls back to `500` for any other input.
 
 The completed response bytes are appended to `Connection::outbuf`, and `poller.setEvents(conn.fd, POLLOUT)` changes the client interest from reading to writing.
 
@@ -187,9 +187,9 @@ Back in `Worker::onReadable()`, the CGI stdin fd is registered for `POLLOUT` and
 
 When CGI stdin is writable, [`Worker::onCgiWritable()`](../srcs/Worker.cpp) calls `Cgi::sendBody()`. For a chunked request, this is the decoded `Request::body`, not the wire chunk framing. It advances `CgiJob::sent` until the request body is fully written, then removes and closes CGI stdin so the script sees EOF. A failed pipe read/write marks `CgiJob` as failed without checking `errno` after I/O.
 
-When CGI stdout is readable, [`Worker::onCgiReadable()`](../srcs/Worker.cpp) calls `Cgi::collect()`, which accumulates output in `CgiJob::output`. At EOF, `Cgi::buildResponse()` separates CGI headers from the body, copies `Content-Type`, `Status`, and other headers into a `Response`, and sends that response through the same `Http::build()` and client `POLLOUT` path used for static responses.
+When CGI stdout is readable, [`Worker::onCgiReadable()`](../srcs/Worker.cpp) calls `Cgi::collect()`, which accumulates output in `CgiJob::output`. At EOF, `Cgi::buildResponse()` separates CGI headers from the body, copies `Content-Type`, `Status`, and other headers into a `Response`, and sends that response through the same `Http::build()` and client `POLLOUT` path used for static responses. If the CGI result is an error with no body, `Worker` replaces it with `Http::defaultErrorResponse()` before serialization.
 
-Current-state note: CGI pipe setup and return-value-only I/O failures now produce a controlled `502` response. CGI is still only partially complete: it lacks non-blocking child reaping, timeouts, full configuration-driven handler selection, and complete EOF/body-edge-case behavior.
+Current-state note: CGI pipe setup and return-value-only I/O failures now produce a controlled `502` response with a default HTML body. CGI is still only partially complete: it lacks non-blocking child reaping, timeouts, full configuration-driven handler selection, and complete EOF/body-edge-case behavior.
 
 ## 11. Logging and Exceptions
 
