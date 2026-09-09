@@ -150,7 +150,7 @@ StaticFile::serve(route, request)
 
 [`StaticFile::serve()`](../srcs/StaticFile.cpp) currently has a MIME-type map, but it does not read from disk. It creates placeholder HTML that includes the requested path. `Worker` places that body and MIME type in `conn.txn.response`.
 
-[`Http::build()`](../srcs/Http.cpp) serializes `Response` into HTTP bytes. It supplies a default `200` status when needed, adds a default `Content-Type`, calculates `Content-Length`, writes the HTTP status line and headers, then appends the body.
+[`Http::build()`](../srcs/Http.cpp) serializes `Response` into HTTP bytes. It supplies `200` when no status is given and falls back to `500` for an unsupported status. It selects one case-insensitive `Content-Type` or uses `text/html`, calculates and owns one `Content-Length`, filters malformed header names or values, preserves valid extension headers, then writes the status line, headers, separator, and body. `204` and `304` responses discard body bytes before calculating the length.
 
 The completed response bytes are appended to `Connection::outbuf`, and `poller.setEvents(conn.fd, POLLOUT)` changes the client interest from reading to writing.
 
@@ -201,7 +201,7 @@ logger.debug() << "Worker: fd " << conn.fd;
 
 build a temporary `LogStream`; its destructor flushes the accumulated message at the end of the expression. `main()` catches exceptions that leave `Worker::run()` and sends their messages to `Logger::error()`.
 
-Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, but malformed-request handling, timeout behavior, and full resilience coverage still need work.
+Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, and malformed requests receive a response before their connection closes. Timeout behavior and full resilience coverage still need work.
 
 ## 12. Reading the Code in Order
 
