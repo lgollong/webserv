@@ -61,7 +61,7 @@ The intended discipline is:
 register fd -> wait in poll() -> inspect revents -> perform one appropriate action
 ```
 
-`Worker` copies the resulting fd entries before dispatching callbacks because a callback may remove an fd. It handles managed client/CGI error, hangup, and invalid-fd events by cleaning up the owning connection; it attempts to recreate a failed listener. It gives `poll()` a one-second timeout and sweeps client connections after a wait timeout or after ready events have been dispatched. The sweep collects expired fds before using the same cleanup path, so it does not invalidate map iteration or a ready-event snapshot. CGI connections are excluded here because #35 owns their deadline and child lifecycle.
+`Worker` copies the resulting fd entries before dispatching callbacks because a callback may remove an fd. It handles managed client/CGI error, hangup, and invalid-fd events by cleaning up the owning connection; it attempts to recreate a failed listener. It gives `poll()` a one-second timeout and sweeps after a wait timeout or after ready events have been dispatched. The sweep collects expired client fds before using the same cleanup path, so it does not invalidate map iteration or a ready-event snapshot. It also checks active CGI jobs against their 15-second lifetime and retries any detached child PID with `waitpid(..., WNOHANG)`.
 
 ## 4. Starting the Worker Loop
 
@@ -94,7 +94,7 @@ Current-state note: the listener is hard-coded to port `8080` and `INADDR_ANY`; 
 
 It calls `accept()` to obtain a client socket, marks that client fd non-blocking, and registers it with `POLLIN`. It then creates a `Connection`, assigns the fd, records the current time as client activity, sets its phase to `READING`, stores it in `connections`, and stores a pointer in `fdToConnection`.
 
-At this point the server is not reading or writing application data. It is only waiting for the client socket to become readable. A client in `READING` or `WRITING` that makes no accepted/read/write progress for 30 seconds is closed by the sweep; the same timeout intentionally does not apply while `RUNNING_CGI`.
+At this point the server is not reading or writing application data. It is only waiting for the client socket to become readable. A client in `READING` or `WRITING` that makes no accepted/read/write progress for 30 seconds is closed by the sweep. A client in `RUNNING_CGI` instead follows the CGI job's separate 15-second lifetime.
 
 ## 6. Reading and Buffering an HTTP Request
 
@@ -168,7 +168,7 @@ conn.outbuf.data() + conn.sent
 
 This is the foundation for non-blocking output: no response assumes it can be sent in one system call.
 
-If a write returns zero or a negative value, `onWritable()` closes only that managed connection without inspecting `errno`. Client inactivity timeout handling is implemented; complete keep-alive policy and CGI timeout handling remain unfinished.
+If a write returns zero or a negative value, `onWritable()` closes only that managed connection without inspecting `errno`. Client inactivity and CGI timeout handling are implemented; complete keep-alive policy remains unfinished.
 
 ## 10. CGI Response Path
 
@@ -187,9 +187,9 @@ Back in `Worker::onReadable()`, the CGI stdin fd is registered for `POLLOUT` and
 
 When CGI stdin is writable, [`Worker::onCgiWritable()`](../srcs/Worker.cpp) calls `Cgi::sendBody()`. For a chunked request, this is the decoded `Request::body`, not the wire chunk framing. It advances `CgiJob::sent` until the request body is fully written, then removes and closes CGI stdin so the script sees EOF. A failed pipe read/write marks `CgiJob` as failed without checking `errno` after I/O.
 
-When CGI stdout is readable, [`Worker::onCgiReadable()`](../srcs/Worker.cpp) calls `Cgi::collect()`, which accumulates output in `CgiJob::output`. At EOF, `Cgi::buildResponse()` separates CGI headers from the body, copies `Content-Type`, `Status`, and other headers into a `Response`, and sends that response through the same `Http::build()` and client `POLLOUT` path used for static responses. If the CGI result is an error with no body, `Worker` replaces it with `Http::defaultErrorResponse()` before serialization.
+When CGI stdout is readable, [`Worker::onCgiReadable()`](../srcs/Worker.cpp) calls `Cgi::collect()`, which accumulates output in `CgiJob::output` and records progress. At EOF, it closes the CGI pipes and attempts `waitpid(..., WNOHANG)`. Once the child is reaped, `Cgi::buildResponse()` separates CGI headers from the body, copies `Content-Type`, `Status`, and other headers into a `Response`, and sends that response through the same `Http::build()` and client `POLLOUT` path used for static responses. If the CGI result is an error with no body, `Worker` replaces it with `Http::defaultErrorResponse()` before serialization.
 
-Current-state note: CGI pipe setup and return-value-only I/O failures now produce a controlled `502` response with a default HTML body. CGI is still only partially complete: it lacks non-blocking child reaping, timeouts, full configuration-driven handler selection, and complete EOF/body-edge-case behavior.
+Each `CgiJob` records its start and progress times. During the one-second maintenance sweep, a job reaching 15 seconds is marked failed, its pipes are closed, and its child is sent `SIGTERM`; after a two-second grace period, an unreaped child is sent `SIGKILL`. The worker waits only through later `WNOHANG` checks; once reaped, it sends the controlled default `502` response. A client disconnect transfers any still-running child PID and its termination time to a pending-reap map, so the same escalation/reap sequence continues after a transaction reset. CGI is still only partially complete: full configuration-driven handler selection and complete pipe/body/EOF edge-case behavior remain unfinished.
 
 ## 11. Logging and Exceptions
 
@@ -201,7 +201,7 @@ logger.debug() << "Worker: fd " << conn.fd;
 
 build a temporary `LogStream`; its destructor flushes the accumulated message at the end of the expression. `main()` catches exceptions that leave `Worker::run()` and sends their messages to `Logger::error()`.
 
-Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, malformed requests receive a response before their connection closes, and inactive client connections expire after 30 seconds. CGI timeout behavior and full resilience coverage still need work.
+Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, malformed requests receive a response before their connection closes, inactive clients expire after 30 seconds, and CGI children time out/reap without a blocking wait. Full resilience coverage still needs work.
 
 ## 12. Reading the Code in Order
 
