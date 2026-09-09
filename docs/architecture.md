@@ -64,8 +64,9 @@ main
 - Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request. Its error-status overload reports `400` for malformed syntax/framing, `413` for a declared body over the limit, and `431` for header limits.
 - Builds a complete HTTP/1.1 response envelope for supported status codes, falling back to `500` for an unsupported status.
 - Owns case-insensitive `Content-Type` selection and calculated `Content-Length`, suppresses unsafe or conflicting caller-supplied framing headers, preserves valid extension headers, and omits bodies for `204` and `304`.
-- `Worker` queues parser failures through the normal output path and closes that connection after its error response flushes.
-- `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and provide configured/default error pages.
+- `Http::defaultErrorResponse()` creates deterministic HTML bodies for known error statuses; unknown or non-error inputs fall back to `500`.
+- `Worker` queues parser failures through the normal output path with a default HTML error body and closes that connection after its response flushes. It also substitutes this default for an otherwise-empty static or CGI error response.
+- `To Fix`: have parsed server/location configuration supply `client_max_body_size` to the limit-aware parser, and provide configured custom error pages.
 - `To Fix`: add handler-specific response headers and complete status/error-page behavior with the relevant handler work.
 
 ### `Config`
@@ -132,10 +133,10 @@ This establishes the intended ownership flow, but static file serving, route res
 ### Parser Failure
 
 1. `Http` returns `-1` and an error status to `Worker`.
-2. `Worker` drops the malformed input, appends a serialized error response, marks the connection to close after its output flushes, and waits for `POLLOUT`.
+2. `Worker` drops the malformed input, creates the matching default HTML error `Response`, appends its serialized bytes, marks the connection to close after its output flushes, and waits for `POLLOUT`.
 3. `Worker` closes only that client fd after the normal non-blocking write path completes.
 
-Configured and custom error-page bodies remain planned work.
+Configured custom error-page bodies remain planned work; they will replace the default only when configuration selects one.
 
 ### CGI Request
 
@@ -143,7 +144,7 @@ Configured and custom error-page bodies remain planned work.
 2. `Cgi` starts the child and returns its pipe fds in `CgiJob`.
 3. `Worker` registers CGI stdin for `POLLOUT` and stdout for `POLLIN` in the same `Poller`.
 4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks.
-5. `Cgi` converts the CGI response into `Response`, which `Http` serializes for the client.
+5. `Cgi` converts the CGI response into `Response`. An otherwise-empty CGI error response receives the default HTML body before `Http` serializes it for the client.
 
 The flow is wired end to end, but it needs the reliability work listed above before it meets the subject's non-blocking and no-hang requirements.
 

@@ -52,6 +52,11 @@ static int setupListener(int port) {
 	return fd;
 }
 
+static void addDefaultErrorBody(Http &http, Response &response) {
+	if (response.status >= 400 && response.body.empty())
+		response = http.defaultErrorResponse(response.status);
+}
+
 void Worker::run() {
 	// setup listener
 	// @todo take port from config
@@ -186,6 +191,7 @@ void Worker::onCgiReadable(Connection &conn) {
 	closeManagedFd(conn.txn.cgi.in_fd);
 
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+	addDefaultErrorBody(http, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
 	poller.setEvents(conn.fd, POLLOUT);
 }
@@ -201,7 +207,7 @@ void Worker::onCgiWritable(Connection &conn) {
 void Worker::queueParserError(Connection &conn, int status) {
 	conn.inbuf.clear();
 	conn.txn = Transaction();
-	conn.txn.response.status = status;
+	conn.txn.response = http.defaultErrorResponse(status);
 	conn.outbuf += http.build(conn.txn.response);
 	conn.close_after_write = true;
 	conn.phase = WRITING;
@@ -241,6 +247,7 @@ void Worker::onReadable(Connection &conn) {
 			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
 			if (conn.txn.cgi.failed) {
 				conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+				addDefaultErrorBody(http, conn.txn.response);
 				conn.outbuf = http.build(conn.txn.response);
 				poller.setEvents(conn.fd, POLLOUT);
 				return ;
@@ -258,6 +265,7 @@ void Worker::onReadable(Connection &conn) {
 			conn.txn.response.status = content.status;
 			conn.txn.response.body = content.body;
 			conn.txn.response.headers["Content-Type"] = content.mime_type;
+			addDefaultErrorBody(http, conn.txn.response);
 			conn.outbuf += http.build(conn.txn.response);
 			poller.setEvents(conn.fd, POLLOUT);
 		}
