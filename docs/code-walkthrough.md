@@ -201,7 +201,7 @@ logger.debug() << "Worker: fd " << conn.fd;
 
 build a temporary `LogStream`; its destructor flushes the accumulated message at the end of the expression. `main()` catches exceptions that leave `Worker::run()` and sends their messages to `Logger::error()`.
 
-Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, malformed requests receive a response before their connection closes, inactive clients expire after 30 seconds, and CGI children time out/reap without a blocking wait. Full resilience coverage still needs work.
+Current-state note: access logging is still a stub. Managed socket and pipe error paths now clean up their affected connection, malformed requests receive a response before their connection closes, inactive clients expire after 30 seconds, and CGI children time out/reap without a blocking wait. `make resilience-test` now exercises these client and CGI cleanup paths end to end, including listener survival after each case. Full resilience coverage still needs work.
 
 ## 12. Reading the Code in Order
 
