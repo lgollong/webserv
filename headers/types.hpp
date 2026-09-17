@@ -120,7 +120,7 @@ struct Connection {
 	std::string  inbuf;
 	std::string  outbuf;
 	size_t       sent;
-	bool         keep_alive; // @note needed?
+	bool         keep_alive;
 	bool         close_after_write;
 	time_t       last_activity;
 	Transaction  txn;

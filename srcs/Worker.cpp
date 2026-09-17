@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <cctype>
 #include <cstring>
 #include <ctime>
 #include <iostream>
@@ -55,6 +56,53 @@ static int setupListener(int port) {
 static void addDefaultErrorBody(Http &http, Response &response) {
 	if (response.status >= 400 && response.body.empty())
 		response = http.defaultErrorResponse(response.status);
+}
+
+static bool equalsIgnoreCase(const std::string &value, const char *expected) {
+	if (value.size() != std::strlen(expected))
+		return false;
+	for (std::string::size_type i = 0; i < value.size(); ++i) {
+		if (std::tolower(static_cast<unsigned char>(value[i])) !=
+			std::tolower(static_cast<unsigned char>(expected[i])))
+			return false;
+	}
+	return true;
+}
+
+static bool requestWantsClose(const Request &request) {
+	std::map<std::string, std::string>::const_iterator header = request.headers.find("connection");
+	if (header == request.headers.end())
+		return false;
+
+	const std::string &value = header->second;
+	std::string::size_type start = 0;
+	while (start < value.size()) {
+		std::string::size_type end = value.find(',', start);
+		if (end == std::string::npos)
+			end = value.size();
+		std::string::size_type first = start;
+		while (first < end && (value[first] == ' ' || value[first] == '\t'))
+			++first;
+		std::string::size_type last = end;
+		while (last > first && (value[last - 1] == ' ' || value[last - 1] == '\t'))
+			--last;
+		if (equalsIgnoreCase(value.substr(first, last - first), "close"))
+			return true;
+		if (end == value.size())
+			break;
+		start = end + 1;
+	}
+	return false;
+}
+
+static void applyConnectionPolicy(const Connection &conn, Response &response) {
+	for (std::map<std::string, std::string>::iterator it = response.headers.begin(); it != response.headers.end(); ) {
+		std::map<std::string, std::string>::iterator current = it++;
+		if (equalsIgnoreCase(current->first, "connection"))
+			response.headers.erase(current);
+	}
+	if (conn.close_after_write)
+		response.headers["Connection"] = "close";
 }
 
 static const int kPollTimeoutMs = 1000;
@@ -216,9 +264,11 @@ void Worker::queueParserError(Connection &conn, int status) {
 	conn.inbuf.clear();
 	conn.txn = Transaction();
 	conn.txn.response = http.defaultErrorResponse(status);
+	conn.keep_alive = false;
+	conn.close_after_write = true;
+	applyConnectionPolicy(conn, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
 	conn.sent = 0;
-	conn.close_after_write = true;
 	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);
 }
@@ -239,6 +289,8 @@ void Worker::processBufferedRequest(Connection &conn) {
 
 	logger.debug() << "Worker: " << "fd: " << conn.fd << " complete request found";
 	conn.inbuf.erase(0, static_cast<size_t>(req_size));
+	conn.close_after_write = requestWantsClose(conn.txn.request);
+	conn.keep_alive = !conn.close_after_write;
 	conn.txn.route = config.route(conn.txn.request);
 
 	if (conn.txn.route.is_cgi == true) {
@@ -263,6 +315,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.txn.response.body = content.body;
 	conn.txn.response.headers["Content-Type"] = content.mime_type;
 	addDefaultErrorBody(http, conn.txn.response);
+	applyConnectionPolicy(conn, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
 	conn.sent = 0;
 	conn.phase = WRITING;
@@ -377,6 +430,7 @@ void Worker::finishCgiResponse(Connection &conn) {
 	closeManagedFd(conn.txn.cgi.in_fd);
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
 	addDefaultErrorBody(http, conn.txn.response);
+	applyConnectionPolicy(conn, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
 	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);

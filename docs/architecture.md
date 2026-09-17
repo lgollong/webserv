@@ -40,7 +40,7 @@ main
 - Handles client and CGI `POLLERR`, `POLLHUP`, and `POLLNVAL` paths without throwing from the event loop.
 - `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
 - `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
-- `Partial`: resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 persistence and `Connection` header policy remain incomplete.
+- Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
 - `To Fix`: CGI state is not fully coordinated with connection phases or child lifecycle.
 
 ### `Poller`
@@ -116,9 +116,9 @@ main
 - `Response` holds status, headers, and body.
 - `Route` holds a root, CGI settings, and allowed methods.
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
-- `Connection` owns socket identity, input/output buffers, partial-write position, parser-error close-after-write state, last activity, and its current transaction. Client read/write phases use its last-activity timestamp for the 30-second client timeout.
+- `Connection` owns socket identity, input/output buffers, partial-write position, per-response persistence/close state, last activity, and its current transaction. Client read/write phases use its last-activity timestamp for the 30-second client timeout.
 - `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion/failure state, start/progress timestamps, and termination state.
-- `Partial`: client and registered CGI fds now have an explicit shared cleanup path. One response owns its transaction until it flushes; later buffered request bytes are retained and dispatched only after that reset. `keep_alive` policy and remaining CGI protocol edge cases are incomplete.
+- `Partial`: client and registered CGI fds now have an explicit shared cleanup path. One response owns its transaction until it flushes; later buffered request bytes are retained and dispatched only after that reset. HTTP/1.1 persistence/close policy is active; remaining CGI protocol edge cases are incomplete.
 
 ## Current Request Flow
 
@@ -133,7 +133,9 @@ main
 
 If later request bytes were already buffered on that client socket, they remain in `Connection::inbuf` while this response owns the current `Transaction`. After the last response byte flushes, `Worker` resets that transaction and dispatches one complete buffered next request without waiting for another client write.
 
-This establishes the intended ownership flow, but static file serving, route resolution, and HTTP connection-persistence policy remain incomplete.
+HTTP/1.1 persistence is active by default. If the normalized request `Connection` header contains a comma-delimited `close` token, `Worker` adds `Connection: close` to that response and closes that client only after the response flushes. Parser-error responses always use the same close-after-flush path. The worker applies this policy to static and CGI responses and does not let CGI-provided `Connection` headers override it.
+
+This establishes the intended ownership flow, but static file serving and route resolution remain incomplete.
 
 ### Parser Failure
 
