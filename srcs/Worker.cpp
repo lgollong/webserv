@@ -216,16 +216,60 @@ void Worker::queueParserError(Connection &conn, int status) {
 	conn.inbuf.clear();
 	conn.txn = Transaction();
 	conn.txn.response = http.defaultErrorResponse(status);
-	conn.outbuf += http.build(conn.txn.response);
+	conn.outbuf = http.build(conn.txn.response);
+	conn.sent = 0;
 	conn.close_after_write = true;
 	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);
 }
 
-// read logic
-// read into inbuffer as long as there is something to read
-// loop over inbuffer and check if any full request is in there
-// check if its cgi or standard request and process it
+void Worker::processBufferedRequest(Connection &conn) {
+	if (conn.phase != READING)
+		return ;
+
+	int parseStatus = 0;
+	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, parseStatus);
+	if (req_size < 0) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected request with status " << parseStatus;
+		queueParserError(conn, parseStatus);
+		return ;
+	}
+	if (req_size == 0)
+		return ;
+
+	logger.debug() << "Worker: " << "fd: " << conn.fd << " complete request found";
+	conn.inbuf.erase(0, static_cast<size_t>(req_size));
+	conn.txn.route = config.route(conn.txn.request);
+
+	if (conn.txn.route.is_cgi == true) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
+		conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
+		if (conn.txn.cgi.failed) {
+			failCgiJob(conn);
+			return ;
+		}
+
+		conn.phase = RUNNING_CGI;
+		poller.add(conn.txn.cgi.in_fd, POLLOUT);
+		poller.add(conn.txn.cgi.out_fd, POLLIN);
+		fdToConnection[conn.txn.cgi.in_fd] = &conn;
+		fdToConnection[conn.txn.cgi.out_fd] = &conn;
+		return ;
+	}
+
+	logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a standard request";
+	Content content = files.serve(conn.txn.route, conn.txn.request);
+	conn.txn.response.status = content.status;
+	conn.txn.response.body = content.body;
+	conn.txn.response.headers["Content-Type"] = content.mime_type;
+	addDefaultErrorBody(http, conn.txn.response);
+	conn.outbuf = http.build(conn.txn.response);
+	conn.sent = 0;
+	conn.phase = WRITING;
+	poller.setEvents(conn.fd, POLLOUT);
+}
+
+// A queued response owns the current transaction until its last byte is written.
 void Worker::onReadable(Connection &conn) {
 	char buf[4096];
 	ssize_t n = read(conn.fd, buf, sizeof(buf));
@@ -241,53 +285,7 @@ void Worker::onReadable(Connection &conn) {
 	conn.inbuf.append(buf, n);
 	conn.last_activity = time(NULL);
 	conn.phase = READING;
-	int parseStatus = 0;
-	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, parseStatus);
-	if (req_size < 0) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected request with status " << parseStatus;
-		queueParserError(conn, parseStatus);
-		return ;
-	}
-	while (req_size > 0) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " complete request found";
-		conn.txn.route = config.route(conn.txn.request);
-
-		if (conn.txn.route.is_cgi == true) {
-			logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
-			conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route);
-			if (conn.txn.cgi.failed) {
-				failCgiJob(conn);
-				return ;
-			}
-			conn.phase = RUNNING_CGI;
-			poller.add(conn.txn.cgi.in_fd, POLLOUT);
-			poller.add(conn.txn.cgi.out_fd, POLLIN);
-			fdToConnection[conn.txn.cgi.in_fd] = &conn;
-			fdToConnection[conn.txn.cgi.out_fd] = &conn;
-			return ;
-		}
-		else {
-			logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a standard request";
-			// pulling requested content and storing in response data structure
-			Content content = files.serve(conn.txn.route, conn.txn.request);
-			conn.txn.response.status = content.status;
-			conn.txn.response.body = content.body;
-			conn.txn.response.headers["Content-Type"] = content.mime_type;
-			addDefaultErrorBody(http, conn.txn.response);
-			conn.outbuf += http.build(conn.txn.response);
-			conn.phase = WRITING;
-			poller.setEvents(conn.fd, POLLOUT);
-		}
-
-		conn.inbuf.erase(0, static_cast<size_t>(req_size));
-		
-		req_size = http.parse(conn.inbuf, conn.txn.request, parseStatus);
-		if (req_size < 0) {
-			logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected pipelined request with status " << parseStatus;
-			queueParserError(conn, parseStatus);
-			return ;
-		}
-	}
+	processBufferedRequest(conn);
 }
 
 // @todo test with response thats too big for one write cycle
@@ -306,17 +304,22 @@ void Worker::onWritable(Connection &conn) {
 
 	conn.sent += n;
 	conn.last_activity = time(NULL);
-	if (conn.sent == conn.outbuf.size()) {
-		conn.outbuf.clear();
-		conn.sent = 0;
-		if (conn.close_after_write) {
-			closeConnection(conn);
-			return ;
-		}
-		conn.txn = Transaction();
-		conn.phase = READING;
-		poller.setEvents(conn.fd, POLLIN);
+	if (conn.sent == conn.outbuf.size())
+		finishClientResponse(conn);
+}
+
+void Worker::finishClientResponse(Connection &conn) {
+	conn.outbuf.clear();
+	conn.sent = 0;
+	if (conn.close_after_write) {
+		closeConnection(conn);
+		return ;
 	}
+
+	conn.txn = Transaction();
+	conn.phase = READING;
+	poller.setEvents(conn.fd, POLLIN);
+	processBufferedRequest(conn);
 }
 
 void Worker::sweepExpiredConnections() {
