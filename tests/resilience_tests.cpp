@@ -225,7 +225,7 @@ int main() {
 		expect(sendAll(partialClient, "GET / HTTP/1.1\r\nHost: localhost\r\n", 1000),
 			"partial request is sent");
 
-	expect(requestHasStatus("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"normal request succeeds while idle clients are pending");
 	if (silentClient >= 0)
 		expect(waitForClose(silentClient, kClientTimeoutMs), "silent client expires after idle deadline");
@@ -237,13 +237,13 @@ int main() {
 		close(partialClient);
 
 	expect(serverRunning(server), "server survives client timeout cleanup");
-	expect(requestHasStatus("GET /after-client-timeout HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after client expiry");
 
 	expect(requestHasStatus("GET /test.sh?stall HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 502 Bad Gateway", kCgiTimeoutMs),
 		"stalled CGI is terminated and returns 502");
 	expect(serverRunning(server), "server survives CGI timeout cleanup");
-	expect(requestHasStatus("GET /after-cgi-timeout HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after CGI expiry");
 
 	unlink(kCgiPidFile);
@@ -260,7 +260,7 @@ int main() {
 	}
 
 	expect(serverRunning(server), "server survives disconnected CGI cleanup");
-	expect(requestHasStatus("GET /after-cgi-disconnect HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after CGI disconnect");
 
 	stopServer(server);

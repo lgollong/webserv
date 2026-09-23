@@ -5,7 +5,7 @@
 #include <string>
 #include "types.hpp"
 
-// Reads a file from disk, resolves its MIME type, autoindex/upload.
+// Reads a regular file beneath a resolved route root and resolves its MIME type.
 class StaticFile {
 	public:
 		StaticFile();

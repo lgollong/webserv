@@ -221,7 +221,7 @@ int main() {
 		"early CGI stdin closure returns the controlled 502 response");
 
 	response.clear();
-	expect(serverRunning(server) && request(getRequest("/after-cgi-pipe-error"), response) &&
+	expect(serverRunning(server) && request(getRequest("/files/index.html"), response) &&
 		response.find("HTTP/1.1 200 OK") == 0,
 		"server survives CGI pipe failure and serves a later request");
 
