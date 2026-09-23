@@ -177,14 +177,14 @@ void Worker::run() {
 			if (ready_fds[i].fd == conn->txn.cgi.out_fd) {
 				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi out fd";
 				if (ready_fds[i].revents & (POLLERR | POLLNVAL))
-					closeConnection(*conn);
+					failCgiJob(*conn);
 				else if (ready_fds[i].revents & (POLLIN | POLLHUP))
 					onCgiReadable(*conn);
 			}
 			else if (ready_fds[i].fd == conn->txn.cgi.in_fd) {
 				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi in fd";
 				if (ready_fds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
-					closeConnection(*conn);
+					failCgiJob(*conn);
 				else if (ready_fds[i].revents & POLLOUT)
 					onCgiWritable(*conn);
 			}
@@ -244,6 +244,8 @@ void Worker::onCgiReadable(Connection &conn) {
 	if (!cgi.collect(conn.txn.cgi))
 		return ;
 
+	if (conn.txn.cgi.sent < conn.txn.request.body.size())
+		conn.txn.cgi.failed = true;
 	closeManagedFd(conn.txn.cgi.out_fd);
 	closeManagedFd(conn.txn.cgi.in_fd);
 	if (cgi.reap(conn.txn.cgi))
