@@ -304,9 +304,13 @@ void Worker::processBufferedRequest(Connection &conn) {
 		}
 
 		conn.phase = RUNNING_CGI;
-		poller.add(conn.txn.cgi.in_fd, POLLOUT);
+		if (conn.txn.request.body.empty())
+			closeManagedFd(conn.txn.cgi.in_fd);
+		else {
+			poller.add(conn.txn.cgi.in_fd, POLLOUT);
+			fdToConnection[conn.txn.cgi.in_fd] = &conn;
+		}
 		poller.add(conn.txn.cgi.out_fd, POLLIN);
-		fdToConnection[conn.txn.cgi.in_fd] = &conn;
 		fdToConnection[conn.txn.cgi.out_fd] = &conn;
 		return ;
 	}
