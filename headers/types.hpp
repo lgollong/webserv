@@ -43,12 +43,19 @@ struct Response {
 
 // Resolved location for a request. Owned by Config.
 struct Route {
+	std::string            location;
 	std::string            root;
 	bool                   is_cgi;
 	std::string            cgi_pass;
 	std::set<std::string>  allowed_methods;
+	int                    redirect_status;
+	std::string            redirect_target;
+	bool                   autoindex;
+	std::string            index_file;
+	std::string            upload_store;
+	std::map<std::string, std::string> cgi_handlers;
 
-	Route() : is_cgi(false) {}
+	Route() : is_cgi(false), redirect_status(0), autoindex(false) {}
 };
 
 // One server{} block from the config file. Owned by Config.
@@ -56,9 +63,12 @@ struct ServerConfig {
 	std::string          host;
 	int                  port;
 	std::string          server_name;
+	std::string          root;
+	size_t               client_max_body_size;
+	std::map<int, std::string> error_pages;
 	std::vector<Route>   locations;
 
-	ServerConfig() : port(0) {}
+	ServerConfig() : port(0), client_max_body_size(0) {}
 };
 
 // CGI sub-state, meaningful only while Connection::phase == RUNNING_CGI. Owned by CGI.

@@ -13,9 +13,12 @@ class Config {
 		~Config();
 
 		Route route(const Request &request) const;
+		const std::vector<ServerConfig>& servers() const;
 
 	private:
-		std::vector<ServerConfig> servers;
+		std::vector<ServerConfig> server_configs;
+
+		void buildReferenceMock();
 };
 
 #endif

@@ -134,7 +134,7 @@ conn.txn.route = config.route(conn.txn.request);
 
 The returned `Route` tells the worker whether the request takes the static or CGI path. In the target design, this comes from parsed server and location blocks.
 
-On the current branch, [`Config::route()`](../srcs/Config.cpp) is a mock: it returns `./contents` as the root and treats a path ending in `.sh` as CGI using `./contents/cgi/test.sh`. It does not yet match a real configuration file or enforce configured methods.
+On the current branch, [`Config`](../srcs/Config.cpp) explicitly constructs a reference in-memory `ServerConfig` model rather than parsing the supplied file. The fixture includes two server/listener records and routes for static content, `.sh` CGI, autoindex/index, uploads, and redirects. `Config::route()` currently resolves the longest matching location on the first reference server, then derives `Route::is_cgi` and `Route::cgi_pass` from that route's extension-to-handler map. `make config-model-test` verifies this contract. #4 will replace only fixture construction with parsing; #7 and #13 will add listener/server selection. See [Runtime Configuration Model](configuration-model.md) for the fields and handoff boundary.
 
 ## 8. Static Response Path
 

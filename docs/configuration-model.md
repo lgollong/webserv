@@ -1,0 +1,47 @@
+# Runtime Configuration Model
+
+This document defines the normalized runtime configuration contract used by `Worker` and future request handlers. It is intentionally independent of configuration-file syntax: #4 will parse text and produce these same values, so handler code does not need to be rewritten when parsing replaces the reference mock.
+
+## `ServerConfig`
+
+Each `ServerConfig` represents one listener and its server-level defaults.
+
+| Field | Runtime meaning |
+| --- | --- |
+| `host`, `port` | Interface and port for the future multi-listener worker. |
+| `server_name` | Server identity used by future request selection. |
+| `root` | Default document root. |
+| `client_max_body_size` | Maximum decoded request-body size. |
+| `error_pages` | HTTP status to configured error-page path mapping. |
+| `locations` | Normalized `Route` records for this server. |
+
+## `Route`
+
+Each `Route` is normalized before a handler receives it. A parser may apply server defaults while constructing a route, but consumers use only the resolved fields below.
+
+| Field | Runtime meaning |
+| --- | --- |
+| `location` | URL-prefix match used for route selection. |
+| `root` | Resolved document root for the route. |
+| `allowed_methods` | Configured accepted HTTP methods. |
+| `redirect_status`, `redirect_target` | Redirect response, or status `0` when no redirect is configured. |
+| `autoindex`, `index_file` | Directory-serving behavior. |
+| `upload_store` | Empty when uploads are disabled; otherwise the configured storage directory. |
+| `cgi_handlers` | File extension to CGI executable mapping. |
+| `is_cgi`, `cgi_pass` | Per-request CGI result derived from the request extension and `cgi_handlers`. |
+
+## Reference Mock
+
+Until #4 parses configuration text, `Config` explicitly builds a reference in-memory model:
+
+| Listener | Route | Covered settings |
+| --- | --- | --- |
+| `0.0.0.0:8080` | `/` | Root, GET/POST/DELETE, index, error pages, body limit, and `.sh` CGI. |
+| `0.0.0.0:8080` | `/gallery` | Longest-prefix matching, index, and autoindex. |
+| `0.0.0.0:8080` | `/uploads` | POST-only upload storage. |
+| `0.0.0.0:8080` | `/redirect` | `302` redirect target. |
+| `127.0.0.1:8081` | `/` | A second listener/server model. |
+
+The current `Worker` still runs only the first reference server and does not yet create all configured listeners. `Config::route()` therefore resolves the longest matching location on that first server. #7 will consume `Config::servers()` to create listeners, and #13 will select the server associated with a connection before resolving its location.
+
+The mock is not a future parse-error fallback. Once #4 supplies parsing, an unreadable or invalid configuration must report an error instead of constructing this fixture.

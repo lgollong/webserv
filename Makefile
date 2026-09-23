@@ -10,6 +10,7 @@ NAME = webserv
 RESILIENCE_TEST = /private/tmp/webserv-resilience-tests
 CONNECTION_LIFECYCLE_TEST = /private/tmp/webserv-connection-lifecycle-tests
 CGI_PIPE_TEST = /private/tmp/webserv-cgi-pipe-tests
+CONFIG_MODEL_TEST = /private/tmp/webserv-config-model-tests
 
 all: $(NAME)
 
@@ -33,7 +34,7 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test
+.PHONY: all clean fclean re resilience-test connection-lifecycle-test cgi-pipe-test config-model-test
 
 resilience-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/resilience_tests.cpp -o $(RESILIENCE_TEST)
@@ -46,3 +47,7 @@ connection-lifecycle-test: $(NAME)
 cgi-pipe-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/cgi_pipe_tests.cpp -o $(CGI_PIPE_TEST)
 	@$(CGI_PIPE_TEST)
+
+config-model-test: $(NAME)
+	@$(CXX) $(CXXFLAGS) tests/config_model_tests.cpp srcs/Config.cpp -o $(CONFIG_MODEL_TEST)
+	@$(CONFIG_MODEL_TEST)
