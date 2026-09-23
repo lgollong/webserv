@@ -8,6 +8,7 @@ OBJ = $(SRC:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
 NAME = webserv
 RESILIENCE_TEST = /private/tmp/webserv-resilience-tests
+CONNECTION_LIFECYCLE_TEST = /private/tmp/webserv-connection-lifecycle-tests
 
 all: $(NAME)
 
@@ -31,8 +32,12 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re resilience-test
+.PHONY: all clean fclean re resilience-test connection-lifecycle-test
 
 resilience-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/resilience_tests.cpp -o $(RESILIENCE_TEST)
 	@$(RESILIENCE_TEST)
+
+connection-lifecycle-test: $(NAME)
+	@$(CXX) $(CXXFLAGS) tests/connection_lifecycle_tests.cpp -o $(CONNECTION_LIFECYCLE_TEST)
+	@$(CONNECTION_LIFECYCLE_TEST)

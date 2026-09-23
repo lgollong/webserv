@@ -159,6 +159,10 @@ The flow is wired end to end, but it needs the reliability work listed above bef
 
 `make resilience-test` builds and runs a repository-local C++98 loopback integration suite against `./webserv`. It starts and reaps its own server process, keeps a silent client and an incomplete request connected until the 30-second client deadline, confirms normal requests still receive `200 OK`, exercises the test CGI fixture's controlled `?stall` mode until the 15-second CGI deadline produces `502 Bad Gateway`, and confirms the listener serves another request. It also disconnects an active stalled CGI client, verifies the recorded child PID disappears within the two-second termination grace plus polling allowance, and checks that the listener remains available. The suite is bounded and exits non-zero for any missed deadline, wrong status, early server exit, or unreaped CGI child.
 
+## Connection Lifecycle Verification
+
+`make connection-lifecycle-test` builds and runs a separate fast C++98 loopback suite. It starts and reaps its own server, verifies fragmented requests receive no early response, checks sequential default-persistent requests and a concurrent second client, and reads two responses from one buffered CGI-plus-static request sequence. It also verifies that static, CGI, and parser-error close cases return exactly one `Connection: close` header and EOF only after their complete response. The command exits non-zero for an incorrect response boundary, missing/early EOF, unavailable listener, or server failure.
+
 ## Non-Blocking Rules
 
 - `Implemented`: listening sockets, client sockets, and the parent ends of CGI pipes are set non-blocking.
