@@ -41,6 +41,7 @@ main
 - `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
 - `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
 - Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
+- Rejects a request absent from the selected non-empty route method set with a framed `405 Method Not Allowed` response and a deterministic `Allow` header before redirect, CGI, or static dispatch.
 - Queues a selected route's configured 3xx response with `Location` before it can enter CGI or static-file handling.
 - `To Fix`: CGI route selection still comes from the mock configuration rather than parsed server/location directives.
 
@@ -182,7 +183,7 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 The project still needs the following mandatory behavior:
 
 1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
-2. Finish configuration-driven request-body limits, accurate errors, and method restrictions.
+2. Finish configuration-driven request-body limits, accurate errors, and permitted method behavior.
 3. Directory index/autoindex, uploads, `POST`, and `DELETE` behavior.
 4. Configured error pages.
 5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.

@@ -132,9 +132,9 @@ For each complete request, `Worker` calls:
 conn.txn.route = config.route(conn.txn.request);
 ```
 
-The returned `Route` first determines whether the worker queues a configured redirect, then whether the request takes the static or CGI path. In the target design, this comes from parsed server and location blocks.
+The returned `Route` first determines whether the request method is allowed, then whether the worker queues a configured redirect, then whether the request takes the static or CGI path. In the target design, this comes from parsed server and location blocks.
 
-On the current branch, [`Config`](../srcs/Config.cpp) explicitly constructs a reference in-memory `ServerConfig` model rather than parsing the supplied file. The fixture includes two server/listener records and routes for static content, `.sh` CGI, autoindex/index, uploads, and redirects. `Config::route()` currently resolves the longest matching location on the first reference server, then derives `Route::is_cgi` and `Route::cgi_pass` from that route's extension-to-handler map. A route with a 3xx `redirect_status` and non-empty `redirect_target` is serialized immediately as an empty redirect response with a `Location` header, before either handler runs. `make config-model-test` verifies the model contract and `make connection-lifecycle-test` verifies the mock's `/redirect` response over a persistent client connection. #4 will replace only fixture construction with parsing; #7 and #13 will add listener/server selection. See [Runtime Configuration Model](configuration-model.md) for the fields and handoff boundary.
+On the current branch, [`Config`](../srcs/Config.cpp) explicitly constructs a reference in-memory `ServerConfig` model rather than parsing the supplied file. The fixture includes two server/listener records and routes for static content, `.sh` CGI, autoindex/index, uploads, and redirects. `Config::route()` currently resolves the longest matching location on the first reference server, then derives `Route::is_cgi` and `Route::cgi_pass` from that route's extension-to-handler map. A non-empty route method set rejects absent methods as `405 Method Not Allowed` with an `Allow` header before any downstream handler. A route with a 3xx `redirect_status` and non-empty `redirect_target` is serialized immediately as an empty redirect response with a `Location` header, before either handler runs. `make config-model-test` verifies the model contract and `make connection-lifecycle-test` verifies the mock's method policy and `/redirect` response over a persistent client connection. #4 will replace only fixture construction with parsing; #7 and #13 will add listener/server selection. See [Runtime Configuration Model](configuration-model.md) for the fields and handoff boundary.
 
 ## 8. Static Response Path
 
@@ -154,7 +154,7 @@ StaticFile::serve(route, request)
 
 The completed response bytes are appended to `Connection::outbuf`, and `poller.setEvents(conn.fd, POLLOUT)` changes the client interest from reading to writing.
 
-Current-state note: route-relative file serving, MIME detection, lexical traversal rejection, directory index/autoindex, and configured redirect dispatch are implemented. Method enforcement, uploads, `DELETE`, configured error pages, and parsed configuration remain incomplete.
+Current-state note: route-relative file serving, MIME detection, lexical traversal rejection, directory index/autoindex, configured route-method enforcement, and configured redirect dispatch are implemented. Uploads, permitted `DELETE` behavior, configured error pages, and parsed configuration remain incomplete.
 
 ## 9. Writing a Response
 

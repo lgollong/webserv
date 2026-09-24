@@ -51,6 +51,7 @@ void Config::buildReferenceMock() {
 	primary.locations.push_back(uploads);
 
 	Route redirect = makeRoute("/redirect", primary.root);
+	allow(redirect, "GET");
 	redirect.redirect_status = 302;
 	redirect.redirect_target = "/gallery";
 	primary.locations.push_back(redirect);

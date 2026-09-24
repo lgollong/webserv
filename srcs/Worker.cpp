@@ -58,6 +58,21 @@ static void addDefaultErrorBody(Http &http, Response &response) {
 		response = http.defaultErrorResponse(response.status);
 }
 
+static bool routeAllowsMethod(const Route &route, const std::string &method) {
+	return route.allowed_methods.empty() || route.allowed_methods.find(method) != route.allowed_methods.end();
+}
+
+static std::string allowedMethodsValue(const Route &route) {
+	std::string value;
+	for (std::set<std::string>::const_iterator it = route.allowed_methods.begin();
+		it != route.allowed_methods.end(); ++it) {
+		if (!value.empty())
+			value += ", ";
+		value += *it;
+	}
+	return value;
+}
+
 static bool equalsIgnoreCase(const std::string &value, const char *expected) {
 	if (value.size() != std::strlen(expected))
 		return false;
@@ -294,6 +309,20 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.close_after_write = requestWantsClose(conn.txn.request);
 	conn.keep_alive = !conn.close_after_write;
 	conn.txn.route = config.route(conn.txn.request);
+
+	if (!routeAllowsMethod(conn.txn.route, conn.txn.request.method)) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " rejected method "
+			<< conn.txn.request.method;
+		conn.txn.response.status = 405;
+		addDefaultErrorBody(http, conn.txn.response);
+		conn.txn.response.headers["Allow"] = allowedMethodsValue(conn.txn.route);
+		applyConnectionPolicy(conn, conn.txn.response);
+		conn.outbuf = http.build(conn.txn.response);
+		conn.sent = 0;
+		conn.phase = WRITING;
+		poller.setEvents(conn.fd, POLLOUT);
+		return ;
+	}
 
 	if (conn.txn.route.redirect_status >= 300 && conn.txn.route.redirect_status < 400 &&
 		!conn.txn.route.redirect_target.empty()) {
