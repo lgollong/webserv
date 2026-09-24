@@ -148,13 +148,13 @@ StaticFile::serve(route, request)
   -> Connection::outbuf
 ```
 
-[`StaticFile::serve()`](../srcs/StaticFile.cpp) removes the selected location prefix from the request path and resolves the remainder below `Route::root`. It rejects empty roots, paths outside that location, and `.`/`..` path segments before disk access. A missing file returns `404`; a directory, non-regular file, or unopenable file returns `403`; a disk-read failure returns `500`. A regular file is read from disk into `Content::body` and receives a MIME type from its extension. `Worker` places that content or status in `conn.txn.response`; its existing default-error path supplies the HTML body for static errors. Directory index and autoindex handling remain separate work.
+[`StaticFile::serve()`](../srcs/StaticFile.cpp) removes the selected location prefix from the request path and resolves the remainder below `Route::root`. It rejects empty roots, paths outside that location, and `.`/`..` path segments before disk access. A missing file returns `404`; a non-regular or unopenable path returns `403`; a disk-read failure returns `500`. A regular file is read into `Content::body` with a MIME type based on its extension. For a directory, `StaticFile` first serves a configured safe index filename when it exists; failing that, it uses `opendir()`/`readdir()` to build a sorted, escaped HTML listing only when `Route::autoindex` is true. Without either index or autoindex, it returns `403`. `Worker` places that content or status in `conn.txn.response`; its existing default-error path supplies the HTML body for static errors.
 
 [`Http::build()`](../srcs/Http.cpp) serializes `Response` into HTTP bytes. It supplies `200` when no status is given and falls back to `500` for an unsupported status. It selects one case-insensitive `Content-Type` or uses `text/html`, calculates and owns one `Content-Length`, filters malformed header names or values, preserves valid extension headers, then writes the status line, headers, separator, and body. `204` and `304` responses discard body bytes before calculating the length. For an error status with no body, the worker first uses `Http::defaultErrorResponse()`; this produces fixed HTML for known 4xx/5xx statuses and falls back to `500` for any other input.
 
 The completed response bytes are appended to `Connection::outbuf`, and `poller.setEvents(conn.fd, POLLOUT)` changes the client interest from reading to writing.
 
-Current-state note: route-relative regular-file serving, MIME detection, lexical traversal rejection, and configured redirect dispatch are implemented. Directory index/autoindex, method enforcement, uploads, `DELETE`, configured error pages, and parsed configuration remain incomplete.
+Current-state note: route-relative file serving, MIME detection, lexical traversal rejection, directory index/autoindex, and configured redirect dispatch are implemented. Method enforcement, uploads, `DELETE`, configured error pages, and parsed configuration remain incomplete.
 
 ## 9. Writing a Response
 

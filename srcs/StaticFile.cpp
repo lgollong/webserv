@@ -1,9 +1,12 @@
 #include "StaticFile.hpp"
 
+#include <algorithm>
 #include <cctype>
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 StaticFile::StaticFile() {
 	mime_types[".html"] = "text/html";
@@ -52,7 +55,7 @@ static bool resolvePath(const Route &route, const Request &request, std::string 
 	std::string relative = request.path.substr(route.location.size());
 	while (!relative.empty() && relative[0] == '/')
 		relative.erase(0, 1);
-	if (relative.empty() || hasUnsafeSegment(relative))
+	if (hasUnsafeSegment(relative))
 		return false;
 
 	path = route.root;
@@ -81,24 +84,15 @@ static Content errorContent(int status) {
 	return content;
 }
 
-Content StaticFile::serve(const Route &route, const Request &request) {
-	std::string path;
-	if (!resolvePath(route, request, path))
-		return errorContent(403);
-
-	struct stat info;
-	if (stat(path.c_str(), &info) != 0)
-		return errorContent(404);
-	if (!S_ISREG(info.st_mode))
-		return errorContent(403);
-
+static Content readRegularFile(const std::string &path, const struct stat &info,
+	const std::map<std::string, std::string> &mimeTypes) {
 	int fd = open(path.c_str(), O_RDONLY);
 	if (fd < 0)
 		return errorContent(403);
 
 	Content content;
 	content.status = 200;
-	content.mime_type = mimeType(mime_types, path);
+	content.mime_type = mimeType(mimeTypes, path);
 	if (info.st_size > 0)
 		content.body.reserve(static_cast<size_t>(info.st_size));
 
@@ -115,4 +109,122 @@ Content StaticFile::serve(const Route &route, const Request &request) {
 	}
 	close(fd);
 	return content;
+}
+
+static bool safeIndexFile(const std::string &indexFile) {
+	return !indexFile.empty() && indexFile[0] != '/' && !hasUnsafeSegment(indexFile);
+}
+
+static std::string joinPath(const std::string &directory, const std::string &name) {
+	if (directory[directory.size() - 1] == '/')
+		return directory + name;
+	return directory + "/" + name;
+}
+
+static std::string htmlEscape(const std::string &value) {
+	std::string escaped;
+	for (std::string::size_type i = 0; i < value.size(); ++i) {
+		switch (value[i]) {
+			case '&': escaped += "&amp;"; break;
+			case '<': escaped += "&lt;"; break;
+			case '>': escaped += "&gt;"; break;
+			case '\"': escaped += "&quot;"; break;
+			default: escaped += value[i]; break;
+		}
+	}
+	return escaped;
+}
+
+static std::string urlEncodePath(const std::string &value) {
+	static const char hex[] = "0123456789ABCDEF";
+	std::string encoded;
+	for (std::string::size_type i = 0; i < value.size(); ++i) {
+		unsigned char character = static_cast<unsigned char>(value[i]);
+		if (std::isalnum(character) || character == '-' || character == '.' ||
+			character == '_' || character == '~' || character == '/')
+			encoded += value[i];
+		else {
+			encoded += '%';
+			encoded += hex[character >> 4];
+			encoded += hex[character & 0x0F];
+		}
+	}
+	return encoded;
+}
+
+struct DirectoryEntry {
+	std::string name;
+	bool is_directory;
+
+	DirectoryEntry(const std::string &entryName, bool directory)
+	: name(entryName), is_directory(directory) {}
+};
+
+static bool directoryEntryLess(const DirectoryEntry &left, const DirectoryEntry &right) {
+	return left.name < right.name;
+}
+
+static Content directoryListing(const std::string &path, const std::string &requestPath) {
+	DIR *directory = opendir(path.c_str());
+	if (directory == NULL)
+		return errorContent(403);
+
+	std::vector<DirectoryEntry> entries;
+	struct dirent *entry = NULL;
+	while ((entry = readdir(directory)) != NULL) {
+		std::string name(entry->d_name);
+		if (name == "." || name == "..")
+			continue;
+		struct stat entryInfo;
+		bool isDirectory = stat(joinPath(path, name).c_str(), &entryInfo) == 0 &&
+			S_ISDIR(entryInfo.st_mode);
+		entries.push_back(DirectoryEntry(name, isDirectory));
+	}
+	closedir(directory);
+	std::sort(entries.begin(), entries.end(), directoryEntryLess);
+
+	std::string base = requestPath.empty() ? "/" : urlEncodePath(requestPath);
+	if (base[base.size() - 1] != '/')
+		base += '/';
+
+	Content content;
+	content.status = 200;
+	content.mime_type = "text/html";
+	content.body = "<!DOCTYPE html><html><head><title>Index of " + htmlEscape(requestPath) +
+		"</title></head><body><h1>Index of " + htmlEscape(requestPath) + "</h1><ul>";
+	for (std::vector<DirectoryEntry>::const_iterator it = entries.begin(); it != entries.end(); ++it) {
+		std::string displayName = it->name;
+		if (it->is_directory)
+			displayName += '/';
+		content.body += "<li><a href=\"" + htmlEscape(base + urlEncodePath(it->name) +
+			(it->is_directory ? "/" : "")) + "\">" + htmlEscape(displayName) + "</a></li>";
+	}
+	content.body += "</ul></body></html>";
+	return content;
+}
+
+Content StaticFile::serve(const Route &route, const Request &request) {
+	std::string path;
+	if (!resolvePath(route, request, path))
+		return errorContent(403);
+
+	struct stat info;
+	if (stat(path.c_str(), &info) != 0)
+		return errorContent(404);
+	if (S_ISREG(info.st_mode))
+		return readRegularFile(path, info, mime_types);
+	if (!S_ISDIR(info.st_mode))
+		return errorContent(403);
+
+	if (!route.index_file.empty()) {
+		if (!safeIndexFile(route.index_file))
+			return errorContent(403);
+		std::string indexPath = joinPath(path, route.index_file);
+		struct stat indexInfo;
+		if (stat(indexPath.c_str(), &indexInfo) == 0 && S_ISREG(indexInfo.st_mode))
+			return readRegularFile(indexPath, indexInfo, mime_types);
+	}
+	if (route.autoindex)
+		return directoryListing(path, request.path);
+	return errorContent(403);
 }
