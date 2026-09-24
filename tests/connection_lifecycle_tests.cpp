@@ -261,14 +261,24 @@ int main() {
 
 	std::string pending;
 	std::string response;
+	int primaryRoot = connectToServer();
+	expect(primaryRoot >= 0, "primary configured listener accepts a root client");
+	if (primaryRoot >= 0) {
+		expect(sendAll(primaryRoot, request("/", "")), "primary root request is sent");
+		expect(takeResponse(primaryRoot, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+			response.find("Root index") != std::string::npos,
+			"primary listener resolves the primary server root");
+		close(primaryRoot);
+	}
+
 	int secondary = connectToServer(8081);
-	expect(secondary >= 0, "secondary configured listener accepts a client");
+	expect(secondary >= 0, "secondary configured listener accepts the same root path");
 	pending.clear();
 	if (secondary >= 0) {
 		expect(sendAll(secondary, request("/", "")), "secondary listener request is sent");
 		expect(takeResponse(secondary, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
 			response.find("Secondary index") != std::string::npos,
-			"secondary listener resolves the secondary server root");
+			"same root path resolves to the secondary server root");
 		close(secondary);
 	}
 
