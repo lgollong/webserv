@@ -254,6 +254,17 @@ int main() {
 		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"second persistent request receives a response");
 
+		expect(sendAll(persistent, request("/redirect", "")), "redirect request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 302 Found") == 0 &&
+			response.find("Location: /gallery\r\n") != std::string::npos &&
+			response.find("Content-Length: 0\r\n") != std::string::npos &&
+			response.find("<h1>HI</h1>") == std::string::npos,
+			"configured redirect is framed before static handling");
+
+		expect(sendAll(persistent, request("/files/index.html", "")), "post-redirect request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
+			"persistent connection serves a request after redirecting");
+
 		std::string buffered = request("/test.sh", "") + request("/files/index.html", "");
 		expect(sendAll(persistent, buffered), "buffered CGI and static requests are sent together");
 		expect(takeResponse(persistent, pending, response) && response.find("You sent:") != std::string::npos,
@@ -272,6 +283,19 @@ int main() {
 			"close-policy response contains one close header");
 		expect(waitForClose(closing, pending), "close-policy connection closes after its response");
 		close(closing);
+	}
+
+	int redirectClosing = connectToServer();
+	expect(redirectClosing >= 0, "redirect close-policy client connects");
+	pending.clear();
+	if (redirectClosing >= 0) {
+		expect(sendAll(redirectClosing, request("/redirect", "close")), "redirect close-policy request is sent");
+		expect(takeResponse(redirectClosing, pending, response) && response.find("HTTP/1.1 302 Found") == 0 &&
+			response.find("Location: /gallery\r\n") != std::string::npos &&
+			countOccurrences(response, "Connection: close\r\n") == 1,
+			"redirect close-policy response contains Location and one close header");
+		expect(waitForClose(redirectClosing, pending), "redirect close-policy connection closes after its response");
+		close(redirectClosing);
 	}
 
 	int cgiClosing = connectToServer();
