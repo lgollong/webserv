@@ -220,6 +220,24 @@ static std::string oversizedRequest() {
 	return "POST /uploads/too-large.txt HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10000001\r\n\r\n";
 }
 
+static std::string uploadRequest(const std::string &path, const std::string &body) {
+	std::ostringstream length;
+	length << body.size();
+	return "POST " + path + " HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + length.str() +
+		"\r\n\r\n" + body;
+}
+
+static bool storedBodyMatches(const std::string &path, const std::string &expected) {
+	int fd = open(path.c_str(), O_RDONLY);
+	if (fd < 0)
+		return false;
+	char buffer[256];
+	ssize_t count = read(fd, buffer, sizeof(buffer));
+	close(fd);
+	return count == static_cast<ssize_t>(expected.size()) &&
+		std::string(buffer, static_cast<size_t>(count)) == expected;
+}
+
 static int countOccurrences(const std::string &value, const std::string &wanted) {
 	int count = 0;
 	std::string::size_type pos = 0;
@@ -320,6 +338,18 @@ int main() {
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 400 Bad Request") == 0,
 			"allowed methods continue to their existing downstream handler");
 
+		const std::string uploadBody = "lifecycle upload body";
+		expect(sendAll(persistent, uploadRequest("/uploads/lifecycle-upload.txt", uploadBody)),
+			"authorized upload request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 201 Created") == 0 &&
+			response.find("Content-Length: 0\r\n") != std::string::npos &&
+			storedBodyMatches("./contents/uploads/lifecycle-upload.txt", uploadBody),
+			"authorized upload stores the complete body");
+		expect(sendAll(persistent, uploadRequest("/uploads/lifecycle-upload.txt", uploadBody)),
+			"duplicate upload request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
+			"duplicate upload target is not overwritten");
+
 		expect(sendAll(persistent, requestWithMethod("DELETE", "/delete-lifecycle-fixture.txt", "")),
 			"permitted DELETE request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 204 No Content") == 0 &&
@@ -412,6 +442,7 @@ int main() {
 	expect(serverRunning(server), "server survives connection lifecycle cases");
 	stopServer(server);
 	std::remove("./contents/delete-lifecycle-fixture.txt");
+	std::remove("./contents/uploads/lifecycle-upload.txt");
 	if (failures == 0)
 		std::cout << "connection lifecycle tests passed" << std::endl;
 	return failures == 0 ? 0 : 1;

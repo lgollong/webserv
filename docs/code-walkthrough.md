@@ -154,7 +154,7 @@ StaticFile::serve(route, request)
 
 The completed response bytes are appended to `Connection::outbuf`, and `poller.setEvents(conn.fd, POLLOUT)` changes the client interest from reading to writing.
 
-Current-state note: route-relative file serving, MIME detection, lexical traversal rejection, directory index/autoindex, configured route-method enforcement, permitted static DELETE, and configured redirect dispatch are implemented. Uploads, configured error pages, and parsed configuration remain incomplete.
+Current-state note: route-relative file serving, MIME detection, lexical traversal rejection, directory index/autoindex, configured route-method enforcement, permitted static DELETE, route-authorized uploads, and configured redirect dispatch are implemented. Configured error pages and parsed configuration remain incomplete.
 
 ## 9. Writing a Response
 
