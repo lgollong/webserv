@@ -38,7 +38,7 @@ main
 - Wakes from `poll()` at least once per second and closes client sockets that make no accepted/read/write progress for 30 seconds.
 - Takes a stable snapshot of ready events before callbacks remove fds, and has one cleanup path for a client and its registered CGI pipe fds.
 - Handles client and CGI `POLLERR`, `POLLHUP`, and `POLLNVAL` paths without throwing from the event loop.
-- `To Fix`: listening is hard-coded to `0.0.0.0:8080`; it does not use the configured host/port pairs or create multiple listeners.
+- Creates one non-blocking listening socket for every configured `host`/`port` pair and records the associated server index on each accepted connection.
 - `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
 - Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
 - Rejects a request absent from the selected non-empty route method set with a framed `405 Method Not Allowed` response and a deterministic `Allow` header before redirect, CGI, or static dispatch.
@@ -53,7 +53,7 @@ main
 
 - Wraps a `std::vector<pollfd>` and supports adding, removing, and changing fd interests.
 - Calls the single process-wide `poll()` used by `Worker` with a caller-supplied timeout and returns its readiness result.
-- `Partial`: `Worker` logs a failed wait, handles invalid/error events for managed connection fds, and attempts to recreate a failed listener.
+- `Partial`: `Worker` logs a failed wait, handles invalid/error events for managed connection fds, and recreates a failed listener for the same configured server.
 
 ### `Http`
 
@@ -65,13 +65,13 @@ main
 - Parses `Content-Length` as one or more decimal digits with checked `size_t` conversion; signs, whitespace within the value, trailing data, and overflow are rejected.
 - Waits for the complete declared body, returns the exact consumed count before any pipelined bytes, and rejects body/request sizes that cannot be represented by the parser contract.
 - Decodes chunked bodies before assigning `Request::body`, supports chunk extensions and syntax-checked trailers, and applies the body limit to decoded bytes. Chunk trailers are not merged into request headers.
-- Receives the active reference server's `client_max_body_size` from `Worker` through its limit-aware parse overload before a body is buffered. #7/#13 must preserve that selected-server handoff once multiple listeners are active.
+- Receives the accepted connection's selected server `client_max_body_size` from `Worker` through its limit-aware parse overload before a body is buffered.
 - Returns positive consumed bytes for a complete request, `0` for an incomplete request, and `-1` for a malformed or unsupported request. Its error-status overload reports `400` for malformed syntax/framing, `413` for a declared body over the limit, and `431` for header limits.
 - Builds a complete HTTP/1.1 response envelope for supported status codes, falling back to `500` for an unsupported status.
 - Owns case-insensitive `Content-Type` selection and calculated `Content-Length`, suppresses unsafe or conflicting caller-supplied framing headers, preserves valid extension headers, and omits bodies for `204` and `304`.
 - `Http::defaultErrorResponse()` creates deterministic HTML bodies for known error statuses; unknown or non-error inputs fall back to `500`.
 - `Worker` queues parser failures through the normal output path with a default HTML error body and closes that connection after its response flushes. It also substitutes this default for an otherwise-empty static or CGI error response.
-- `To Fix`: have parsed server/location configuration preserve selected-server body limits once multiple listeners are active, and provide configured custom error pages.
+- `To Fix`: have parsed server/location configuration preserve selected-server body limits and provide configured custom error pages.
 - `To Fix`: add handler-specific response headers and complete status/error-page behavior with the relevant handler work.
 
 ### `Config`
@@ -80,8 +80,8 @@ main
 
 - Defines normalized `ServerConfig` and `Route` data structures for listeners, server defaults, location prefixes, methods, redirects, directory behavior, uploads, error pages, request limits, and CGI extension handlers.
 - The explicit reference mock contains two listener/server records and routes for static content, CGI, autoindex/index, uploads, and redirects. `make config-model-test` verifies that contract and longest-prefix resolution on the first reference server.
-- The resolver accepts an explicit server index, resolves that server's longest matching location, and derives the current CGI handler from the request extension and that route's handler map. Compatibility overloads still select the first reference server until #47 binds accepted connections to their listener server.
-- `Planned`: #4 must parse and validate configuration text into this same normalized model; #7 must create all configured listeners; #13 must select the connection's server before location resolution. Invalid parser input must not fall back to the reference mock.
+- The resolver accepts an explicit server index, resolves that server's longest matching location, and derives the current CGI handler from the request extension and that route's handler map. `Worker` assigns that index from the listener that accepted the connection and uses it for both request-body limits and route resolution.
+- `Planned`: #4 must parse and validate configuration text into this same normalized model. Invalid parser input must not fall back to the reference mock.
 
 ### `StaticFile`
 
@@ -184,7 +184,7 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 
 The project still needs the following mandatory behavior:
 
-1. Real configuration parsing, server/location matching, all required directives, and multiple configured listeners.
+1. Real configuration parsing, complete server/location matching, and all required directives.
 2. Finish configuration-driven request-body limits, accurate errors, and upload behavior.
 3. Directory index/autoindex, uploads, `POST`, and `DELETE` behavior.
 4. Configured error pages.

@@ -61,18 +61,18 @@ The intended discipline is:
 register fd -> wait in poll() -> inspect revents -> perform one appropriate action
 ```
 
-`Worker` copies the resulting fd entries before dispatching callbacks because a callback may remove an fd. Client error, hangup, and invalid-fd events clean up that connection. CGI pipe errors and invalid-fd events instead enter the CGI failure/reap path so a still-connected client can receive the normal default `502` response; stdout hangup is treated as a final read/EOF event. The worker attempts to recreate a failed listener. It gives `poll()` a one-second timeout and sweeps after a wait timeout or after ready events have been dispatched. The sweep collects expired client fds before using the same cleanup path, so it does not invalidate map iteration or a ready-event snapshot. It also checks active CGI jobs against their 15-second lifetime and retries any detached child PID with `waitpid(..., WNOHANG)`.
+`Worker` copies the resulting fd entries before dispatching callbacks because a callback may remove an fd. Client error, hangup, and invalid-fd events clean up that connection. CGI pipe errors and invalid-fd events instead enter the CGI failure/reap path so a still-connected client can receive the normal default `502` response; stdout hangup is treated as a final read/EOF event. The worker recreates a failed listener for the same configured server. It gives `poll()` a one-second timeout and sweeps after a wait timeout or after ready events have been dispatched. The sweep collects expired client fds before using the same cleanup path, so it does not invalidate map iteration or a ready-event snapshot. It also checks active CGI jobs against their 15-second lifetime and retries any detached child PID with `waitpid(..., WNOHANG)`.
 
 ## 4. Starting the Worker Loop
 
-[`Worker::run()`](../srcs/Worker.cpp) creates a listening TCP socket through `setupListener()`.
+[`Worker::run()`](../srcs/Worker.cpp) creates one listening TCP socket through `setupListener()` for every `ServerConfig` supplied by `Config`.
 
 1. `socket()` creates an IPv4 TCP socket.
 2. `setsockopt(... SO_REUSEADDR ...)` allows rebinding after a restart.
-3. `bind()` attaches it to `INADDR_ANY:8080`.
+3. `bind()` attaches it to that server's configured IPv4 `host:port` pair.
 4. `listen()` changes it into a passive listening socket.
 5. `fcntl(... O_NONBLOCK)` makes that socket non-blocking.
-6. `poller.add(listen_fd, POLLIN)` asks `poll()` to report pending client connections.
+6. `poller.add(listen_fd, POLLIN)` asks `poll()` to report pending client connections, while the worker maps that fd back to the source server index.
 
 The worker then loops forever. Each iteration gets the poll vector and checks `revents` for every entry:
 
@@ -86,13 +86,13 @@ client socket + POLLOUT   -> onWritable()
 
 Before dispatching a non-listener event, `Worker` looks it up in `fdToConnection` with `find()` rather than `operator[]`. This avoids accidentally creating a null map entry for a stale fd. `closeConnection()` removes the client socket and any registered CGI pipe fds from `Poller` and `fdToConnection` before closing them.
 
-Current-state note: the listener is hard-coded to port `8080` and `INADDR_ANY`; configured host/port pairs and multiple listeners are not implemented yet.
+The reference model currently opens `0.0.0.0:8080` and `127.0.0.1:8081`; a parsed configuration will provide the final listener set.
 
 ## 5. Accepting a Client
 
 [`Worker::acceptNew()`](../srcs/Worker.cpp) runs after the listening socket has reported `POLLIN`.
 
-It calls `accept()` to obtain a client socket, marks that client fd non-blocking, and registers it with `POLLIN`. It then creates a `Connection`, assigns the fd, records the current time as client activity, sets its phase to `READING`, stores it in `connections`, and stores a pointer in `fdToConnection`.
+It calls `accept()` to obtain a client socket, marks that client fd non-blocking, and registers it with `POLLIN`. It then creates a `Connection`, assigns the fd and the accepting listener's `server_index`, records the current time as client activity, sets its phase to `READING`, stores it in `connections`, and stores a pointer in `fdToConnection`.
 
 At this point the server is not reading or writing application data. It is only waiting for the client socket to become readable. A client in `READING` or `WRITING` that makes no accepted/read/write progress for 30 seconds is closed by the sweep. A client in `RUNNING_CGI` instead follows the CGI job's separate 15-second lifetime.
 
@@ -116,7 +116,7 @@ positive value  a full request was parsed; value is bytes consumed
 
 It looks for the HTTP header terminator, `\r\n\r\n`, and rejects an unfinished header block once it grows beyond 16 KiB. When present, it strictly validates an exact `method SP origin-form-target SP HTTP/1.1` request line, separates a `?query` from the path, and stores the HTTP version. Each header name must be a token, and the parser canonicalizes it to lowercase, trims optional outer whitespace from its value, and rejects malformed line endings and control bytes. It limits a request to 100 header fields, rejects duplicate `Content-Length`, and accepts only a sole `Transfer-Encoding: chunked` field. A `Content-Length` must be one or more decimal digits and fit in `size_t`; the parser then waits until exactly that body is buffered. For chunked input, it validates hexadecimal chunk sizes, ignores chunk extensions, decodes each chunk into the request body, validates trailers without merging them into request headers, and ends the request at the zero chunk. Its returned byte count ends after that body or trailer block, so subsequent pipelined request bytes remain in `Connection::inbuf`.
 
-`Worker` passes `Config::bodyLimit()` into `Http::parse(inbuf, request, maxBodyBytes)` before the body is buffered. The current accessor returns the first reference server's `client_max_body_size`; #7/#13 must preserve this selected-server handoff once multiple listeners are active. The parser rejects an over-limit declaration without copying body bytes.
+`Worker` passes `Config::bodyLimit(conn.server_index)` into `Http::parse(inbuf, request, maxBodyBytes)` before the body is buffered. The selected index comes from the listener that accepted this client, so the parser enforces that server's `client_max_body_size`. The parser rejects an over-limit declaration without copying body bytes.
 
 `Worker` uses the error-status overload. On a `-1` result, it receives `400` for malformed syntax/framing, `413` for a body over the parser limit, or `431` for a header limit. It clears the unprocessable input, asks `Http::defaultErrorResponse()` for a matching HTML `Response`, serializes it through `Http::build()`, marks `Connection::close_after_write`, and switches the fd to `POLLOUT`. This prevents malformed data from leaving the connection waiting in `POLLIN` forever while still returning a complete HTTP response.
 
@@ -129,12 +129,12 @@ Current-state note: request-line, header syntax/framing, fixed-limit `Content-Le
 For each complete request, `Worker` calls:
 
 ```cpp
-conn.txn.route = config.route(conn.txn.request);
+conn.txn.route = config.route(conn.server_index, conn.txn.request);
 ```
 
 The returned `Route` first determines whether the request method is allowed. A permitted `DELETE` then takes the static-file deletion path; other requests can queue a configured redirect or take the static/CGI path. In the target design, this comes from parsed server and location blocks.
 
-On the current branch, [`Config`](../srcs/Config.cpp) explicitly constructs a reference in-memory `ServerConfig` model rather than parsing the supplied file. The fixture includes two server/listener records and routes for static content, `.sh` CGI, autoindex/index, uploads, and redirects. `Config::route()` currently resolves the longest matching location on the first reference server, then derives `Route::is_cgi` and `Route::cgi_pass` from that route's extension-to-handler map. A non-empty route method set rejects absent methods as `405 Method Not Allowed` with an `Allow` header before any downstream handler. A route-approved `DELETE` uses the same route-relative resolver as static GET, removes only a regular file with `std::remove`, and returns `204 No Content`; it never enters redirect or CGI dispatch. A route with a 3xx `redirect_status` and non-empty `redirect_target` is otherwise serialized immediately as an empty redirect response with a `Location` header. `make config-model-test` verifies the model contract and `make connection-lifecycle-test` verifies method policy, deletion, and `/redirect` over a persistent client connection. #4 will replace only fixture construction with parsing; #7 and #13 will add listener/server selection. See [Runtime Configuration Model](configuration-model.md) for the fields and handoff boundary.
+On the current branch, [`Config`](../srcs/Config.cpp) explicitly constructs a reference in-memory `ServerConfig` model rather than parsing the supplied file. The fixture includes two server/listener records and routes for static content, `.sh` CGI, autoindex/index, uploads, and redirects. `Config::route(server_index, request)` resolves the longest matching location on the server selected at accept time, then derives `Route::is_cgi` and `Route::cgi_pass` from that route's extension-to-handler map. A non-empty route method set rejects absent methods as `405 Method Not Allowed` with an `Allow` header before any downstream handler. A route-approved `DELETE` uses the same route-relative resolver as static GET, removes only a regular file with `std::remove`, and returns `204 No Content`; it never enters redirect or CGI dispatch. A route with a 3xx `redirect_status` and non-empty `redirect_target` is otherwise serialized immediately as an empty redirect response with a `Location` header. `make config-model-test` verifies the model contract and `make connection-lifecycle-test` verifies listener-specific routing, method policy, deletion, and `/redirect` over a persistent client connection. #4 will replace only fixture construction with parsing. See [Runtime Configuration Model](configuration-model.md) for the fields and handoff boundary.
 
 ## 8. Static Response Path
 
