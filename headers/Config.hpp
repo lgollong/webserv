@@ -13,8 +13,10 @@ class Config {
 		~Config();
 
 		Route route(const Request &request) const;
+		Route route(size_t serverIndex, const Request &request) const;
 		const std::vector<ServerConfig>& servers() const;
 		size_t bodyLimit() const;
+		size_t bodyLimit(size_t serverIndex) const;
 
 	private:
 		std::vector<ServerConfig> server_configs;

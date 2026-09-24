@@ -80,7 +80,7 @@ main
 
 - Defines normalized `ServerConfig` and `Route` data structures for listeners, server defaults, location prefixes, methods, redirects, directory behavior, uploads, error pages, request limits, and CGI extension handlers.
 - The explicit reference mock contains two listener/server records and routes for static content, CGI, autoindex/index, uploads, and redirects. `make config-model-test` verifies that contract and longest-prefix resolution on the first reference server.
-- The current resolver selects the first reference server and resolves its longest matching location. It derives the current CGI handler from the request extension and that route's handler map.
+- The resolver accepts an explicit server index, resolves that server's longest matching location, and derives the current CGI handler from the request extension and that route's handler map. Compatibility overloads still select the first reference server until #47 binds accepted connections to their listener server.
 - `Planned`: #4 must parse and validate configuration text into this same normalized model; #7 must create all configured listeners; #13 must select the connection's server before location resolution. Invalid parser input must not fall back to the reference mock.
 
 ### `StaticFile`
