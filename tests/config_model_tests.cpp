@@ -35,6 +35,7 @@ int main() {
 		expect(servers[1].host == "127.0.0.1" && servers[1].port == 8081,
 			"secondary listener is configured");
 	}
+	expect(config.bodyLimit() == 10000000, "active reference server supplies the parser body limit");
 
 	Route gallery = config.route(requestFor("/gallery/photos/image.jpg"));
 	expect(gallery.location == "/gallery" && gallery.root == "./contents/gallery",

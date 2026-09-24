@@ -295,7 +295,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 		return ;
 
 	int parseStatus = 0;
-	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, parseStatus);
+	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, config.bodyLimit(), parseStatus);
 	if (req_size < 0) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected request with status " << parseStatus;
 		queueParserError(conn, parseStatus);

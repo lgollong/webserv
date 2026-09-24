@@ -14,6 +14,7 @@ class Config {
 
 		Route route(const Request &request) const;
 		const std::vector<ServerConfig>& servers() const;
+		size_t bodyLimit() const;
 
 	private:
 		std::vector<ServerConfig> server_configs;

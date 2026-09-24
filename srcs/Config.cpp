@@ -122,3 +122,9 @@ Route Config::route(const Request &request) const {
 const std::vector<ServerConfig>& Config::servers() const {
 	return server_configs;
 }
+
+size_t Config::bodyLimit() const {
+	if (server_configs.empty())
+		return 10000000;
+	return server_configs[0].client_max_body_size;
+}

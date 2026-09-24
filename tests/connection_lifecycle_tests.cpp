@@ -216,6 +216,10 @@ static std::string requestWithMethod(const std::string &method, const std::strin
 	return value + "\r\n";
 }
 
+static std::string oversizedRequest() {
+	return "POST /uploads/too-large.txt HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10000001\r\n\r\n";
+}
+
 static int countOccurrences(const std::string &value, const std::string &wanted) {
 	int count = 0;
 	std::string::size_type pos = 0;
@@ -250,6 +254,18 @@ int main() {
 			response.find("<h1>HI</h1>") != std::string::npos,
 			"completed fragmented request receives one response");
 		close(fragmented);
+	}
+
+	int oversized = connectToServer();
+	expect(oversized >= 0, "oversized-body client connects");
+	pending.clear();
+	if (oversized >= 0) {
+		expect(sendAll(oversized, oversizedRequest()), "oversized body declaration is sent");
+		expect(takeResponse(oversized, pending, response) && response.find("HTTP/1.1 413 Payload Too Large") == 0 &&
+			countOccurrences(response, "Connection: close\r\n") == 1,
+			"configured body limit rejects an oversized declaration before a handler runs");
+		expect(waitForClose(oversized, pending), "oversized-body response closes after flushing");
+		close(oversized);
 	}
 
 	int persistent = connectToServer();
