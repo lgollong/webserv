@@ -37,6 +37,12 @@ int main() {
 	}
 	expect(config.bodyLimit() == 10000000, "active reference server supplies the parser body limit");
 	expect(config.bodyLimit(1) == 1000000, "secondary server supplies its body limit");
+	expect(config.errorPage(0, 404) == "./contents/errors/404.html",
+		"primary server supplies its configured 404 page");
+	expect(config.errorPage(1, 404) == "./contents/secondary/errors/404.html",
+		"secondary server supplies its configured 404 page");
+	expect(config.errorPage(1, 500).empty() && config.errorPage(2, 404).empty(),
+		"missing status and invalid server error pages have a predictable fallback");
 
 	Route gallery = config.route(requestFor("/gallery/photos/image.jpg"));
 	expect(gallery.location == "/gallery" && gallery.root == "./contents/gallery",

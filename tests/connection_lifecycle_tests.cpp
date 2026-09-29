@@ -279,6 +279,10 @@ int main() {
 		expect(takeResponse(secondary, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
 			response.find("Secondary index") != std::string::npos,
 			"same root path resolves to the secondary server root");
+		expect(sendAll(secondary, request("/missing.txt", "")), "secondary missing-file request is sent");
+		expect(takeResponse(secondary, pending, response) && response.find("HTTP/1.1 404 Not Found") == 0 &&
+			response.find("Secondary custom 404") != std::string::npos,
+			"secondary listener serves its configured 404 page");
 		close(secondary);
 	}
 
@@ -379,12 +383,14 @@ int main() {
 
 		expect(sendAll(persistent, request("/delete-lifecycle-fixture.txt", "")),
 			"post-delete GET request is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 404 Not Found") == 0,
-			"deleted file is no longer served");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 404 Not Found") == 0 &&
+			response.find("Primary custom 404") != std::string::npos,
+			"deleted file uses the primary configured 404 page");
 
 		expect(sendAll(persistent, requestWithMethod("DELETE", "/files", "")), "directory DELETE request is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
-			"directory DELETE is rejected without removing the directory");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0 &&
+			response.find("<h1>403 Forbidden</h1>") != std::string::npos,
+			"missing configured 403 page falls back without removing the directory");
 
 		expect(sendAll(persistent, request("/gallery", "")), "autoindex request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&

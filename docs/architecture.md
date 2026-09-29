@@ -70,8 +70,8 @@ main
 - Builds a complete HTTP/1.1 response envelope for supported status codes, falling back to `500` for an unsupported status.
 - Owns case-insensitive `Content-Type` selection and calculated `Content-Length`, suppresses unsafe or conflicting caller-supplied framing headers, preserves valid extension headers, and omits bodies for `204` and `304`.
 - `Http::defaultErrorResponse()` creates deterministic HTML bodies for known error statuses; unknown or non-error inputs fall back to `500`.
-- `Worker` queues parser failures through the normal output path with a default HTML error body and closes that connection after its response flushes. It also substitutes this default for an otherwise-empty static or CGI error response.
-- `To Fix`: have parsed server/location configuration preserve selected-server body limits and provide configured custom error pages.
+- `Worker` loads an otherwise-empty error response body from the selected server's configured `error_pages` path through `StaticFile`, preserving its status and using the file MIME type. An absent, missing, non-regular, unreadable, or failed page load uses `Http::defaultErrorResponse()` instead.
+- `To Fix`: have parsed server/location configuration preserve selected-server body limits and error-page mappings.
 - `To Fix`: add handler-specific response headers and complete status/error-page behavior with the relevant handler work.
 
 ### `Config`
@@ -88,6 +88,7 @@ main
 `Partial`.
 
 - Resolves route-relative request paths under `Route::root`, rejects lexical `.` and `..` traversal segments before disk access, and serves regular disk files through `Content`.
+- Reads configured error-page paths only when they resolve to a regular file, returning its MIME type so `Worker` can preserve the original error status while replacing its body.
 - For a directory, serves the configured safe index filename when it is a regular file; otherwise returns a deterministic, escaped HTML listing only when autoindex is enabled.
 - Uses filename-based MIME detection, returns `404` for missing files, `403` for rejected, non-regular, unopenable, or non-autoindexed directories, and `500` for a disk read failure.
 - `make static-file-test` verifies text and binary reads, MIME detection, route-root and directory indexes, autoindex, missing/directory/traversal errors, location-prefix stripping, and location/root rejection.
@@ -145,10 +146,8 @@ This establishes the intended ownership flow, but parsed route/server resolution
 ### Parser Failure
 
 1. `Http` returns `-1` and an error status to `Worker`.
-2. `Worker` drops the malformed input, creates the matching default HTML error `Response`, appends its serialized bytes, marks the connection to close after its output flushes, and waits for `POLLOUT`.
+2. `Worker` drops the malformed input, uses the selected server's configured error page when it is a readable regular file, otherwise creates the matching default HTML error `Response`, appends its serialized bytes, marks the connection to close after its output flushes, and waits for `POLLOUT`.
 3. `Worker` closes only that client fd after the normal non-blocking write path completes.
-
-Configured custom error-page bodies remain planned work; they will replace the default only when configuration selects one.
 
 ### CGI Request
 
@@ -184,12 +183,9 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 
 The project still needs the following mandatory behavior:
 
-1. Real configuration parsing, complete server/location matching, and all required directives.
-2. Finish configuration-driven request-body limits, accurate errors, and upload behavior.
-3. Directory index/autoindex, uploads, `POST`, and `DELETE` behavior.
-4. Configured error pages.
-5. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
-6. Hardened CGI execution and full request-body/EOF handling.
-7. Repeatable compliance tests.
+1. Real configuration parsing and all required server/location directives.
+2. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
+3. Hardened CGI execution and full request-body/EOF handling.
+4. Repeatable compliance tests.
 
 The optional bonus work remains cookie/session support and multiple CGI types.

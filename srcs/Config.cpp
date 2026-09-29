@@ -28,6 +28,7 @@ void Config::buildReferenceMock() {
 	primary.server_name = "localhost";
 	primary.root = "./contents";
 	primary.client_max_body_size = 10000000;
+	primary.error_pages[403] = "./contents/errors/missing-403.html";
 	primary.error_pages[404] = "./contents/errors/404.html";
 	primary.error_pages[500] = "./contents/errors/500.html";
 
@@ -135,4 +136,13 @@ size_t Config::bodyLimit(size_t serverIndex) const {
 	if (serverIndex >= server_configs.size())
 		return 10000000;
 	return server_configs[serverIndex].client_max_body_size;
+}
+
+std::string Config::errorPage(size_t serverIndex, int status) const {
+	if (serverIndex >= server_configs.size())
+		return "";
+	std::map<int, std::string>::const_iterator page = server_configs[serverIndex].error_pages.find(status);
+	if (page == server_configs[serverIndex].error_pages.end())
+		return "";
+	return page->second;
 }

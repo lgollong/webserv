@@ -122,6 +122,13 @@ static std::string joinPath(const std::string &directory, const std::string &nam
 	return directory + "/" + name;
 }
 
+Content StaticFile::readErrorPage(const std::string &path) {
+	struct stat info;
+	if (path.empty() || stat(path.c_str(), &info) != 0 || !S_ISREG(info.st_mode))
+		return errorContent(404);
+	return readRegularFile(path, info, mime_types);
+}
+
 static std::string htmlEscape(const std::string &value) {
 	std::string escaped;
 	for (std::string::size_type i = 0; i < value.size(); ++i) {

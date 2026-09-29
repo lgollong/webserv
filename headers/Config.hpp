@@ -17,6 +17,7 @@ class Config {
 		const std::vector<ServerConfig>& servers() const;
 		size_t bodyLimit() const;
 		size_t bodyLimit(size_t serverIndex) const;
+		std::string errorPage(size_t serverIndex, int status) const;
 
 	private:
 		std::vector<ServerConfig> server_configs;
