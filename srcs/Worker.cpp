@@ -175,78 +175,82 @@ void Worker::run() {
 		// Callbacks can remove fds, so iterate a stable snapshot of poll results.
 		std::vector<pollfd> ready_fds = poller.events();
 
-		for (size_t i = 0; i < ready_fds.size(); i++) {
-			if (ready_fds[i].revents == 0)
-				continue;
-			std::map<int, size_t>::iterator listener = listeners.find(ready_fds[i].fd);
-			if (listener != listeners.end()) {
-				if (ready_fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-					logger.error("listener received a poll error event");
-					int failedFd = listener->first;
-					size_t serverIndex = listener->second;
-					poller.remove(failedFd);
-					close(failedFd);
-					listeners.erase(listener);
-					try {
-						int replacementFd = setupListener(servers[serverIndex]);
-						poller.add(replacementFd, POLLIN);
-						listeners[replacementFd] = serverIndex;
-					}
-					catch (const std::exception &e) {
-						logger.error(e.what());
-						return ;
-					}
-					continue;
-				}
-				if (ready_fds[i].revents & POLLIN) {
-					acceptNew(ready_fds[i].fd, listener->second);
-				}
-				continue;
-			}
+		dispatchReadyEvents(ready_fds, listeners, servers);
+		sweepExpiredConnections();
+	}
+}
 
-			std::map<int, Connection*>::iterator found = fdToConnection.find(ready_fds[i].fd);
-			if (found == fdToConnection.end()) {
-				poller.remove(ready_fds[i].fd);
+void Worker::dispatchReadyEvents(const std::vector<pollfd> &readyFds,
+	std::map<int, size_t> &listeners, const std::vector<ServerConfig> &servers) {
+	for (size_t i = 0; i < readyFds.size(); i++) {
+		if (readyFds[i].revents == 0)
+			continue;
+		std::map<int, size_t>::iterator listener = listeners.find(readyFds[i].fd);
+		if (listener != listeners.end()) {
+			if (readyFds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+				logger.error("listener received a poll error event");
+				int failedFd = listener->first;
+				size_t serverIndex = listener->second;
+				poller.remove(failedFd);
+				close(failedFd);
+				listeners.erase(listener);
+				try {
+					int replacementFd = setupListener(servers[serverIndex]);
+					poller.add(replacementFd, POLLIN);
+					listeners[replacementFd] = serverIndex;
+				}
+				catch (const std::exception &e) {
+					logger.error(e.what());
+					return ;
+				}
 				continue;
 			}
-			Connection *conn = found->second;
+			if (readyFds[i].revents & POLLIN)
+				acceptNew(readyFds[i].fd, listener->second);
+			continue;
+		}
 
-			if (ready_fds[i].fd == conn->txn.cgi.out_fd) {
-				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi out fd";
-				if (ready_fds[i].revents & (POLLERR | POLLNVAL))
-					failCgiJob(*conn);
-				else if (ready_fds[i].revents & (POLLIN | POLLHUP))
-					onCgiReadable(*conn);
-			}
-			else if (ready_fds[i].fd == conn->txn.cgi.in_fd) {
-				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi in fd";
-				if (ready_fds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
-					failCgiJob(*conn);
-				else if (ready_fds[i].revents & POLLOUT)
-					onCgiWritable(*conn);
-			}
-			else {
-				if (ready_fds[i].revents & (POLLERR | POLLNVAL)) {
-					closeConnection(*conn);
-					continue;
-				}
-				if (ready_fds[i].revents & POLLIN) {
-					logger.debug() << "Worker: " << "fd: " << conn->fd << " checking reading fd";
-					onReadable(*conn);
-				}
-				else if (ready_fds[i].revents & POLLOUT) {
-					logger.debug() << "Worker: " << "fd: " << conn->fd << " checking writing fd";
-					onWritable(*conn);
-				}
+		std::map<int, Connection*>::iterator found = fdToConnection.find(readyFds[i].fd);
+		if (found == fdToConnection.end()) {
+			poller.remove(readyFds[i].fd);
+			continue;
+		}
+		Connection *conn = found->second;
 
-				if (ready_fds[i].revents & POLLHUP) {
-					std::map<int, Connection*>::iterator current = fdToConnection.find(ready_fds[i].fd);
-					if (current != fdToConnection.end())
-						closeConnection(*current->second);
-				}
+		if (readyFds[i].fd == conn->txn.cgi.out_fd) {
+			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi out fd";
+			if (readyFds[i].revents & (POLLERR | POLLNVAL))
+				failCgiJob(*conn);
+			else if (readyFds[i].revents & (POLLIN | POLLHUP))
+				onCgiReadable(*conn);
+		}
+		else if (readyFds[i].fd == conn->txn.cgi.in_fd) {
+			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi in fd";
+			if (readyFds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
+				failCgiJob(*conn);
+			else if (readyFds[i].revents & POLLOUT)
+				onCgiWritable(*conn);
+		}
+		else {
+			if (readyFds[i].revents & (POLLERR | POLLNVAL)) {
+				closeConnection(*conn);
+				continue;
+			}
+			if (readyFds[i].revents & POLLIN) {
+				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking reading fd";
+				onReadable(*conn);
+			}
+			else if (readyFds[i].revents & POLLOUT) {
+				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking writing fd";
+				onWritable(*conn);
+			}
+
+			if (readyFds[i].revents & POLLHUP) {
+				std::map<int, Connection*>::iterator current = fdToConnection.find(readyFds[i].fd);
+				if (current != fdToConnection.end())
+					closeConnection(*current->second);
 			}
 		}
-		sweepExpiredConnections();
 	}
 }
 

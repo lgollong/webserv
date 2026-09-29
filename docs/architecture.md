@@ -39,7 +39,7 @@ main
 - Takes a stable snapshot of ready events before callbacks remove fds, and has one cleanup path for a client and its registered CGI pipe fds.
 - Handles client and CGI `POLLERR`, `POLLHUP`, and `POLLNVAL` paths without throwing from the event loop.
 - Creates one non-blocking listening socket for every configured `host`/`port` pair and records the associated server index on each accepted connection.
-- `To Fix`: accept until the listener would block and broaden stress coverage for non-blocking edge cases.
+- `To Fix`: accept until the listener would block and broaden end-to-end network-load coverage beyond the focused readiness tests.
 - Resets one completed transaction before beginning a later request already buffered on the same client connection. HTTP/1.1 connections persist by default; a case-insensitive `Connection: close` token marks only that response for close-after-flush and adds one matching response header.
 - Rejects a request absent from the selected non-empty route method set with a framed `405 Method Not Allowed` response and a deterministic `Allow` header before redirect, CGI, or static dispatch.
 - Dispatches a route-approved `DELETE` to `StaticFile`, which removes only a route-relative regular disk file and returns `204 No Content`; directories and rejected paths remain errors.
@@ -163,6 +163,8 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 
 `make resilience-test` builds and runs a repository-local C++98 loopback integration suite against `./webserv`. It starts and reaps its own server process, keeps a silent client and an incomplete request connected until the 30-second client deadline, confirms normal requests still receive `200 OK`, exercises the test CGI fixture's controlled `?stall` mode until the 15-second CGI deadline produces `502 Bad Gateway`, and confirms the listener serves another request. It also disconnects an active stalled CGI client, verifies the recorded child PID disappears within the two-second termination grace plus polling allowance, and checks that the listener remains available. The suite is bounded and exits non-zero for any missed deadline, wrong status, early server exit, or unreaped CGI child.
 
+`make event-loop-stress-test` builds a focused C++98 fd-level suite. It verifies that the real `poll()` wrapper reports `POLLNVAL` for a closed registered descriptor, dispatches client and CGI `POLLERR`/`POLLNVAL` paths through the production dispatcher, and uses a non-blocking socket pair with a restricted send buffer to prove that a partial client write resumes until the entire response is delivered. Test-only access is friend-scoped to the dispatch owner; production interfaces do not gain test hooks.
+
 ## Connection Lifecycle Verification
 
 `make connection-lifecycle-test` builds and runs a separate fast C++98 loopback suite. It starts and reaps its own server, verifies that the same `GET /` resolves to the primary root on port `8080` and the secondary root on port `8081`, checks fragmented input, sequential default-persistent requests, and a concurrent second client, verifies the configured `/gallery` autoindex response and the `/redirect` response with `302 Found`, `Location: /gallery`, empty framing, and persistence, and reads two responses from one buffered CGI-plus-static request sequence. It also verifies that static, redirect, CGI, and parser-error close cases return exactly one `Connection: close` header and EOF only after their complete response. The command exits non-zero for an incorrect response boundary, missing/early EOF, unavailable listener, or server failure.
@@ -177,7 +179,7 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 - `Implemented`: one `Poller` drives socket and CGI pipe readiness.
 - `Implemented`: socket and pipe read/write paths use their return values and do not inspect `errno` after `read`, `recv`, `write`, or `send`.
 - `Implemented`: CGI body writes and output reads run only after pipe readiness. A stdout EOF is accepted only after the complete body was sent; CGI pipe error, hangup, or invalid-fd events enter the controlled failure/reap path and preserve a connected client for its `502` response.
-- `To Fix`: broaden non-blocking stress coverage and complete configuration-driven CGI selection.
+- `To Fix`: broaden end-to-end network-load coverage and complete configuration-driven CGI selection.
 
 ## Subject-Critical Gaps
 
