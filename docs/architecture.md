@@ -80,7 +80,7 @@ main
 
 - Defines normalized `ServerConfig` and `Route` data structures for listeners, server defaults, location prefixes, methods, redirects, directory behavior, uploads, error pages, request limits, and CGI extension handlers.
 - The explicit reference mock contains two listener/server records and routes for static content, CGI, autoindex/index, uploads, and redirects. `make config-model-test` verifies that contract and longest-prefix resolution on the first reference server.
-- The resolver accepts an explicit server index, resolves that server's longest matching location, and derives the current CGI handler from the request extension and that route's handler map. `Worker` assigns that index from the listener that accepted the connection and uses it for both request-body limits and route resolution.
+- The resolver accepts an explicit server index, resolves that server's longest matching location, and derives the current CGI handler and URL script name from the request extension and that route's handler map. A suffix after the script name remains available as CGI `PATH_INFO`. `Worker` assigns that index from the listener that accepted the connection and uses it for request-body limits, route resolution, and CGI server context.
 - `Planned`: #4 must parse and validate configuration text into this same normalized model. Invalid parser input must not fall back to the reference mock.
 
 ### `StaticFile`
@@ -98,8 +98,8 @@ main
 
 `Partial`, with the event-loop pipe lifecycle implemented.
 
-- Creates stdin/stdout pipes, forks, runs a configured script with `execve`, and sets the parent pipe ends non-blocking.
-- Builds CGI environment variables from the request and parses CGI response headers and body.
+- Creates stdin/stdout pipes, resolves a configured script to an executable path, changes the child directory to that script's directory, runs it with `execve`, and sets the parent pipe ends non-blocking.
+- Builds CGI/1.1 request context from the parsed request, selected route, and selected server: method, URL script name, path info, query, protocol, body metadata, server name/port, and normalized request headers.
 - `Worker` registers the CGI pipes in the same `Poller` as sockets and transfers the request body/output through readiness callbacks.
 - Reports pipe, fork, and non-blocking setup failures through `CgiJob`, and the child exits if `execve` fails.
 - Treats failed pipe reads/writes, invalid pipe readiness, and CGI EOF before the complete request body is accepted as controlled CGI failures without inspecting `errno` after I/O; the response path produces `502` when no valid CGI result exists.
@@ -151,13 +151,13 @@ This establishes the intended ownership flow, but parsed route/server resolution
 
 ### CGI Request
 
-1. `Worker` identifies a CGI route from `Config`.
-2. `Cgi` starts the child and returns its pipe fds in `CgiJob`.
+1. `Worker` identifies a CGI route and the selected `ServerConfig` from `Config`.
+2. `Cgi` derives `SCRIPT_NAME` and `PATH_INFO` from the URL, resolves the configured handler before changing the child directory to the handler directory, then starts the child and returns its pipe fds in `CgiJob`.
 3. `Worker` closes CGI stdin immediately for an empty request body; otherwise it registers stdin for `POLLOUT`. It always registers CGI stdout for `POLLIN` in the same `Poller`.
 4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks. It closes stdin after the entire body is accepted. Stdout EOF before that point, plus pipe error or invalid-fd readiness, marks the job as failed instead of accepting a partial-body CGI response.
 5. `Cgi` records its start time and `Worker` checks its 15-second lifetime during the periodic maintenance sweep. On normal completion, `Worker` reaps the child non-blockingly before converting the CGI output into a `Response`. On timeout or failure, it closes CGI pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, reaps the child, then sends the default `502` response.
 
-The pipe/body/EOF flow is wired and covered end to end. Configuration-driven handler selection and CGI response validation remain before full subject compliance.
+The pipe/body/EOF flow and request context are wired and covered end to end. Configuration-file-driven handler selection and CGI response validation remain before full subject compliance.
 
 ## Resilience Verification
 
@@ -171,7 +171,7 @@ The pipe/body/EOF flow is wired and covered end to end. Configuration-driven han
 
 ## CGI Pipe Verification
 
-`make cgi-pipe-test` builds and runs a focused C++98 loopback suite. It verifies CGI request-body forwarding, delayed output, output larger than one 4096-byte collection read, and a CGI response with no CGI-provided `Content-Length` (the HTTP serializer frames it). It also makes the fixture close stdin before accepting a 256 KiB request body, verifies the client receives the controlled `502 Bad Gateway` response, and then confirms the listener serves a later request.
+`make cgi-pipe-test` builds and runs a focused C++98 loopback suite. It verifies CGI request-body forwarding; CGI/1.1 method, URL script name, path info, query, server, protocol, content type, and custom-header context; and a fixture file opened relative to the script directory. It also covers delayed output, output larger than one 4096-byte collection read, a CGI response with no CGI-provided `Content-Length` (the HTTP serializer frames it), early CGI stdin closure with a controlled `502 Bad Gateway`, and listener survival afterward.
 
 ## Non-Blocking Rules
 
@@ -187,7 +187,7 @@ The project still needs the following mandatory behavior:
 
 1. Real configuration parsing and all required server/location directives.
 2. Hardened event-loop behavior for partial I/O, poll errors, disconnects, and no unexpected termination.
-3. Hardened CGI execution and full request-body/EOF handling.
+3. Configuration-file-driven CGI handler selection and CGI response-header validation.
 4. Repeatable compliance tests.
 
 The optional bonus work remains cookie/session support and multiple CGI types.

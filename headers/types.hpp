@@ -47,6 +47,7 @@ struct Route {
 	std::string            root;
 	bool                   is_cgi;
 	std::string            cgi_pass;
+	std::string            cgi_script_name;
 	std::set<std::string>  allowed_methods;
 	int                    redirect_status;
 	std::string            redirect_target;

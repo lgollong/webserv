@@ -28,7 +28,7 @@ Each `Route` is normalized before a handler receives it. A parser may apply serv
 | `autoindex`, `index_file` | Directory-serving behavior. |
 | `upload_store` | Empty when uploads are disabled; otherwise the configured storage directory. |
 | `cgi_handlers` | File extension to CGI executable mapping. |
-| `is_cgi`, `cgi_pass` | Per-request CGI result derived from the request extension and `cgi_handlers`. |
+| `is_cgi`, `cgi_pass`, `cgi_script_name` | Per-request CGI result derived from `cgi_handlers`: the handler path for `execve()` and the URL script portion used for CGI `SCRIPT_NAME`. A suffix after `cgi_script_name` is preserved as `PATH_INFO`. |
 
 ## Reference Mock
 
@@ -42,7 +42,7 @@ Until #4 parses configuration text, `Config` explicitly builds a reference in-me
 | `0.0.0.0:8080` | `/redirect` | `302` redirect target. |
 | `127.0.0.1:8081` | `/` | A second listener/server model. |
 
-`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server, and `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
+`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server. For a configured CGI extension, it resolves both the handler and the URL script portion, so `/test.sh/extra` selects the `.sh` handler with `/test.sh` as the script and `/extra` available to CGI as path information. `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
 
 `Config::errorPage(serverIndex, status)` returns the selected server's configured path for an error status. `Worker` reads that regular file through `StaticFile`, preserves the original response status, and uses the file's MIME type. Missing, non-regular, unreadable, or unconfigured pages retain the deterministic `Http::defaultErrorResponse()` fallback.
 

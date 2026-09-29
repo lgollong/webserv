@@ -8,6 +8,7 @@
 #include <ctime>
 #include <cerrno>
 #include <csignal>
+#include <limits.h>
 #include <sys/wait.h>
 
 // augmented BNF for CGI:
@@ -64,38 +65,84 @@ static void closePipe(int pipe_fds[2]) {
 	close(pipe_fds[1]);
 }
 
-static std::vector<std::string> buildEnv(const Request &request, const Route &route) {
-		std::vector<std::string> env;
-
-		env.push_back("REQUEST_METHOD=" + request.method);
-		env.push_back("SCRIPT_NAME=" + route.cgi_pass);
-		env.push_back("QUERY_STRING=" + request.query);
-		env.push_back("GATEWAY_INTERFACE=CGI/1.1");
-		env.push_back("SERVER_PROTOCOL=HTTP/1.1");
-
-		std::ostringstream len;
-		len << request.body.size();
-		env.push_back("CONTENT_LENGTH=" + len.str());
-
-		std::map<std::string, std::string>::const_iterator it = request.headers.find("content-type");
-		if (it != request.headers.end())
-				env.push_back("CONTENT_TYPE=" + it->second);
-
-		// every other request header, mapped Foo-Bar -> HTTP_FOO_BAR
-		for (it = request.headers.begin(); it != request.headers.end(); ++it) {
-				std::string key = "HTTP_" + it->first;
-				for (std::string::size_type i = 0; i < key.size(); ++i) {
-						if (key[i] == '-') key[i] = '_';
-						else key[i] = static_cast<char>(std::toupper(key[i]));
-				}
-				env.push_back(key + "=" + it->second);
-		}
-
-		return env;
+static std::string pathInfo(const Request &request, const Route &route) {
+	std::string scriptName = route.cgi_script_name.empty() ? request.path : route.cgi_script_name;
+	if (request.path.compare(0, scriptName.size(), scriptName) != 0)
+		return "";
+	return request.path.substr(scriptName.size());
 }
 
-CgiJob Cgi::start(const Request &request, const Route &route) {
+static std::vector<std::string> buildEnv(const Request &request, const Route &route,
+	const ServerConfig &server) {
+	std::vector<std::string> env;
+
+	env.push_back("REQUEST_METHOD=" + request.method);
+	env.push_back("SCRIPT_NAME=" + route.cgi_script_name);
+	env.push_back("PATH_INFO=" + pathInfo(request, route));
+	env.push_back("QUERY_STRING=" + request.query);
+	env.push_back("GATEWAY_INTERFACE=CGI/1.1");
+	env.push_back("SERVER_PROTOCOL=" + request.version);
+	env.push_back("SERVER_NAME=" + server.server_name);
+
+	std::ostringstream port;
+	port << server.port;
+	env.push_back("SERVER_PORT=" + port.str());
+
+	std::ostringstream len;
+	len << request.body.size();
+	env.push_back("CONTENT_LENGTH=" + len.str());
+
+	std::map<std::string, std::string>::const_iterator it = request.headers.find("content-type");
+	if (it != request.headers.end())
+		env.push_back("CONTENT_TYPE=" + it->second);
+
+	// Every other request header, mapped Foo-Bar -> HTTP_FOO_BAR.
+	for (it = request.headers.begin(); it != request.headers.end(); ++it) {
+		if (it->first == "content-type")
+			continue;
+		std::string key = "HTTP_" + it->first;
+		for (std::string::size_type i = 0; i < key.size(); ++i) {
+			if (key[i] == '-')
+				key[i] = '_';
+			else
+				key[i] = static_cast<char>(std::toupper(key[i]));
+		}
+		env.push_back(key + "=" + it->second);
+	}
+
+	return env;
+}
+
+static bool resolveExecutablePath(const std::string &configuredPath, std::string &path) {
+	if (configuredPath.empty())
+		return false;
+	if (configuredPath[0] == '/') {
+		path = configuredPath;
+		return true;
+	}
+	char cwd[PATH_MAX];
+	if (getcwd(cwd, sizeof(cwd)) == NULL)
+		return false;
+	path = std::string(cwd) + "/" + configuredPath;
+	return true;
+}
+
+static std::string directoryOf(const std::string &path) {
+	std::string::size_type slash = path.find_last_of('/');
+	if (slash == std::string::npos)
+		return ".";
+	if (slash == 0)
+		return "/";
+	return path.substr(0, slash);
+}
+
+CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig &server) {
 	CgiJob job;
+	std::string executablePath;
+	if (!resolveExecutablePath(route.cgi_pass, executablePath)) {
+		job.failed = true;
+		return job;
+	}
 	int inPipe[2] = {-1, -1};
 	int outPipe[2] = {-1, -1};
 	if (pipe(inPipe) < 0) {
@@ -117,15 +164,18 @@ CgiJob Cgi::start(const Request &request, const Route &route) {
 		close(outPipe[0]);
 		close(outPipe[1]);
 		
-		std::vector<std::string> envStrings = buildEnv(request, route);
+		if (chdir(directoryOf(executablePath).c_str()) != 0)
+			_exit(127);
+
+		std::vector<std::string> envStrings = buildEnv(request, route, server);
 		std::vector<char*> envp;
 		for (size_t i = 0; i < envStrings.size(); ++i)
 				envp.push_back(const_cast<char*>(envStrings[i].c_str()));
 		envp.push_back(NULL);
 
-		char *argv[] = { const_cast<char*>(route.cgi_pass.c_str()), NULL };
+		char *argv[] = { const_cast<char*>(executablePath.c_str()), NULL };
 
-		execve(route.cgi_pass.c_str(), argv, &envp[0]);
+		execve(executablePath.c_str(), argv, &envp[0]);
 		_exit(127);
 	}
 	if (pid < 0) {
