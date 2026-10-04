@@ -483,6 +483,7 @@ void Worker::finishClientResponse(Connection &conn) {
 
 void Worker::sweepExpiredConnections() {
 	const time_t now = time(NULL);
+	sessions.sweep(now);
 	std::vector<int> expired;
 	for (std::map<int, Connection>::const_iterator it = connections.begin(); it != connections.end(); ++it) {
 		if (it->second.hasClientTimedOut(now, kClientIdleTimeoutSeconds))
