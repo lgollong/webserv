@@ -92,7 +92,7 @@ main
 - For a directory, serves the configured safe index filename when it is a regular file; otherwise returns a deterministic, escaped HTML listing only when autoindex is enabled.
 - Uses filename-based MIME detection, returns `404` for missing files, `403` for rejected, non-regular, unopenable, or non-autoindexed directories, and `500` for a disk read failure.
 - `make static-file-test` verifies text and binary reads, MIME detection, route-root and directory indexes, autoindex, missing/directory/traversal errors, location-prefix stripping, and location/root rejection.
-- `Planned`: add uploads and POST behavior.
+- Accepts route-authorized POST uploads into the configured storage directory with an exclusive create, a safe single-file name, and `201 Created`; duplicate, invalid, or unauthorized targets are rejected. `make static-file-test` and `make connection-lifecycle-test` cover the storage and route-dispatch behavior.
 
 ### `Cgi`
 
