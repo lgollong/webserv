@@ -79,7 +79,7 @@ main
 `Partial`.
 
 - Defines normalized `ServerConfig` and `Route` data structures for listeners, server defaults, location prefixes, methods, redirects, directory behavior, uploads, error pages, request limits, and CGI extension handlers.
-- The explicit reference mock contains two listener/server records and routes for static content, CGI, autoindex/index, uploads, and redirects. `make config-model-test` verifies that contract and longest-prefix resolution on the first reference server.
+- The explicit reference mock contains two listener/server records and routes for static content, CGI, autoindex/index, uploads, redirects, and the optional GET-only `/session` demonstration. `make config-model-test` verifies that contract and longest-prefix resolution on the first reference server.
 - The resolver accepts an explicit server index, resolves that server's longest matching location, and derives the current CGI handler and URL script name from the request extension and that route's handler map. A suffix after the script name remains available as CGI `PATH_INFO`. `Worker` assigns that index from the listener that accepted the connection and uses it for request-body limits, route resolution, and CGI server context.
 - `Planned`: #4 must parse and validate configuration text into this same normalized model. Invalid parser input must not fall back to the reference mock.
 
@@ -124,7 +124,7 @@ main
 - `Transaction` groups the parsed request, response, resolved route, and CGI job for one request.
 - `Connection` owns socket identity, input/output buffers, partial-write position, per-response persistence/close state, last activity, and its current transaction. Client read/write phases use its last-activity timestamp for the 30-second client timeout.
 - `CgiJob` owns child pid, stdin/stdout fds, write progress, output buffer, completion/failure state, start/progress timestamps, and termination state.
-- `SessionStore` is process-local state owned by `Worker`. It parses the `webserv_session` request cookie, creates opaque `/dev/urandom`-backed identifiers, builds one `HttpOnly` cookie value with a 30-minute lifetime, and removes expired entries during the existing maintenance sweep. `Planned`: #49 will attach this reusable store to one reference-mock demonstration route.
+- `SessionStore` is process-local state owned by `Worker`. It parses the `webserv_session` request cookie, creates opaque `/dev/urandom`-backed identifiers, builds one `HttpOnly` cookie value with a 30-minute lifetime, and removes expired entries during the existing maintenance sweep. The GET-only reference-mock `/session` route creates a session on a missing/invalid/expired cookie and resumes a valid session counter; persistence and authentication are intentionally absent.
 - `Partial`: client and registered CGI fds now have an explicit shared cleanup path. One response owns its transaction until it flushes; later buffered request bytes are retained and dispatched only after that reset. HTTP/1.1 persistence/close policy is active; remaining CGI protocol edge cases are incomplete.
 
 ## Current Request Flow
@@ -176,7 +176,9 @@ The pipe/body/EOF flow and request context are wired and covered end to end. Con
 
 ## Session Store Verification
 
-`make session-store-test` builds a focused C++98 unit suite for the process-local session foundation. It covers cookie parsing and whitespace, missing/empty/duplicate cookie rejection, entropy-backed 256-bit identifier creation, `Set-Cookie` construction, request lookup, expiry, and periodic cleanup. No HTTP route exposes sessions until #49.
+`make session-store-test` builds a focused C++98 unit suite for the process-local session foundation. It covers cookie parsing and whitespace, missing/empty/duplicate cookie rejection, entropy-backed 256-bit identifier creation, `Set-Cookie` construction, request lookup, expiry, and periodic cleanup. The separate cookie-session suite covers its `/session` route integration.
+
+`make cookie-session-test` builds and runs a C++98 loopback suite for the GET-only reference-mock `/session` route. It verifies the initial `Set-Cookie` response and state, a second request that resumes the same session without replacing its cookie, an invalid cookie that safely starts a clean session, and later normal static serving. This is a process-local bonus demonstration, not authentication or configuration-file support.
 
 ## Non-Blocking Rules
 
@@ -195,4 +197,4 @@ The project still needs the following mandatory behavior:
 3. Configuration-file-driven CGI handler selection and CGI response-header validation.
 4. Repeatable compliance tests.
 
-The optional bonus work remains cookie/session support and multiple CGI types.
+The optional bonus work remaining is multiple CGI types.

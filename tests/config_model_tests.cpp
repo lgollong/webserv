@@ -60,6 +60,10 @@ int main() {
 	expect(redirect.redirect_status == 302 && redirect.redirect_target == "/gallery" && allows(redirect, "GET"),
 		"redirect route supplies redirect status, target, and method policy");
 
+	Route session = config.route(requestFor("/session"));
+	expect(session.session_demo && allows(session, "GET") && !allows(session, "POST"),
+		"reference mock supplies a GET-only cookie session demonstration route");
+
 	Route cgi = config.route(requestFor("/test.sh"));
 	expect(cgi.location == "/" && cgi.is_cgi && cgi.cgi_pass == "./contents/cgi/test.sh" &&
 		cgi.cgi_script_name == "/test.sh", "CGI extension selects the configured handler and URL script");

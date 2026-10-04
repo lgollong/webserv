@@ -57,6 +57,11 @@ void Config::buildReferenceMock() {
 	redirect.redirect_target = "/gallery";
 	primary.locations.push_back(redirect);
 
+	Route session = makeRoute("/session", primary.root);
+	allow(session, "GET");
+	session.session_demo = true;
+	primary.locations.push_back(session);
+
 	server_configs.push_back(primary);
 
 	ServerConfig secondary;
