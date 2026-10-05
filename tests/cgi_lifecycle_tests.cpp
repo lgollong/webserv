@@ -43,10 +43,16 @@ int main() {
 		"cgi termination grace expires at deadline");
 
 	Request request;
+	ServerConfig server;
+	server.server_name = "localhost";
+	server.port = 8080;
 	Route script;
-	script.cgi_pass = "./contents/cgi/test.sh";
-	CgiJob completed = cgi.start(request, script);
-	expect(!completed.failed && completed.pid > 0, "cgi script starts");
+	script.root = "./contents";
+	script.cgi_handler = "/bin/sh";
+	script.cgi_script_name = "/cgi/test.sh";
+	script.cgi_script_path = "./contents/cgi/test.sh";
+	CgiJob completed = cgi.start(request, script, server);
+	expect(!completed.failed && completed.pid > 0, "interpreter-backed cgi script starts");
 	if (completed.in_fd >= 0) {
 		close(completed.in_fd);
 		completed.in_fd = -1;
@@ -65,9 +71,12 @@ int main() {
 		close(completed.out_fd);
 
 	Route shell;
-	shell.cgi_pass = "/bin/sh";
-	CgiJob stalled = cgi.start(request, shell);
-	expect(!stalled.failed && stalled.pid > 0, "stalled cgi shell starts");
+	shell.root = "./contents";
+	shell.cgi_script_name = "/cgi/test.sh";
+	shell.cgi_script_path = "./contents/cgi/test.sh";
+	request.query = "stall";
+	CgiJob stalled = cgi.start(request, shell, server);
+	expect(!stalled.failed && stalled.pid > 0, "directly executable cgi script starts");
 	expect(!cgi.reap(stalled), "running cgi is not reaped early");
 	cgi.terminate(stalled);
 	expect(stalled.termination_requested, "cgi termination is recorded");

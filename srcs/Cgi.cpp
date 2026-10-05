@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <csignal>
 #include <limits.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 
 // augmented BNF for CGI:
@@ -127,6 +128,26 @@ static bool resolveExecutablePath(const std::string &configuredPath, std::string
 	return true;
 }
 
+static bool isPathInsideRoot(const std::string &path, const std::string &root) {
+	if (path.compare(0, root.size(), root) != 0)
+		return false;
+	return path.size() == root.size() || root[root.size() - 1] == '/' ||
+		path[root.size()] == '/';
+}
+
+static bool resolveScriptPath(const Route &route, std::string &path) {
+	char root[PATH_MAX];
+	char script[PATH_MAX];
+	struct stat info;
+	if (route.root.empty() || route.cgi_script_path.empty() ||
+		realpath(route.root.c_str(), root) == NULL ||
+		realpath(route.cgi_script_path.c_str(), script) == NULL ||
+		!isPathInsideRoot(script, root) || stat(script, &info) != 0 || !S_ISREG(info.st_mode))
+		return false;
+	path = script;
+	return true;
+}
+
 static std::string directoryOf(const std::string &path) {
 	std::string::size_type slash = path.find_last_of('/');
 	if (slash == std::string::npos)
@@ -138,8 +159,10 @@ static std::string directoryOf(const std::string &path) {
 
 CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig &server) {
 	CgiJob job;
-	std::string executablePath;
-	if (!resolveExecutablePath(route.cgi_pass, executablePath)) {
+	std::string handlerPath;
+	std::string scriptPath;
+	if (!resolveScriptPath(route, scriptPath) ||
+		(!route.cgi_handler.empty() && !resolveExecutablePath(route.cgi_handler, handlerPath))) {
 		job.failed = true;
 		return job;
 	}
@@ -164,7 +187,7 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 		close(outPipe[0]);
 		close(outPipe[1]);
 		
-		if (chdir(directoryOf(executablePath).c_str()) != 0)
+		if (chdir(directoryOf(scriptPath).c_str()) != 0)
 			_exit(127);
 
 		std::vector<std::string> envStrings = buildEnv(request, route, server);
@@ -173,9 +196,14 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 				envp.push_back(const_cast<char*>(envStrings[i].c_str()));
 		envp.push_back(NULL);
 
-		char *argv[] = { const_cast<char*>(executablePath.c_str()), NULL };
+		std::vector<char*> argv;
+		const std::string &program = route.cgi_handler.empty() ? scriptPath : handlerPath;
+		argv.push_back(const_cast<char*>(program.c_str()));
+		if (!route.cgi_handler.empty())
+			argv.push_back(const_cast<char*>(scriptPath.c_str()));
+		argv.push_back(NULL);
 
-		execve(executablePath.c_str(), argv, &envp[0]);
+		execve(program.c_str(), &argv[0], &envp[0]);
 		_exit(127);
 	}
 	if (pid < 0) {

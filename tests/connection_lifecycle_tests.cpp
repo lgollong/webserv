@@ -409,7 +409,7 @@ int main() {
 		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"persistent connection serves a request after redirecting");
 
-		std::string buffered = request("/test.sh", "") + request("/files/index.html", "");
+		std::string buffered = request("/cgi/test.sh", "") + request("/files/index.html", "");
 		expect(sendAll(persistent, buffered), "buffered CGI and static requests are sent together");
 		expect(takeResponse(persistent, pending, response) && response.find("You sent:") != std::string::npos,
 			"buffered CGI request receives its response first");
@@ -446,7 +446,7 @@ int main() {
 	expect(cgiClosing >= 0, "CGI close-policy client connects");
 	pending.clear();
 	if (cgiClosing >= 0) {
-		expect(sendAll(cgiClosing, request("/test.sh", "close")), "CGI close-policy request is sent");
+		expect(sendAll(cgiClosing, request("/cgi/test.sh", "close")), "CGI close-policy request is sent");
 		expect(takeResponse(cgiClosing, pending, response) && response.find("You sent:") != std::string::npos &&
 			countOccurrences(response, "Connection: close\r\n") == 1,
 			"CGI close-policy response contains one close header");

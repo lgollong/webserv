@@ -28,8 +28,8 @@ Each `Route` is normalized before a handler receives it. A parser may apply serv
 | `autoindex`, `index_file` | Directory-serving behavior. |
 | `upload_store` | Empty when uploads are disabled; otherwise the configured storage directory. |
 | `session_demo` | Reference-mock-only flag selecting the optional GET `/session` demonstration. It is not a configuration-file directive. |
-| `cgi_handlers` | File extension to CGI executable mapping. |
-| `is_cgi`, `cgi_pass`, `cgi_script_name` | Per-request CGI result derived from `cgi_handlers`: the handler path for `execve()` and the URL script portion used for CGI `SCRIPT_NAME`. A suffix after `cgi_script_name` is preserved as `PATH_INFO`. |
+| `cgi_handlers` | File extension to configured CGI handler/interpreter mapping. An empty mapped value means the matching script is directly executable. |
+| `is_cgi`, `cgi_handler`, `cgi_script_name`, `cgi_script_path` | Per-request CGI result derived from `cgi_handlers`: optional handler/interpreter, URL script portion used for CGI `SCRIPT_NAME`, and route-root-resolved filesystem script target. A suffix after `cgi_script_name` is preserved as `PATH_INFO`. `Cgi` canonicalizes the final target and rejects one outside `root` before execution. |
 
 ## Reference Mock
 
@@ -37,14 +37,14 @@ Until #4 parses configuration text, `Config` explicitly builds a reference in-me
 
 | Listener | Route | Covered settings |
 | --- | --- | --- |
-| `0.0.0.0:8080` | `/` | Root, GET/POST/DELETE, index, error pages, body limit, and `.sh` CGI. |
+| `0.0.0.0:8080` | `/` | Root, GET/POST/DELETE, index, error pages, body limit, and `.sh` CGI through `/bin/sh`. |
 | `0.0.0.0:8080` | `/gallery` | Longest-prefix matching, index, and autoindex. |
 | `0.0.0.0:8080` | `/uploads` | POST-only upload storage. |
 | `0.0.0.0:8080` | `/redirect` | `302` redirect target. |
 | `0.0.0.0:8080` | `/session` | GET-only, process-local cookie/session bonus demonstration. |
 | `127.0.0.1:8081` | `/` | A second listener/server model. |
 
-`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server. For a configured CGI extension, it resolves both the handler and the URL script portion, so `/test.sh/extra` selects the `.sh` handler with `/test.sh` as the script and `/extra` available to CGI as path information. `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
+`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server. For a configured CGI extension, it resolves the optional handler, URL script portion, and a lexical route-root script path, so `/cgi/test.sh/extra` selects `/bin/sh` with `/cgi/test.sh` as the script and `/extra` available to CGI as path information. Traversal segments reject CGI selection. `Cgi` then canonicalizes the script target and ensures it remains below the route root before execution. `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
 
 `Config::errorPage(serverIndex, status)` returns the selected server's configured path for an error status. `Worker` reads that regular file through `StaticFile`, preserves the original response status, and uses the file's MIME type. Missing, non-regular, unreadable, or unconfigured pages retain the deterministic `Http::defaultErrorResponse()` fallback.
 

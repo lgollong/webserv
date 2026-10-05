@@ -44,6 +44,7 @@ make config-model-test
 make static-file-test
 make connection-lifecycle-test
 make cgi-pipe-test
+make cgi-lifecycle-test
 make session-store-test
 make cookie-session-test
 make resilience-test

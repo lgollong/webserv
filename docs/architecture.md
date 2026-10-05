@@ -98,14 +98,14 @@ main
 
 `Partial`, with the event-loop pipe lifecycle implemented.
 
-- Creates stdin/stdout pipes, resolves a configured script to an executable path, changes the child directory to that script's directory, runs it with `execve`, and sets the parent pipe ends non-blocking.
+- Creates stdin/stdout pipes, resolves a route-root CGI script target and its optional configured handler independently, verifies the canonical script remains beneath the route root, changes the child directory to the script directory, runs either `handler script` or the executable script with `execve`, and sets the parent pipe ends non-blocking.
 - Builds CGI/1.1 request context from the parsed request, selected route, and selected server: method, URL script name, path info, query, protocol, body metadata, server name/port, and normalized request headers.
 - `Worker` registers the CGI pipes in the same `Poller` as sockets and transfers the request body/output through readiness callbacks.
 - Reports pipe, fork, and non-blocking setup failures through `CgiJob`, and the child exits if `execve` fails.
 - Treats failed pipe reads/writes, invalid pipe readiness, and CGI EOF before the complete request body is accepted as controlled CGI failures without inspecting `errno` after I/O; the response path produces `502` when no valid CGI result exists.
 - Records CGI start and progress timestamps. `Worker` limits an active CGI job to 15 seconds, closes its pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, and reaps it with `waitpid(..., WNOHANG)` before emitting a `502` response.
 - Reaps normal completed children before resetting their transaction. On client disconnect, it retains the terminated PID and termination time in a worker-owned pending-reap map, where the same two-second `SIGKILL` escalation and non-blocking reap continue after the transaction is gone.
-- `To Fix`: choose CGI handlers from parsed configuration and harden CGI response-header validation.
+- `To Fix`: parse CGI handler selection from configuration and harden CGI response-header validation. The reference mock currently demonstrates only `.sh` through `/bin/sh`.
 
 ### `Logger`
 
@@ -153,12 +153,12 @@ This establishes the intended ownership flow, but parsed route/server resolution
 ### CGI Request
 
 1. `Worker` identifies a CGI route and the selected `ServerConfig` from `Config`.
-2. `Cgi` derives `SCRIPT_NAME` and `PATH_INFO` from the URL, resolves the configured handler before changing the child directory to the handler directory, then starts the child and returns its pipe fds in `CgiJob`.
+2. `Cgi` derives `SCRIPT_NAME` and `PATH_INFO` from the URL, resolves the configured handler separately from the route-root script target, verifies the canonical target remains below the route root, changes to the script directory, then starts the child and returns its pipe fds in `CgiJob`.
 3. `Worker` closes CGI stdin immediately for an empty request body; otherwise it registers stdin for `POLLOUT`. It always registers CGI stdout for `POLLIN` in the same `Poller`.
 4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks. It closes stdin after the entire body is accepted. Stdout EOF before that point, plus pipe error or invalid-fd readiness, marks the job as failed instead of accepting a partial-body CGI response.
 5. `Cgi` records its start time and `Worker` checks its 15-second lifetime during the periodic maintenance sweep. On normal completion, `Worker` reaps the child non-blockingly before converting the CGI output into a `Response`. On timeout or failure, it closes CGI pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, reaps the child, then sends the default `502` response.
 
-The pipe/body/EOF flow and request context are wired and covered end to end. Configuration-file-driven handler selection and CGI response validation remain before full subject compliance.
+The pipe/body/EOF flow, request context, handler/script separation, and route-root script validation are wired and covered end to end. Configuration-file-driven handler selection, a second CGI type, and CGI response validation remain before full subject compliance.
 
 ## Resilience Verification
 

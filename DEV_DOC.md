@@ -135,7 +135,7 @@ next step would block.
 
 **Dynamic — `POST /login.php`** (differs at the content step)
 
-4. `Config.route` → `Route` with `is_cgi=true`, `cgi_pass` set.
+4. `Config.route` → `Route` with `is_cgi=true`, optional `cgi_handler`, URL `cgi_script_name`, and route-root `cgi_script_path` set.
 5. `CGI.start(request, route)` → `CgiJob{pid, out_fd}`; **register `out_fd` in the Poller**,
    `phase = RUNNING_CGI`, return to loop (no blocking `waitpid`).
 6. On `out_fd` events: `CGI.collect(txn.cgi)` accumulates output; on child exit, parse the
