@@ -6,7 +6,7 @@
 
 `webserv` is a dependency-free HTTP server written in C++98 for the 42 curriculum. The project is being built around one non-blocking, `poll()`-driven event loop that owns listener sockets, client sockets, and CGI pipes.
 
-The current implementation includes HTTP/1.1 request parsing and response serialization, persistent connection handling, readiness-driven CGI pipes, CGI timeout/reaping behavior, and focused loopback tests. It is not yet feature-complete for the subject: configuration parsing, configured listeners and routing, real static-file serving, uploads, `DELETE`, redirects, and configured error pages remain in progress. The source-accurate status is documented in [Architecture](docs/architecture.md).
+The current implementation includes HTTP/1.1 request parsing and response serialization, persistent connection handling, readiness-driven CGI pipes, CGI timeout/reaping behavior, static files, uploads, `DELETE`, redirects, custom error pages, and focused loopback tests. It is not yet feature-complete for the subject: configuration files are represented by an in-memory reference model rather than parsed, and some CGI response validation remains incomplete. The source-accurate status is documented in [Architecture](docs/architecture.md).
 
 ## Instructions
 
@@ -48,17 +48,10 @@ curl -i http://127.0.0.1:8080/files/index.html
 ### Tests
 
 ```sh
-make config-model-test
-make static-file-test
-make connection-lifecycle-test
-make cgi-pipe-test
-make cgi-lifecycle-test
-make session-store-test
-make cookie-session-test
-make resilience-test
+make test
 ```
 
-The resilience test includes real client-idle and CGI-timeout windows, so it takes longer than the other two targets. See [Architecture](docs/architecture.md) for each suite's coverage.
+`make test` runs every repository test sequentially, including the slow client-idle and CGI-timeout resilience suite. See [Testing and Evaluation](docs/testing.md) for coverage, individual targets, and manual verification.
 
 ### Cleanup
 
@@ -74,6 +67,7 @@ make re
 - [Architecture and implementation status](docs/architecture.md)
 - [Runtime configuration model](docs/configuration-model.md)
 - [Code walkthrough](docs/code-walkthrough.md)
+- [Testing and evaluation](docs/testing.md)
 - [Contribution workflow for coding agents](AGENTS.md)
 
 ## Resources
