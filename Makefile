@@ -11,6 +11,7 @@ RESILIENCE_TEST = /private/tmp/webserv-resilience-tests
 CONNECTION_LIFECYCLE_TEST = /private/tmp/webserv-connection-lifecycle-tests
 CGI_PIPE_TEST = /private/tmp/webserv-cgi-pipe-tests
 CGI_LIFECYCLE_TEST = /private/tmp/webserv-cgi-lifecycle-tests
+CGI_FIXTURE = contents/cgi/test.cgi
 CONFIG_MODEL_TEST = /private/tmp/webserv-config-model-tests
 STATIC_FILE_TEST = /private/tmp/webserv-static-file-tests
 EVENT_LOOP_STRESS_TEST = /private/tmp/webserv-event-loop-stress-tests
@@ -20,9 +21,12 @@ CORE_SRC = $(filter-out $(SRC_DIR)/main.cpp,$(SRC))
 
 all: $(NAME)
 
-$(NAME): $(OBJ)
+$(NAME): $(OBJ) $(CGI_FIXTURE)
 	@$(CXX) $(CXXFLAGS) $(OBJ) -o $(NAME)
 	@echo "\033[1;32m ✅ [webserv created]\033[0m"
+
+$(CGI_FIXTURE): tests/cgi_direct_fixture.cpp
+	@$(CXX) $(CXXFLAGS) $< -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	@$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -35,7 +39,7 @@ clean:
 	@echo "\033[0;31m 🗑️  [objects deleted]\033[0m"
 
 fclean: clean
-	@rm -f $(NAME)
+	@rm -rf $(NAME) $(CGI_FIXTURE) $(CGI_FIXTURE).dSYM
 	@echo "\033[0;31m 🗑️  [webserv deleted]\033[0m"
 
 re: fclean all

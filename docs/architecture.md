@@ -105,7 +105,7 @@ main
 - Treats failed pipe reads/writes, invalid pipe readiness, and CGI EOF before the complete request body is accepted as controlled CGI failures without inspecting `errno` after I/O; the response path produces `502` when no valid CGI result exists.
 - Records CGI start and progress timestamps. `Worker` limits an active CGI job to 15 seconds, closes its pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, and reaps it with `waitpid(..., WNOHANG)` before emitting a `502` response.
 - Reaps normal completed children before resetting their transaction. On client disconnect, it retains the terminated PID and termination time in a worker-owned pending-reap map, where the same two-second `SIGKILL` escalation and non-blocking reap continue after the transaction is gone.
-- `To Fix`: parse CGI handler selection from configuration and harden CGI response-header validation. The reference mock currently demonstrates only `.sh` through `/bin/sh`.
+- `To Fix`: parse CGI handler selection from configuration and harden CGI response-header validation. The reference mock demonstrates `.sh` through `/bin/sh` and a directly executable `.cgi` fixture.
 
 ### `Logger`
 
@@ -158,7 +158,7 @@ This establishes the intended ownership flow, but parsed route/server resolution
 4. `Cgi` sends the parsed body, already decoded when the request used chunked transfer coding, and collects CGI output through readiness callbacks. It closes stdin after the entire body is accepted. Stdout EOF before that point, plus pipe error or invalid-fd readiness, marks the job as failed instead of accepting a partial-body CGI response.
 5. `Cgi` records its start time and `Worker` checks its 15-second lifetime during the periodic maintenance sweep. On normal completion, `Worker` reaps the child non-blockingly before converting the CGI output into a `Response`. On timeout or failure, it closes CGI pipes, sends `SIGTERM`, escalates to `SIGKILL` after two seconds if needed, reaps the child, then sends the default `502` response.
 
-The pipe/body/EOF flow, request context, handler/script separation, and route-root script validation are wired and covered end to end. Configuration-file-driven handler selection, a second CGI type, and CGI response validation remain before full subject compliance.
+The pipe/body/EOF flow, request context, handler/script separation, route-root script validation, and two CGI types are wired and covered end to end. Configuration-file-driven handler selection and CGI response validation remain before full subject compliance.
 
 ## Resilience Verification
 

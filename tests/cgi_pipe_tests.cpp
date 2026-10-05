@@ -223,6 +223,11 @@ int main() {
 		"CGI receives complete request context and runs in its script directory");
 
 	response.clear();
+	expect(request(getRequest("/cgi/test.cgi"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("Direct CGI type\n") != std::string::npos,
+		"directly executable CGI type runs through the shared event-loop path");
+
+	response.clear();
 	expect(request(getRequest("/cgi/test.sh?delayed"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
 		response.find("You sent:") != std::string::npos,
 		"CGI delayed output completes through readiness events");

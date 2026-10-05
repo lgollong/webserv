@@ -74,6 +74,12 @@ int main() {
 		cgiPathInfo.cgi_script_path == "./contents/cgi/test.sh" && cgiPathInfo.cgi_handler == "/bin/sh",
 		"CGI script selection preserves a suffix for PATH_INFO");
 
+	Route directCgi = config.route(requestFor("/cgi/test.cgi"));
+	expect(directCgi.is_cgi && directCgi.cgi_handler.empty() &&
+		directCgi.cgi_script_name == "/cgi/test.cgi" &&
+		directCgi.cgi_script_path == "./contents/cgi/test.cgi",
+		"CGI extension selects a directly executable script when its handler is empty");
+
 	Route unsafeCgi = config.route(requestFor("/cgi/../test.sh"));
 	expect(!unsafeCgi.is_cgi, "CGI script resolution rejects parent-directory traversal");
 

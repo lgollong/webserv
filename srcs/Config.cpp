@@ -38,6 +38,7 @@ void Config::buildReferenceMock() {
 	allow(root, "DELETE");
 	root.index_file = "index.html";
 	root.cgi_handlers[".sh"] = "/bin/sh";
+	root.cgi_handlers[".cgi"] = "";
 	primary.locations.push_back(root);
 
 	Route gallery = makeRoute("/gallery", "./contents/gallery");

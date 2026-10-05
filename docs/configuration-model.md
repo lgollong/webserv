@@ -37,14 +37,14 @@ Until #4 parses configuration text, `Config` explicitly builds a reference in-me
 
 | Listener | Route | Covered settings |
 | --- | --- | --- |
-| `0.0.0.0:8080` | `/` | Root, GET/POST/DELETE, index, error pages, body limit, and `.sh` CGI through `/bin/sh`. |
+| `0.0.0.0:8080` | `/` | Root, GET/POST/DELETE, index, error pages, body limit, `.sh` CGI through `/bin/sh`, and directly executable `.cgi` CGI. |
 | `0.0.0.0:8080` | `/gallery` | Longest-prefix matching, index, and autoindex. |
 | `0.0.0.0:8080` | `/uploads` | POST-only upload storage. |
 | `0.0.0.0:8080` | `/redirect` | `302` redirect target. |
 | `0.0.0.0:8080` | `/session` | GET-only, process-local cookie/session bonus demonstration. |
 | `127.0.0.1:8081` | `/` | A second listener/server model. |
 
-`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server. For a configured CGI extension, it resolves the optional handler, URL script portion, and a lexical route-root script path, so `/cgi/test.sh/extra` selects `/bin/sh` with `/cgi/test.sh` as the script and `/extra` available to CGI as path information. Traversal segments reject CGI selection. `Cgi` then canonicalizes the script target and ensures it remains below the route root before execution. `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
+`Config::route(serverIndex, request)` resolves the longest matching location within the selected reference server. For a configured CGI extension, it resolves the optional handler, URL script portion, and a lexical route-root script path: `/cgi/test.sh/extra` selects `/bin/sh` with `/cgi/test.sh` as the script and `/extra` available to CGI as path information, while `/cgi/test.cgi` selects the directly executable fixture with no handler. Traversal segments reject CGI selection. `Cgi` then canonicalizes the script target and ensures it remains below the route root before execution. The `.cgi` fixture is built from `tests/cgi_direct_fixture.cpp` as part of `make`; it has no external runtime dependency. `bodyLimit(serverIndex)` returns that same server's request limit. The compatibility overloads select server zero; `Worker` instead binds every accepted connection to its listener's server index and passes that index to both APIs.
 
 `Config::errorPage(serverIndex, status)` returns the selected server's configured path for an error status. `Worker` reads that regular file through `StaticFile`, preserves the original response status, and uses the file's MIME type. Missing, non-regular, unreadable, or unconfigured pages retain the deterministic `Http::defaultErrorResponse()` fallback.
 
