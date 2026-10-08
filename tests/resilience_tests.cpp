@@ -15,7 +15,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static const int kPort = 8080;
+static const int kPort = 8002;
 static const int kStartupTimeoutMs = 5000;
 static const int kClientTimeoutMs = 35000;
 static const int kCgiTimeoutMs = 22000;
@@ -212,7 +212,7 @@ static bool waitForProcessExit(pid_t &server, pid_t cgiPid) {
 int main() {
 	unlink(kCgiPidFile);
 	pid_t server = startServer();
-	expect(server > 0 && waitForServer(server), "server starts on loopback port 8080");
+	expect(server > 0 && waitForServer(server), "server starts on configured loopback port 8002");
 	if (server <= 0) {
 		unlink(kCgiPidFile);
 		return 1;
@@ -225,7 +225,7 @@ int main() {
 		expect(sendAll(partialClient, "GET / HTTP/1.1\r\nHost: localhost\r\n", 1000),
 			"partial request is sent");
 
-	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"normal request succeeds while idle clients are pending");
 	if (silentClient >= 0)
 		expect(waitForClose(silentClient, kClientTimeoutMs), "silent client expires after idle deadline");
@@ -237,13 +237,13 @@ int main() {
 		close(partialClient);
 
 	expect(serverRunning(server), "server survives client timeout cleanup");
-	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after client expiry");
 
 	expect(requestHasStatus("GET /cgi/test.sh?stall HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 502 Bad Gateway", kCgiTimeoutMs),
 		"stalled CGI is terminated and returns 502");
 	expect(serverRunning(server), "server survives CGI timeout cleanup");
-	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after CGI expiry");
 
 	unlink(kCgiPidFile);
@@ -260,7 +260,7 @@ int main() {
 	}
 
 	expect(serverRunning(server), "server survives disconnected CGI cleanup");
-	expect(requestHasStatus("GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
+	expect(requestHasStatus("GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after CGI disconnect");
 
 	stopServer(server);

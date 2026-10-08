@@ -32,7 +32,7 @@ main
 - Represents one parsed server as a listener, body limit, error-page map, and set of routes. `Worker` binds every parsed server and records the accepting server index on the client.
 - Resolves boundary-aware longest-prefix locations and derives CGI handler/script information from the selected route's extension map.
 - Throws descriptive startup errors for unreadable files, unclosed quotes, unknown directives, and several malformed directive forms. There is no mock fallback.
-- `To Fix`: add dedicated valid and malformed configuration tests; make location defaults inherit `server.root`; validate negative body sizes, addresses, and duplicate listeners at parse time; make `upload off` meaningful.
+- `To Fix`: validate listener addresses and duplicate host/port pairs at parse time.
 
 ### `Worker` and `Poller` - Partial
 
@@ -90,6 +90,6 @@ main
 
 ## Verification Status
 
-Focused tests currently passing include HTTP parser/response tests, parsed configuration model and malformed-input tests, static-file tests, session-store tests, event-loop stress tests, CGI lifecycle tests, and connection-lifecycle tests.
+Focused tests currently passing include HTTP parser/response tests, parsed configuration model and malformed-input tests, static-file tests, session-store tests, event-loop stress tests, CGI lifecycle and CGI-pipe tests, resilience tests, and connection-lifecycle tests.
 
-`make test` is currently **not green**. It passes both parser targets and currently stops at `cgi-pipe-test`: that test, along with cookie-session and resilience integration coverage, still launches `config/req.config` while assuming retired port-8080 mock routes. These are tracked integration-test migrations, not evidence that the parser is still mock-backed.
+`make test` is currently **not green**. Parser-backed CGI-pipe and resilience targets pass, but the aggregate target stops at `cookie-session-test` because the optional session demonstration remains tied to the retired mock configuration. This is a bonus-feature configuration decision, not evidence that the parser or mandatory runtime tests are mock-backed.
