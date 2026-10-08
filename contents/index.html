@@ -21,15 +21,15 @@
 				<p class="hero-copy">A C++98 HTTP server built around one readiness-driven event loop. This page is served by the server it describes.</p>
 				<div class="hero-actions"><a class="button button-primary" href="#technical">Read the runtime contract</a><a class="button button-quiet" href="#testing">Run the suite</a></div>
 			</div>
-			<div class="hero-foot page-width"><span>Port 8080</span><span>HTTP/1.1</span><span>Reference model active</span></div>
+			<div class="hero-foot page-width"><span>Port 8080</span><span>HTTP/1.1</span><span>Parsed configuration active</span></div>
 		</section>
 		<section class="section page-width" aria-labelledby="snapshot-title">
 			<div class="section-heading"><p class="eyebrow eyebrow-dark">Implementation snapshot</p><h2 id="snapshot-title">What is running here</h2><p>The server handles the connections, request parsing, routing, static files, CGI pipes, and response bytes behind this dashboard.</p></div>
 			<div class="stat-grid">
 				<article class="stat-card"><strong>1</strong><span>poll-driven event loop</span></article>
-				<article class="stat-card stat-cyan"><strong>2</strong><span>configured mock listeners</span></article>
-				<article class="stat-card stat-coral"><strong>2</strong><span>working CGI types</span></article>
-				<article class="stat-card stat-green"><strong>12</strong><span>current automated suites</span></article>
+				<article class="stat-card stat-cyan"><strong>1</strong><span>default configured listener</span></article>
+				<article class="stat-card stat-coral"><strong>4</strong><span>configured CGI mappings</span></article>
+				<article class="stat-card stat-green"><strong>12</strong><span>registered test targets</span></article>
 			</div>
 		</section>
 		<section class="section section-ink" aria-labelledby="path-title"><div class="page-width">
@@ -37,7 +37,7 @@
 			<ol class="route-flow">
 				<li><span>01</span><strong>Browser</strong><small>A request reaches a listener.</small></li>
 				<li><span>02</span><strong>Poller</strong><small>Readiness decides the next I/O step.</small></li>
-				<li><span>03</span><strong>Handler</strong><small>Static, CGI, redirect, upload, or session.</small></li>
+				<li><span>03</span><strong>Handler</strong><small>Static, CGI, redirect, upload, or DELETE.</small></li>
 				<li><span>04</span><strong>Response</strong><small>HTTP bytes flush without blocking the loop.</small></li>
 			</ol>
 		</div></section>
@@ -53,38 +53,36 @@
 				<div class="status-ledger"><table><caption>Implementation ledger</caption><thead><tr><th>Area</th><th>Current behavior</th><th>Evidence</th></tr></thead><tbody>
 					<tr><td>HTTP</td><td>HTTP/1.1 parsing, chunked decoding, framing, error responses, and persistence.</td><td><code>http-*-test</code></td></tr>
 					<tr><td>Static routes</td><td>Roots, MIME types, indexes, autoindex, uploads, DELETE, redirects, and error pages.</td><td><code>static-file-test</code></td></tr>
-					<tr><td>CGI</td><td>Non-blocking pipes, request context, timeouts, shell and direct executable types.</td><td><code>cgi-*-test</code></td></tr>
-					<tr><td>Config</td><td>Reference in-memory model only. Parsing configuration files is still pending.</td><td>#4, #5, #6</td></tr>
+					<tr><td>CGI</td><td>Non-blocking pipes, request context, timeouts, and parser-configured handlers.</td><td><code>cgi-*-test</code></td></tr>
+					<tr><td>Config</td><td>Parser-backed server and location directives; configuration test migration remains open.</td><td><code>config-model-test</code></td></tr>
 					<tr><td>Resilience</td><td>Controlled client cleanup, bounded CGI termination/reap, and listener survival.</td><td><code>resilience-test</code></td></tr>
 				</tbody></table></div>
 			</div>
 		</div></section>
 		<section id="demos" class="section page-width" aria-labelledby="demos-title">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Live demonstrations</p><h2 id="demos-title">Open a route the server actually handles</h2><p>Each route below is part of the active in-memory reference model. The configuration-file parser is still planned, so the supplied config file is not read yet.</p></div>
+			<div class="section-heading"><p class="eyebrow eyebrow-dark">Live demonstrations</p><h2 id="demos-title">Open a route the server actually handles</h2><p>These routes come from <code>config/default.config</code>, which the server parses at startup.</p></div>
 			<div class="demo-grid">
 				<a class="demo-link" href="/files/index.html"><span>GET</span><strong>Static file</strong><small>/files/index.html</small></a>
-				<a class="demo-link" href="/gallery"><span>GET</span><strong>Autoindex</strong><small>/gallery</small></a>
-				<a class="demo-link" href="/redirect"><span>302</span><strong>Redirect</strong><small>/redirect</small></a>
+				<a class="demo-link" href="/files"><span>GET</span><strong>Autoindex</strong><small>/files</small></a>
+				<a class="demo-link" href="/old-page"><span>301</span><strong>Redirect</strong><small>/old-page</small></a>
 				<a class="demo-link" href="/cgi/test.sh"><span>CGI</span><strong>Shell script</strong><small>/cgi/test.sh</small></a>
-				<a class="demo-link" href="/cgi/test.cgi"><span>CGI</span><strong>Direct executable</strong><small>/cgi/test.cgi</small></a>
-				<a class="demo-link" href="/session"><span>GET</span><strong>Cookie session</strong><small>/session</small></a>
 			</div>
 		</section>
 		<section id="inspector" class="section inspector-section" aria-labelledby="inspector-title"><div class="page-width inspector-layout">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Same-origin request inspector</p><h2 id="inspector-title">Ask this server for a response</h2><p>Select an endpoint, then inspect its status, headers, and the first part of its body. Session requests intentionally advance the visible visit count.</p></div>
+			<div class="section-heading"><p class="eyebrow eyebrow-dark">Same-origin request inspector</p><h2 id="inspector-title">Ask this server for a response</h2><p>Select an endpoint, then inspect its status, headers, and the first part of its body.</p></div>
 			<div class="inspector-tool">
 				<label for="endpoint">Endpoint</label>
-				<div class="inspector-controls"><select id="endpoint" name="endpoint"><option value="/files/index.html">GET /files/index.html</option><option value="/gallery">GET /gallery</option><option value="/redirect">GET /redirect (follows to /gallery)</option><option value="/cgi/test.sh">GET /cgi/test.sh</option><option value="/cgi/test.cgi">GET /cgi/test.cgi</option><option value="/session">GET /session</option></select><button id="run-request" class="button button-primary" type="button">Inspect response</button><a id="open-endpoint" class="button button-quiet" href="/files/index.html">Open route</a></div>
+				<div class="inspector-controls"><select id="endpoint" name="endpoint"><option value="/files/index.html">GET /files/index.html</option><option value="/files">GET /files</option><option value="/old-page">GET /old-page</option><option value="/cgi/test.sh">GET /cgi/test.sh</option></select><button id="run-request" class="button button-primary" type="button">Inspect response</button><a id="open-endpoint" class="button button-quiet" href="/files/index.html">Open route</a></div>
 				<p id="inspector-status" class="inspector-status" role="status">Ready to send a same-origin GET request.</p>
 				<pre id="inspector-output" class="inspector-output" tabindex="0">Select an endpoint and inspect its response here.</pre>
 			</div>
 		</div></section>
 		<section id="testing" class="section page-width" aria-labelledby="testing-title">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Evaluation ready</p><h2 id="testing-title">A browser demo is the opening act. The suite does the proving.</h2><p>Use the dashboard for visible routes, then run the complete sequential suite for parser, framing, timeout, CGI, and readiness coverage.</p></div>
+			<div class="section-heading"><p class="eyebrow eyebrow-dark">Verification status</p><h2 id="testing-title">The focused tests pass; the combined suite needs its parser migration completed.</h2><p>Use the dashboard for visible routes, then consult the testing guide for passing targets and the outstanding configuration-test repairs.</p></div>
 			<div class="command-grid">
-				<div class="command-block"><p>Build and start</p><code>make &amp;&amp; ./webserv config/req.config</code><button class="copy-button" type="button" data-copy="make &amp;&amp; ./webserv config/req.config">Copy</button></div>
-				<div class="command-block"><p>Run every suite</p><code>make test</code><button class="copy-button" type="button" data-copy="make test">Copy</button></div>
-				<div class="command-block"><p>Memory diagnostics</p><code>make SANITIZE=address re &amp;&amp; make test</code><button class="copy-button" type="button" data-copy="make SANITIZE=address re &amp;&amp; make test">Copy</button></div>
+				<div class="command-block"><p>Build and start</p><code>make &amp;&amp; ./webserv config/default.config</code><button class="copy-button" type="button" data-copy="make &amp;&amp; ./webserv config/default.config">Copy</button></div>
+				<div class="command-block"><p>Combined suite</p><code>make test</code><button class="copy-button" type="button" data-copy="make test">Copy</button></div>
+				<div class="command-block"><p>Focused parser route check</p><code>make connection-lifecycle-test</code><button class="copy-button" type="button" data-copy="make connection-lifecycle-test">Copy</button></div>
 			</div>
 			<p class="testing-link"><a href="https://github.com/lgollong/webserv/blob/main/docs/testing.md">Read the full testing and evaluation guide</a></p>
 		</section>
