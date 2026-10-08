@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <unistd.h>
@@ -54,6 +55,37 @@ static Request requestFor(const std::string &path) {
 	Request request;
 	request.path = path;
 	return request;
+}
+
+static std::string bodySizeConfig(const std::string &value) {
+	return "server { client_max_body_size " + value + "; }\n";
+}
+
+static void expectBodyLimit(const std::string &value, size_t expected, const char *message) {
+	const std::string path = temporaryPath("body-size");
+	if (!writeFile(path, bodySizeConfig(value))) {
+		expect(false, message);
+		return;
+	}
+	try {
+		Config config(path);
+		expect(config.bodyLimit(0) == expected, message);
+	} catch (const std::exception &error) {
+		std::cerr << "failure: body size fixture threw: " << error.what() << std::endl;
+		++g_failures;
+	}
+	std::remove(path.c_str());
+}
+
+static void expectBodySizeError(const std::string &value, const std::string &expected,
+	const char *message) {
+	const std::string path = temporaryPath("invalid-body-size");
+	if (!writeFile(path, bodySizeConfig(value))) {
+		expect(false, message);
+		return;
+	}
+	expectConfigError(path, expected, message);
+	std::remove(path.c_str());
 }
 
 int main() {
@@ -157,6 +189,29 @@ int main() {
 		++g_failures;
 	}
 	std::remove(uploadPath.c_str());
+
+	expectBodyLimit("0", 0, "accepts a zero-byte body limit");
+	expectBodyLimit("42", 42, "accepts an unsigned decimal body limit");
+	expectBodyLimit("2K", static_cast<size_t>(2 * 1024), "accepts an uppercase kilobyte suffix");
+	expectBodyLimit("3m", static_cast<size_t>(3 * 1024 * 1024), "accepts a lowercase megabyte suffix");
+	expectBodyLimit("1G", static_cast<size_t>(1024 * 1024 * 1024), "accepts a gigabyte suffix");
+
+	expectBodySizeError("-1", "invalid body size", "rejects negative body sizes");
+	expectBodySizeError("+1", "invalid body size", "rejects explicitly signed body sizes");
+	expectBodySizeError("1.5", "invalid body size", "rejects decimal body sizes");
+	expectBodySizeError("1e3", "invalid body size", "rejects exponent body sizes");
+	expectBodySizeError("1kk", "invalid body size", "rejects repeated body-size suffixes");
+	expectBodySizeError("10kb", "invalid body size", "rejects multi-character body-size suffixes");
+	expectBodySizeError("k", "invalid body size", "requires digits before a body-size suffix");
+	expectBodySizeError("\"1 0\"", "invalid body size", "rejects whitespace inside quoted body sizes");
+	expectBodySizeError("\" 1\"", "invalid body size", "rejects leading whitespace in quoted body sizes");
+
+	std::ostringstream maximumBodySize;
+	maximumBodySize << std::numeric_limits<size_t>::max();
+	expectBodySizeError(maximumBodySize.str() + "K", "body size overflow",
+		"rejects body sizes that overflow after suffix multiplication");
+	expectBodySizeError(maximumBodySize.str() + "0", "body size overflow",
+		"rejects body sizes that overflow during decimal conversion");
 
 	expectConfigError(temporaryPath("missing"), "unable to open config file",
 		"rejects unreadable configuration files");
