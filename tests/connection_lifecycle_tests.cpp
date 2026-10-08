@@ -283,6 +283,18 @@ int main() {
 		close(secondary);
 	}
 
+	int inherited = connectToServer(8008);
+	expect(inherited >= 0, "inherited-root listener accepts a client");
+	pending.clear();
+	if (inherited >= 0) {
+		expect(sendAll(inherited, request("/inherited/index.html", "")),
+			"inherited-root request is sent");
+		expect(takeResponse(inherited, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+			response.find("<h1>HI</h1>") != std::string::npos,
+			"location without root serves from its configured server root");
+		close(inherited);
+	}
+
 	int fragmented = connectToServer();
 	expect(fragmented >= 0, "fragmented client connects");
 	if (fragmented >= 0) {

@@ -50,6 +50,12 @@ static void expectConfigError(const std::string &path, const std::string &expect
 	}
 }
 
+static Request requestFor(const std::string &path) {
+	Request request;
+	request.path = path;
+	return request;
+}
+
 int main() {
 	const std::string validPath = temporaryPath("valid");
 	const std::string validConfig =
@@ -59,13 +65,13 @@ int main() {
 		"  listen 9001;\n"
 		"  server_name \"one.example\";\n"
 		"  location / {\n"
-		"    root './contents';\n"
 		"    allowed_methods GET POST;\n"
 		"  }\n"
 		"  location /assets {\n"
 		"    root ./contents/files;\n"
 		"    autoindex on;\n"
 		"  }\n"
+		"  root './contents';\n"
 		"}\n"
 		"server {\n"
 		"  host 127.0.0.1;\n"
@@ -88,6 +94,10 @@ int main() {
 				expect(servers[0].locations[1].location == "/assets" &&
 					servers[0].locations[1].root == "./contents/files" &&
 					servers[0].locations[1].autoindex, "parses quoted values and location directives");
+				expect(config.route(0, requestFor("/page.html")).root == "./contents",
+					"inherits a server root declared after the location");
+				expect(config.route(0, requestFor("/assets/page.html")).root == "./contents/files",
+					"keeps an explicit location root over the server root");
 			}
 			if (servers[1].locations.size() == 2) {
 				std::map<std::string, std::string>::const_iterator cgi =
@@ -115,6 +125,20 @@ int main() {
 		++g_failures;
 	}
 	std::remove(defaultsPath.c_str());
+
+	const std::string fallbackPath = temporaryPath("server-root-fallback");
+	expect(writeFile(fallbackPath, "server { root ./contents/files; }\n"),
+		"write server root fallback fixture");
+	try {
+		Config config(fallbackPath);
+		const ServerConfig &server = config.servers()[0];
+		expect(server.locations.size() == 1 && server.locations[0].root == "./contents/files",
+			"uses the server root for a synthesized fallback location");
+	} catch (const std::exception &error) {
+		std::cerr << "failure: server root fallback fixture threw: " << error.what() << std::endl;
+		++g_failures;
+	}
+	std::remove(fallbackPath.c_str());
 
 	expectConfigError(temporaryPath("missing"), "unable to open config file",
 		"rejects unreadable configuration files");

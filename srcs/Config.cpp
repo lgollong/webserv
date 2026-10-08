@@ -54,7 +54,7 @@ Config::Config(const std::string &configPath) {
 		if (it->locations.empty()) {
 			Route fallback;
 			fallback.location = "/";
-			fallback.root = "./contents";
+			fallback.root = it->root.empty() ? "./contents" : it->root;
 			fallback.allowed_methods.insert("GET");
 			fallback.redirect_status = 0;
 			fallback.autoindex = false;
@@ -366,8 +366,6 @@ std::string Config::parseLocation(ServerConfig &server, std::vector<std::string>
 		throw std::runtime_error(formatError(configPath, lines[index - 1], "expected '}'"));
 	++index;
 
-	if (route.root.empty())
-    	route.root = "./contents"; // default root
 	if (route.allowed_methods.empty())
 		route.allowed_methods.insert("GET");
 	
@@ -448,6 +446,13 @@ void Config::parseServer(std::vector<std::string> &tokens, std::size_t &index,
 	if (index >= tokens.size() || tokens[index] != "}")
 		throw std::runtime_error(formatError(configPath, lines[index - 1], "expected '}'"));
 	++index;
+
+	const std::string default_root = server.root.empty() ? "./contents" : server.root;
+	for (std::vector<Route>::iterator location = server.locations.begin();
+		location != server.locations.end(); ++location) {
+		if (location->root.empty())
+			location->root = default_root;
+	}
 	
 	server_configs.push_back(server);
 }
