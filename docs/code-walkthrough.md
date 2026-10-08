@@ -73,4 +73,4 @@ Every handler result becomes `Response`, then `Http::build()` produces `Connecti
 
 ## 9. Current Verification State
 
-The focused HTTP, static-file, event-loop, CGI lifecycle, and connection-lifecycle targets exercise the paths above. The full `make test` target is currently red because some mock-era expectations were not migrated with the parser. See [Testing and Evaluation](testing.md) for the exact status and outstanding coverage.
+The focused HTTP, parser-model/malformed-config, static-file, event-loop, CGI lifecycle, and connection-lifecycle targets exercise the paths above. The full `make test` target currently reaches `cgi-pipe-test` before stopping because that integration test still has mock-era port-8080 expectations. See [Testing and Evaluation](testing.md) for the exact status and outstanding coverage.

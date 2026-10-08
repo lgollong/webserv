@@ -17,6 +17,7 @@ CGI_PIPE_TEST = /private/tmp/webserv-cgi-pipe-tests
 CGI_LIFECYCLE_TEST = /private/tmp/webserv-cgi-lifecycle-tests
 CGI_FIXTURE = contents/cgi/test.cgi
 CONFIG_MODEL_TEST = /private/tmp/webserv-config-model-tests
+CONFIG_PARSER_TEST = /private/tmp/webserv-config-parser-tests
 STATIC_FILE_TEST = /private/tmp/webserv-static-file-tests
 EVENT_LOOP_STRESS_TEST = /private/tmp/webserv-event-loop-stress-tests
 SESSION_STORE_TEST = /private/tmp/webserv-session-store-tests
@@ -51,13 +52,14 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re test resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test static-file-test event-loop-stress-test session-store-test cookie-session-test http-request-line-test http-response-test connection-timeout-test
+.PHONY: all clean fclean re test resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test config-parser-test static-file-test event-loop-stress-test session-store-test cookie-session-test http-request-line-test http-response-test connection-timeout-test
 
 test:
 	@$(MAKE) http-request-line-test
 	@$(MAKE) http-response-test
 	@$(MAKE) connection-timeout-test
 	@$(MAKE) config-model-test
+	@$(MAKE) config-parser-test
 	@$(MAKE) static-file-test
 	@$(MAKE) session-store-test
 	@$(MAKE) event-loop-stress-test
@@ -98,6 +100,10 @@ cgi-lifecycle-test: $(NAME)
 config-model-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/config_model_tests.cpp srcs/Config.cpp -o $(CONFIG_MODEL_TEST)
 	@$(CONFIG_MODEL_TEST)
+
+config-parser-test: $(NAME)
+	@$(CXX) $(CXXFLAGS) tests/config_parser_tests.cpp srcs/Config.cpp -o $(CONFIG_PARSER_TEST)
+	@$(CONFIG_PARSER_TEST)
 
 static-file-test: $(NAME)
 	@$(CXX) $(CXXFLAGS) tests/static_file_tests.cpp srcs/StaticFile.cpp -o $(STATIC_FILE_TEST)

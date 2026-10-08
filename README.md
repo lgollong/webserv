@@ -53,7 +53,7 @@ open http://127.0.0.1:8080/
 make test
 ```
 
-The test target is sequential because several suites bind fixed loopback ports. **Current status:** it is not green after the parser migration: `config-model-test` has a stale `/api` autoindex expectation, and some older CGI/session/resilience tests still assume the retired mock listener on port `8080`. [Testing and Evaluation](docs/testing.md) records the affected targets and useful passing focused tests.
+The test target is sequential because several suites bind fixed loopback ports. **Current status:** parser model and malformed-configuration coverage pass. The combined target still stops at `cgi-pipe-test`, because older CGI/session/resilience integration tests assume the retired mock listener on port `8080`. [Testing and Evaluation](docs/testing.md) records the affected targets and useful passing focused tests.
 
 ### Cleanup
 
