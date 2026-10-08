@@ -318,6 +318,7 @@ std::string Config::parseLocation(ServerConfig &server, std::vector<std::string>
 			std::string value = tokens[index++];
 			if (!isBooleanTrue(value) && !isBooleanFalse(value))
 				throw std::runtime_error(formatError(configPath, dir_line, "invalid upload value"));
+			route.upload_enabled = isBooleanTrue(value);
 			expectSemicolon(tokens, index, configPath, lines);
 		} 
 		else if (directive == "return") {
@@ -368,6 +369,9 @@ std::string Config::parseLocation(ServerConfig &server, std::vector<std::string>
 
 	if (route.allowed_methods.empty())
 		route.allowed_methods.insert("GET");
+	if (route.upload_enabled && route.upload_store.empty())
+		throw std::runtime_error(formatError(configPath, lines[index - 1],
+			"upload on requires upload_store"));
 	
 	server.locations.push_back(route);
 	return location_path;

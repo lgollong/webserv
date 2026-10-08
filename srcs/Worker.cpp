@@ -395,7 +395,8 @@ void Worker::processBufferedRequest(Connection &conn) {
 		poller.setEvents(conn.fd, POLLOUT);
 		return ;
 	}
-	if (conn.txn.request.method == "POST" && !conn.txn.route.upload_store.empty()) {
+	if (conn.txn.request.method == "POST" && conn.txn.route.upload_enabled &&
+		!conn.txn.route.upload_store.empty()) {
 		Content content = files.upload(conn.txn.route, conn.txn.request);
 		conn.txn.response.status = content.status;
 		conn.txn.response.body = content.body;

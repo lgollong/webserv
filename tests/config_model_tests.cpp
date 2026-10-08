@@ -87,8 +87,8 @@ int main() {
 		expect(servers[2].root == "./contents/files",
 			"server 2 has a configured inherited root");
 
-		expect(servers[2].locations.size() == 4,
-			"server 2 has four locations");
+		expect(servers[2].locations.size() == 5,
+			"server 2 has five locations");
 
 		expect(servers[3].locations.size() == 2,
 			"server 3 has two locations");
@@ -187,8 +187,9 @@ int main() {
 
 	expect(upload.location == "/uploads" &&
 		upload.root == "./contents" &&
-		upload.upload_store == "./contents/uploads",
-		"server 0 upload route has correct root and upload store");
+		upload.upload_store == "./contents/uploads" &&
+		upload.upload_enabled,
+		"server 0 upload route has correct root, store, and enabled policy");
 
 	expect(allows(upload, "POST") &&
 		allows(upload, "DELETE") &&
@@ -373,8 +374,9 @@ int main() {
 	 */
 	expect(apiUpload.location == "/api/upload" &&
 		apiUpload.root == "./contents/files" &&
-		apiUpload.upload_store == "./contents/uploads",
-		"server 2 /api/upload route resolves correctly");
+		apiUpload.upload_store == "./contents/uploads" &&
+		apiUpload.upload_enabled,
+		"server 2 /api/upload route resolves correctly with uploads enabled");
 
 	expect(allows(apiUpload, "POST") &&
 		!allows(apiUpload, "GET") &&
@@ -398,6 +400,13 @@ int main() {
 	expect(inherited.location == "/inherited" &&
 		inherited.root == "./contents/files",
 		"server 2 inherited route uses the server root");
+
+	Route disabledUpload = config.route(2, requestFor("/uploads-disabled/file.txt"));
+
+	expect(disabledUpload.location == "/uploads-disabled" &&
+		disabledUpload.upload_store == "./contents/uploads" &&
+		!disabledUpload.upload_enabled,
+		"server 2 disabled upload route preserves its storage and policy");
 
 	/* ============================================================
 	 * SERVER 3 / PORT 8001 / admin.local
