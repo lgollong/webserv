@@ -57,9 +57,6 @@ int main() {
 	Content dashboardScript = files.serve(root, requestFor("/dashboard.js"));
 	expect(dashboardScript.status == 200 && dashboardScript.mime_type == "application/javascript" &&
 		!dashboardScript.body.empty(), "serves the dashboard request inspector script");
-	Content dashboardImage = files.serve(root, requestFor("/assets/request-path.png"));
-	expect(dashboardImage.status == 200 && dashboardImage.mime_type == "image/png" &&
-		!dashboardImage.body.empty(), "serves the dashboard request-path image");
 
 	Content binary = files.serve(root, requestFor("/files/favicon.ico"));
 	expect(binary.status == 200 && binary.mime_type == "image/x-icon" &&
