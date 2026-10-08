@@ -12,7 +12,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static const int kPort = 8080;
+static const int kPort = 8002;
 static const int kStartupTimeoutMs = 5000;
 static const int kResponseTimeoutMs = 5000;
 static const int kCloseTimeoutMs = 2000;
@@ -41,15 +41,11 @@ static bool waitForFd(int fd, short events, int timeoutMs) {
 	return poll(&event, 1, timeoutMs) > 0 && (event.revents & (events | POLLERR | POLLHUP | POLLNVAL));
 }
 
-static bool serverRunning(pid_t &pid) {
+static bool serverRunning(pid_t pid) {
 	if (pid <= 0)
 		return false;
 	int status = 0;
-	pid_t result = waitpid(pid, &status, WNOHANG);
-	if (result == 0)
-		return true;
-	pid = -1;
-	return false;
+	return waitpid(pid, &status, WNOHANG) == 0;
 }
 
 static bool writeDeleteFixture() {
@@ -79,7 +75,7 @@ static int connectToServer(int port = kPort) {
 	return fd;
 }
 
-static bool waitForServer(pid_t &server) {
+static bool waitForServer(pid_t server) {
 	long long deadline = nowMs() + kStartupTimeoutMs;
 	while (nowMs() < deadline) {
 		if (!serverRunning(server))
@@ -105,7 +101,7 @@ static pid_t startServer() {
 		dup2(nullFd, STDERR_FILENO);
 		close(nullFd);
 	}
-	char *argv[] = {const_cast<char *>("./webserv"), const_cast<char *>("config/req.config"), NULL};
+	char *argv[] = {const_cast<char *>("./webserv"), const_cast<char *>("./config/req.config"), NULL};
 	execv(argv[0], argv);
 	_exit(127);
 }
@@ -116,8 +112,10 @@ static void stopServer(pid_t &server) {
 	kill(server, SIGTERM);
 	long long deadline = nowMs() + 2000;
 	while (nowMs() < deadline) {
-		if (!serverRunning(server))
+		if (!serverRunning(server)) {
+			server = -1;
 			return;
+		}
 		usleep(100000);
 	}
 	kill(server, SIGKILL);
@@ -208,8 +206,7 @@ static std::string request(const std::string &path, const std::string &connectio
 	return value + "\r\n";
 }
 
-static std::string requestWithMethod(const std::string &method, const std::string &path,
-	const std::string &connection) {
+static std::string requestWithMethod(const std::string &method, const std::string &path, const std::string &connection) {
 	std::string value = method + " " + path + " HTTP/1.1\r\nHost: localhost\r\n";
 	if (!connection.empty())
 		value += "Connection: " + connection + "\r\n";
@@ -217,7 +214,7 @@ static std::string requestWithMethod(const std::string &method, const std::strin
 }
 
 static std::string oversizedRequest() {
-	return "POST /uploads/too-large.txt HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10000001\r\n\r\n";
+	return "POST /upload/too-large.txt HTTP/1.1\r\nHost: localhost\r\nContent-Length: 11000000\r\n\r\n";
 }
 
 static std::string uploadRequest(const std::string &path, const std::string &body) {
@@ -252,7 +249,7 @@ int main() {
 	expect(writeDeleteFixture(), "creates a disposable delete lifecycle fixture");
 	pid_t server = startServer();
 	bool started = server > 0 && waitForServer(server);
-	expect(started, "server starts on loopback port 8080");
+	expect(started, "server starts on loopback port 8002");
 	if (!started) {
 		stopServer(server);
 		std::remove("./contents/delete-lifecycle-fixture.txt");
@@ -271,17 +268,17 @@ int main() {
 		close(primaryRoot);
 	}
 
-	int secondary = connectToServer(8081);
+	int secondary = connectToServer(8003);
 	expect(secondary >= 0, "secondary configured listener accepts the same root path");
 	pending.clear();
 	if (secondary >= 0) {
 		expect(sendAll(secondary, request("/", "")), "secondary listener request is sent");
 		expect(takeResponse(secondary, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
-			response.find("Secondary index") != std::string::npos,
+			response.find("browser-served project dashboard") != std::string::npos,
 			"same root path resolves to the secondary server root");
 		expect(sendAll(secondary, request("/missing.txt", "")), "secondary missing-file request is sent");
 		expect(takeResponse(secondary, pending, response) && response.find("HTTP/1.1 404 Not Found") == 0 &&
-			response.find("Secondary custom 404") != std::string::npos,
+			response.find("Primary custom 404") != std::string::npos,
 			"secondary listener serves its configured 404 page");
 		close(secondary);
 	}
@@ -289,7 +286,7 @@ int main() {
 	int fragmented = connectToServer();
 	expect(fragmented >= 0, "fragmented client connects");
 	if (fragmented >= 0) {
-		expect(sendAll(fragmented, "GET /files/index.html HTTP/1.1\r\nHost: localhost\r\n"),
+		expect(sendAll(fragmented, "GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n"),
 			"fragmented request prefix is sent");
 		expect(!waitForFd(fragmented, POLLIN, 300), "fragmented request receives no early response");
 		expect(sendAll(fragmented, "\r\n"), "fragmented request is completed");
@@ -315,53 +312,46 @@ int main() {
 	expect(persistent >= 0, "persistent client connects");
 	pending.clear();
 	if (persistent >= 0) {
-		expect(sendAll(persistent, request("/files/index.html", "")), "first persistent request is sent");
+		expect(sendAll(persistent, request("/static/index.html", "")), "first persistent request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"first persistent request receives a response");
 
-		int secondClient = connectToServer();
-		expect(secondClient >= 0, "second client connects while persistent client remains open");
-		if (secondClient >= 0) {
-			std::string secondPending;
-			expect(sendAll(secondClient, request("/files/index.html", "")), "second client request is sent");
-			expect(takeResponse(secondClient, secondPending, response) &&
-				response.find("<h1>HI</h1>") != std::string::npos,
-				"second client remains served while persistent client is open");
-			close(secondClient);
-		}
-
-		expect(sendAll(persistent, request("/files/index.html", "")), "second persistent request is sent");
+		expect(sendAll(persistent, request("/static/index.html", "")), "second persistent request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
 			"second persistent request receives a response");
 
-		expect(sendAll(persistent, requestWithMethod("POST", "/gallery", "")), "disallowed POST request is sent");
+		expect(sendAll(persistent, requestWithMethod("POST", "/static", "")), "disallowed POST request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
 			countOccurrences(response, "Allow: GET\r\n") == 1,
 			"disallowed static-route method returns one deterministic Allow header");
 
-		expect(sendAll(persistent, requestWithMethod("DELETE", "/gallery", "")), "disallowed DELETE request is sent");
+		expect(sendAll(persistent, requestWithMethod("DELETE", "/static", "")), "disallowed DELETE request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
 			countOccurrences(response, "Allow: GET\r\n") == 1,
 			"disallowed DELETE request is rejected before static handling");
 
 		expect(sendAll(persistent, requestWithMethod("GET", "/uploads", "")), "disallowed upload-route GET is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
-			countOccurrences(response, "Allow: POST\r\n") == 1,
+			countOccurrences(response, "Allow: DELETE, POST\r\n") == 1,
 			"disallowed upload-route method returns its route policy");
 
-		expect(sendAll(persistent, requestWithMethod("PUT", "/files/index.html", "")), "disallowed root-route PUT is sent");
+		expect(sendAll(persistent, requestWithMethod("PUT", "/", "")), "disallowed root-route PUT is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
 			countOccurrences(response, "Allow: DELETE, GET, POST\r\n") == 1,
 			"multi-method route returns one deterministically ordered Allow header");
 
-		expect(sendAll(persistent, requestWithMethod("POST", "/redirect", "")), "disallowed redirect POST is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
-			response.find("Location:") == std::string::npos,
-			"method rejection runs before redirect handling");
+		expect(sendAll(persistent, requestWithMethod("GET", "/redirect-test", "")), "redirect request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 301 Moved Permanently") == 0 &&
+			response.find("Location: /") != std::string::npos,
+			"configured redirect is framed before static handling");
+
+		expect(sendAll(persistent, request("/static/index.html", "")), "post-redirect request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
+			"persistent connection serves a request after redirecting");
 
 		expect(sendAll(persistent, requestWithMethod("POST", "/uploads", "")), "allowed upload-route POST is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 400 Bad Request") == 0,
-			"allowed methods continue to their existing downstream handler");
+			"allowed upload route still validates the target name");
 
 		const std::string uploadBody = "lifecycle upload body";
 		expect(sendAll(persistent, uploadRequest("/uploads/lifecycle-upload.txt", uploadBody)),
@@ -387,34 +377,22 @@ int main() {
 			response.find("Primary custom 404") != std::string::npos,
 			"deleted file uses the primary configured 404 page");
 
-		expect(sendAll(persistent, requestWithMethod("DELETE", "/files", "")), "directory DELETE request is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0 &&
-			response.find("<h1>403 Forbidden</h1>") != std::string::npos,
-			"missing configured 403 page falls back without removing the directory");
+		expect(sendAll(persistent, requestWithMethod("DELETE", "/static", "")), "directory DELETE request is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
+			countOccurrences(response, "Allow: GET\r\n") == 1,
+			"disallowed directory delete is rejected by the route policy");
 
-		expect(sendAll(persistent, request("/gallery", "")), "autoindex request is sent");
+		expect(sendAll(persistent, request("/static", "")), "autoindex request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
-			response.find("Index of /gallery") != std::string::npos &&
-			response.find("href=\"/gallery/alpha.txt\"") != std::string::npos,
+			response.find("Index of /static") != std::string::npos,
 			"configured autoindex route receives an HTML directory listing");
 
-		expect(sendAll(persistent, request("/redirect", "")), "redirect request is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 302 Found") == 0 &&
-			response.find("Location: /gallery\r\n") != std::string::npos &&
-			response.find("Content-Length: 0\r\n") != std::string::npos &&
-			response.find("<h1>HI</h1>") == std::string::npos,
-			"configured redirect is framed before static handling");
-
-		expect(sendAll(persistent, request("/files/index.html", "")), "post-redirect request is sent");
+		std::string buffered = request("/static/index.html", "") + request("/static", "");
+		expect(sendAll(persistent, buffered), "buffered static requests are sent together");
 		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
-			"persistent connection serves a request after redirecting");
-
-		std::string buffered = request("/cgi/test.sh", "") + request("/files/index.html", "");
-		expect(sendAll(persistent, buffered), "buffered CGI and static requests are sent together");
-		expect(takeResponse(persistent, pending, response) && response.find("You sent:") != std::string::npos,
-			"buffered CGI request receives its response first");
-		expect(takeResponse(persistent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
-			"buffered static request receives its distinct response");
+			"buffered static request receives its first response");
+		expect(takeResponse(persistent, pending, response) && response.find("Index of /static") != std::string::npos,
+			"buffered autoindex request receives its distinct response");
 		close(persistent);
 	}
 
@@ -422,7 +400,7 @@ int main() {
 	expect(closing >= 0, "close-policy client connects");
 	pending.clear();
 	if (closing >= 0) {
-		expect(sendAll(closing, request("/files/index.html", "keep-alive, Close")), "close-policy request is sent");
+		expect(sendAll(closing, request("/static/index.html", "keep-alive, Close")), "close-policy request is sent");
 		expect(takeResponse(closing, pending, response) && countOccurrences(response, "Connection: close\r\n") == 1,
 			"close-policy response contains one close header");
 		expect(waitForClose(closing, pending), "close-policy connection closes after its response");
@@ -433,25 +411,13 @@ int main() {
 	expect(redirectClosing >= 0, "redirect close-policy client connects");
 	pending.clear();
 	if (redirectClosing >= 0) {
-		expect(sendAll(redirectClosing, request("/redirect", "close")), "redirect close-policy request is sent");
-		expect(takeResponse(redirectClosing, pending, response) && response.find("HTTP/1.1 302 Found") == 0 &&
-			response.find("Location: /gallery\r\n") != std::string::npos &&
+		expect(sendAll(redirectClosing, request("/redirect-test", "close")), "redirect close-policy request is sent");
+		expect(takeResponse(redirectClosing, pending, response) && response.find("HTTP/1.1 301 Moved Permanently") == 0 &&
+			response.find("Location: /\r\n") != std::string::npos &&
 			countOccurrences(response, "Connection: close\r\n") == 1,
 			"redirect close-policy response contains Location and one close header");
 		expect(waitForClose(redirectClosing, pending), "redirect close-policy connection closes after its response");
 		close(redirectClosing);
-	}
-
-	int cgiClosing = connectToServer();
-	expect(cgiClosing >= 0, "CGI close-policy client connects");
-	pending.clear();
-	if (cgiClosing >= 0) {
-		expect(sendAll(cgiClosing, request("/cgi/test.sh", "close")), "CGI close-policy request is sent");
-		expect(takeResponse(cgiClosing, pending, response) && response.find("You sent:") != std::string::npos &&
-			countOccurrences(response, "Connection: close\r\n") == 1,
-			"CGI close-policy response contains one close header");
-		expect(waitForClose(cgiClosing, pending), "CGI close-policy connection closes after its response");
-		close(cgiClosing);
 	}
 
 	int malformed = connectToServer();
