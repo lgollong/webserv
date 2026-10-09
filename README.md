@@ -33,9 +33,10 @@ make SANITIZE=address re
 
 ### Run
 
-The executable requires one configuration-file argument. The default demonstration configuration listens on `0.0.0.0:8080`:
+The executable takes an optional configuration-file argument. Without one it loads `config/default.config`, relative to the working directory, so run it from the repository root. The default demonstration configuration listens on `0.0.0.0:8080`:
 
 ```sh
+./webserv                         # same as ./webserv config/default.config
 ./webserv config/default.config
 ```
 

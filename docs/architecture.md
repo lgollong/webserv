@@ -10,7 +10,7 @@ Status labels:
 
 ## Runtime Model
 
-`main()` constructs `Config`, `Http`, `Cgi`, `StaticFile`, and `Logger`, then passes them to `Worker`. `Config` parses the command-line file before the event loop starts. `Worker` owns the event loop, listener/client descriptors, connection state, and session store; other services are called by it.
+`main()` constructs `Config`, `Http`, `Cgi`, `StaticFile`, and `Logger`, then passes them to `Worker`. `Config` parses the command-line file, or `config/default.config` when no argument is given, before the event loop starts. `Worker` owns the event loop, listener/client descriptors, connection state, and session store; other services are called by it.
 
 ```text
 main
