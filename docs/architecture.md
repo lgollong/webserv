@@ -64,10 +64,10 @@ main
 - Streams request bodies to CGI through readiness events, collects output, applies timeouts, and frames the result through `Http`.
 - `To Fix`: bound collected CGI output, validate CGI response headers more strictly, and ensure process-level shutdown cleans up active children.
 
-### `SessionStore` - Implemented but Unconfigured
+### `SessionStore` - Implemented
 
 - Stores opaque `/dev/urandom`-backed session identifiers in memory, produces `HttpOnly` cookies, and expires sessions during Worker sweeps.
-- The handler remains wired into `Worker`, but the parser has no `session_demo` directive and neither supplied configuration reaches it. The former `/session` demonstration is therefore not active.
+- The handler is wired into `Worker` via the `session_demo on;` location directive; `config/default.config` enables it on `/session`, which responds with a visit counter and sets the session cookie on first visit.
 
 ### `Logger` - Partial
 

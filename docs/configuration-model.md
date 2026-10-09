@@ -31,6 +31,7 @@ Location directives:
 | `upload on|off;` | `on` authorizes POST uploads and requires `upload_store`; `off` prevents uploads even when a store is configured. |
 | `return [300-399] <target>;` | Configured redirect. The status defaults to `302`. |
 | `cgi <extension> <handler>;` | Maps a script extension to an interpreter/executable path. |
+| `session_demo on|off;` | `on` dispatches this route to the bonus cookie/session demonstration (`SessionStore`) instead of static/CGI handling; `off` (the default) leaves the route unaffected. |
 
 The parser defaults a missing `listen` directive to port `8080` and inserts a GET-only `/` route rooted at `./contents` when a server has no locations. It accepts IPv4 listener addresses; invalid addresses are rejected when `Worker` creates the listener.
 
@@ -60,7 +61,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 | `cgi_handlers` | Extension-to-handler mappings from the configuration. |
 | `is_cgi`, `cgi_handler`, `cgi_script_name`, `cgi_script_path` | Per-request CGI selection derived during route resolution. `Cgi` canonicalizes the script and rejects it if it escapes the route root. |
 
-`session_demo` remains in the shared structure for the existing session handler, but the parser has no directive for it and neither supplied configuration exposes `/session`.
+`session_demo` is parsed as a location directive (see above); `config/default.config` enables it on `/session`.
 
 ## Supplied Configurations
 
@@ -68,7 +69,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 
 | Listener | Routes |
 | --- | --- |
-| `0.0.0.0:8080` | `/`, `/files`, `/uploads`, `/cgi`, and `/old-page` |
+| `0.0.0.0:8080` | `/`, `/files`, `/uploads`, `/cgi`, `/old-page`, and `/session` |
 
 `config/req.config` is a multi-listener fixture used by the updated configuration and connection-lifecycle tests. It defines servers on ports `8002`, `8003`, `8008`, and `8001` with static, upload, redirect, documentation, and CGI route examples.
 
