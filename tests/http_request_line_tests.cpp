@@ -101,7 +101,18 @@ int main() {
 	expectMalformed(http, requestWithLine("GET  / HTTP/1.1"), "double separator");
 	expectMalformed(http, requestWithLine("GET relative HTTP/1.1"), "non-origin-form target");
 	expectMalformed(http, requestWithLine("GET /#fragment HTTP/1.1"), "fragment in target");
-	expectMalformed(http, requestWithLine("GET / HTTP/1.0"), "unsupported version");
+	Request http10;
+	result = http.parse(requestWithLine("GET /legacy HTTP/1.0"), http10);
+	expect(result > 0 && http10.version == "HTTP/1.0" && http10.path == "/legacy", "HTTP/1.0 request is parsed");
+	Request higherMinor;
+	result = http.parse(requestWithLine("GET / HTTP/1.2"), higherMinor);
+	expect(result > 0 && higherMinor.version == "HTTP/1.2", "higher HTTP/1.x minor version is accepted");
+	expectParseStatus(http, requestWithLine("GET / HTTP/2.0"), 505, "HTTP/2.0 request line");
+	expectParseStatus(http, requestWithLine("GET / HTTP/0.9"), 505, "HTTP/0.9 request line");
+	expectParseStatus(http, requestWithLine("GET / HTTX/1.1"), 400, "misspelled protocol name");
+	expectParseStatus(http, requestWithLine("GET / HTTP/1"), 400, "version without minor digit");
+	expectParseStatus(http, requestWithLine("GET / HTTP/1.10"), 400, "multi-digit minor version");
+	expectParseStatus(http, requestWithLine("GET / http/1.1"), 400, "lowercase protocol name");
 	expectMalformed(http, requestWithLine("GET / HTTP/1.1 trailing"), "extra request-line field");
 	expectMalformed(http, requestWithLine(" / HTTP/1.1"), "empty method");
 

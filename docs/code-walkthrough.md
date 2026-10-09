@@ -34,7 +34,7 @@ positive value  complete request; value is consumed byte count
 -1              malformed request; the parser supplies an HTTP error status
 ```
 
-The parser validates the request line and headers, supports `Content-Length` and chunked bodies, and applies the accepted server's configured body limit before a complete body is copied. Later pipelined bytes stay in `inbuf` while the current transaction owns its response.
+The parser validates the request line (HTTP/1.x only; other major versions are rejected with `505`) and headers, supports `Content-Length` and chunked bodies, and applies the accepted server's configured body limit before a complete body is copied. Later pipelined bytes stay in `inbuf` while the current transaction owns its response.
 
 ## 5. Route and Handler Selection
 

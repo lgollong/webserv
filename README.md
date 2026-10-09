@@ -6,7 +6,7 @@
 
 `webserv` is a dependency-free HTTP server written in C++98 for the 42 curriculum. It runs one non-blocking, `poll()`-driven event loop which owns listener sockets, client sockets, and CGI pipes.
 
-The implementation parses nginx-style `server` and `location` blocks from the configuration file passed on the command line. It currently supports static files, directory indexes and autoindex, uploads, `DELETE`, redirects, custom error pages, request-body limits, CGI handler mappings, persistent HTTP/1.1 connections, a cookie/session demonstration, and focused loopback tests. The parser and several handlers still have known limitations; [Architecture](docs/architecture.md) records the current source-backed status.
+The implementation parses nginx-style `server` and `location` blocks from the configuration file passed on the command line. It currently supports static files, directory indexes and autoindex, uploads, `DELETE`, redirects, custom error pages, request-body limits, CGI handler mappings, HTTP/1.0 and HTTP/1.1 requests with persistent connections, a cookie/session demonstration, and focused loopback tests. The parser and several handlers still have known limitations; [Architecture](docs/architecture.md) records the current source-backed status.
 
 ## Instructions
 
