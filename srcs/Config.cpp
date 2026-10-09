@@ -369,6 +369,9 @@ std::string Config::parseLocation(ServerConfig &server, std::vector<std::string>
 				throw std::runtime_error(formatError(configPath, dir_line, "cgi missing handler"));
 			std::string ext = tokens[index++];
 			std::string handler = tokens[index++];
+			if (handler.empty() || handler[0] != '/')
+				throw std::runtime_error(formatError(configPath, dir_line,
+					"cgi handler must be an absolute path '" + handler + "'"));
 			route.cgi_handlers[ext] = handler;
 			route.is_cgi = true;
 			expectSemicolon(tokens, index, configPath, lines);

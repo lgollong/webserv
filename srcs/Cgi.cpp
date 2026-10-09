@@ -8,7 +8,6 @@
 #include <ctime>
 #include <cerrno>
 #include <csignal>
-#include <limits.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 
@@ -54,11 +53,10 @@ Cgi::Cgi() {}
 
 Cgi::~Cgi() {}
 
+// The subject permits fcntl() only with F_SETFL and O_NONBLOCK, so the
+// descriptor flags are replaced rather than read and extended.
 static bool setNonBlocking(int fd) {
-	int flags = fcntl(fd, F_GETFL, 0);
-	if (flags < 0)
-		return false;
-	return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+	return fcntl(fd, F_SETFL, O_NONBLOCK) == 0;
 }
 
 static void closePipe(int pipe_fds[2]) {
@@ -114,38 +112,22 @@ static std::vector<std::string> buildEnv(const Request &request, const Route &ro
 	return env;
 }
 
-static bool resolveExecutablePath(const std::string &configuredPath, std::string &path) {
-	if (configuredPath.empty())
-		return false;
-	if (configuredPath[0] == '/') {
-		path = configuredPath;
-		return true;
-	}
-	char cwd[PATH_MAX];
-	if (getcwd(cwd, sizeof(cwd)) == NULL)
-		return false;
-	path = std::string(cwd) + "/" + configuredPath;
-	return true;
-}
-
-static bool isPathInsideRoot(const std::string &path, const std::string &root) {
-	if (path.compare(0, root.size(), root) != 0)
-		return false;
-	return path.size() == root.size() || root[root.size() - 1] == '/' ||
-		path[root.size()] == '/';
-}
-
+// Config::route() builds cgi_script_path from the route root and rejects
+// "." and ".." segments, so containment is checked lexically there.
 static bool resolveScriptPath(const Route &route, std::string &path) {
-	char root[PATH_MAX];
-	char script[PATH_MAX];
 	struct stat info;
 	if (route.root.empty() || route.cgi_script_path.empty() ||
-		realpath(route.root.c_str(), root) == NULL ||
-		realpath(route.cgi_script_path.c_str(), script) == NULL ||
-		!isPathInsideRoot(script, root) || stat(script, &info) != 0 || !S_ISREG(info.st_mode))
+		stat(route.cgi_script_path.c_str(), &info) != 0 || !S_ISREG(info.st_mode))
 		return false;
-	path = script;
+	path = route.cgi_script_path;
 	return true;
+}
+
+static std::string baseNameOf(const std::string &path) {
+	std::string::size_type slash = path.find_last_of('/');
+	if (slash == std::string::npos)
+		return path;
+	return path.substr(slash + 1);
 }
 
 static std::string directoryOf(const std::string &path) {
@@ -159,10 +141,11 @@ static std::string directoryOf(const std::string &path) {
 
 CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig &server) {
 	CgiJob job;
-	std::string handlerPath;
 	std::string scriptPath;
+	// Handlers must be absolute: the child changes into the script directory
+	// before execve(), which would break a handler path relative to the server.
 	if (!resolveScriptPath(route, scriptPath) ||
-		(!route.cgi_handler.empty() && !resolveExecutablePath(route.cgi_handler, handlerPath))) {
+		(!route.cgi_handler.empty() && route.cgi_handler[0] != '/')) {
 		job.failed = true;
 		return job;
 	}
@@ -181,14 +164,17 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 	pid_t pid = fork();
 	if (pid == 0) {
 		if (dup2(inPipe[0], STDIN_FILENO) < 0 || dup2(outPipe[1], STDOUT_FILENO) < 0)
-			_exit(127);
+			std::exit(127);
 		close(inPipe[0]);
 		close(inPipe[1]);
 		close(outPipe[0]);
 		close(outPipe[1]);
 		
 		if (chdir(directoryOf(scriptPath).c_str()) != 0)
-			_exit(127);
+			std::exit(127);
+		// After chdir() the script is addressed relative to its own directory.
+		const std::string scriptFile = baseNameOf(scriptPath);
+		const std::string directScript = "./" + scriptFile;
 
 		std::vector<std::string> envStrings = buildEnv(request, route, server);
 		std::vector<char*> envp;
@@ -197,14 +183,14 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 		envp.push_back(NULL);
 
 		std::vector<char*> argv;
-		const std::string &program = route.cgi_handler.empty() ? scriptPath : handlerPath;
+		const std::string &program = route.cgi_handler.empty() ? directScript : route.cgi_handler;
 		argv.push_back(const_cast<char*>(program.c_str()));
 		if (!route.cgi_handler.empty())
-			argv.push_back(const_cast<char*>(scriptPath.c_str()));
+			argv.push_back(const_cast<char*>(scriptFile.c_str()));
 		argv.push_back(NULL);
 
 		execve(program.c_str(), &argv[0], &envp[0]);
-		_exit(127);
+		std::exit(127);
 	}
 	if (pid < 0) {
 		closePipe(inPipe);

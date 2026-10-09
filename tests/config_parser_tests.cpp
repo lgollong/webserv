@@ -268,6 +268,13 @@ int main() {
 		"rejects enabled uploads without a storage directory");
 	std::remove(uploadErrorPath.c_str());
 
+	const std::string relativeHandlerPath = temporaryPath("relative-cgi-handler");
+	expect(writeFile(relativeHandlerPath, "server {\n location /cgi {\n  cgi .py python3;\n }\n}\n"),
+		"write relative CGI handler fixture");
+	expectConfigError(relativeHandlerPath, ":3: cgi handler must be an absolute path 'python3'",
+		"rejects relative CGI handler paths with their line number");
+	std::remove(relativeHandlerPath.c_str());
+
 	const std::string emptyPath = temporaryPath("empty");
 	expect(writeFile(emptyPath, "# no servers\n"), "write empty parser fixture");
 	expectConfigError(emptyPath, "no server blocks found", "rejects configurations without servers");
