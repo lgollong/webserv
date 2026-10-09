@@ -168,6 +168,33 @@ static bool readResponse(int fd, std::string &response) {
 	return false;
 }
 
+static bool takeResponse(int fd, std::string &pending, std::string &response) {
+	long long deadline = nowMs() + kResponseTimeoutMs;
+	while (nowMs() < deadline) {
+		std::string::size_type headerEnd = pending.find("\r\n\r\n");
+		if (headerEnd != std::string::npos) {
+			size_t contentLength = 0;
+			if (!parseContentLength(pending, headerEnd, contentLength))
+				return false;
+			size_t responseLength = headerEnd + 4 + contentLength;
+			if (pending.size() >= responseLength) {
+				response.assign(pending, 0, responseLength);
+				pending.erase(0, responseLength);
+				return true;
+			}
+		}
+
+		if (!waitForFd(fd, POLLIN, 200))
+			continue;
+		char buffer[4096];
+		ssize_t result = recv(fd, buffer, sizeof(buffer), 0);
+		if (result <= 0)
+			return false;
+		pending.append(buffer, static_cast<std::string::size_type>(result));
+	}
+	return false;
+}
+
 static bool request(const std::string &bytes, std::string &response) {
 	int fd = connectToServer();
 	if (fd < 0)
@@ -231,6 +258,54 @@ int main() {
 	expect(request(getRequest("/cgi/test.sh?delayed"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
 		response.find("You sent:") != std::string::npos,
 		"CGI delayed output completes through readiness events");
+
+	int pipelined = connectToServer();
+	expect(pipelined >= 0, "CGI pipelined client connects");
+	if (pipelined >= 0) {
+		std::string pending;
+		std::string firstResponse;
+		std::string secondResponse;
+		expect(sendAll(pipelined, getRequest("/cgi/test.sh?delayed")),
+			"delayed CGI request is sent before the pipelined follow-up");
+		usleep(200000);
+		expect(sendAll(pipelined, getRequest("/static/index.html")),
+			"complete follow-up request is sent while CGI is running");
+		expect(takeResponse(pipelined, pending, firstResponse) &&
+			firstResponse.find("HTTP/1.1 200 OK") == 0 &&
+			firstResponse.find("You sent:") != std::string::npos,
+			"CGI response is emitted before a complete pipelined follow-up");
+		expect(takeResponse(pipelined, pending, secondResponse) &&
+			secondResponse.find("HTTP/1.1 200 OK") == 0 &&
+			secondResponse.find("<h1>HI</h1>") != std::string::npos,
+			"complete pipelined follow-up is served after CGI");
+		close(pipelined);
+	}
+
+	int fragmentedPipeline = connectToServer();
+	expect(fragmentedPipeline >= 0, "fragmented CGI pipeline client connects");
+	if (fragmentedPipeline >= 0) {
+		std::string pending;
+		std::string firstResponse;
+		std::string secondResponse;
+		expect(sendAll(fragmentedPipeline, getRequest("/cgi/test.sh?delayed")),
+			"second delayed CGI request is sent before the fragmented follow-up");
+		usleep(200000);
+		expect(sendAll(fragmentedPipeline,
+			"GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n"),
+			"fragmented follow-up prefix is sent while CGI is running");
+		usleep(200000);
+		expect(sendAll(fragmentedPipeline, "\r\n"),
+			"fragmented follow-up is completed while CGI is running");
+		expect(takeResponse(fragmentedPipeline, pending, firstResponse) &&
+			firstResponse.find("HTTP/1.1 200 OK") == 0 &&
+			firstResponse.find("You sent:") != std::string::npos,
+			"CGI response is emitted before a fragmented pipelined follow-up");
+		expect(takeResponse(fragmentedPipeline, pending, secondResponse) &&
+			secondResponse.find("HTTP/1.1 200 OK") == 0 &&
+			secondResponse.find("<h1>HI</h1>") != std::string::npos,
+			"fragmented pipelined follow-up is served after CGI");
+		close(fragmentedPipeline);
+	}
 
 	response.clear();
 	expect(request(getRequest("/cgi/test.sh?large"), response) && response.find("HTTP/1.1 200 OK") == 0 &&

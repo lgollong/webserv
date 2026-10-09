@@ -439,6 +439,10 @@ void Worker::processBufferedRequest(Connection &conn) {
 		}
 
 		conn.phase = RUNNING_CGI;
+		// Keep watching the client while CGI runs so disconnects are detected and
+		// additional request bytes can be buffered without starting a new
+		// transaction before the current CGI response is complete.
+		poller.setEvents(conn.fd, POLLIN);
 		if (conn.txn.request.body.empty())
 			closeManagedFd(conn.txn.cgi.in_fd);
 		else {
@@ -478,8 +482,14 @@ void Worker::onReadable(Connection &conn) {
 
 	conn.inbuf.append(buf, n);
 	conn.last_activity = time(NULL);
-	conn.phase = READING;
-	processBufferedRequest(conn);
+	if (conn.phase == READING) {
+		processBufferedRequest(conn);
+		return ;
+	}
+	// A client may send a pipelined or fragmented next request while CGI is
+	// running. Keep those bytes in the connection buffer, but never replace the
+	// active transaction. The buffered request is processed after the current
+	// response has been fully written.
 }
 
 // @todo test with response thats too big for one write cycle
