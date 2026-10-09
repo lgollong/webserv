@@ -195,6 +195,41 @@ static bool takeResponse(int fd, std::string &pending, std::string &response) {
 	return false;
 }
 
+static bool sendUntilClosed(int fd, const std::string &data) {
+	std::string::size_type sent = 0;
+	long long deadline = nowMs() + kResponseTimeoutMs;
+	while (sent < data.size() && nowMs() < deadline) {
+		if (!waitForFd(fd, POLLOUT, 200))
+			continue;
+		size_t remaining = data.size() - sent;
+		size_t chunk = remaining < 65536 ? remaining : 65536;
+		ssize_t result = send(fd, data.data() + sent, chunk, 0);
+		if (result <= 0)
+			break;
+		sent += static_cast<std::string::size_type>(result);
+	}
+	deadline = nowMs() + kResponseTimeoutMs;
+	while (nowMs() < deadline) {
+		pollfd event;
+		event.fd = fd;
+		event.events = POLLIN;
+		event.revents = 0;
+		if (poll(&event, 1, 200) <= 0)
+			continue;
+		if (event.revents & (POLLHUP | POLLERR | POLLNVAL))
+			return true;
+		if (!(event.revents & POLLIN))
+			continue;
+		char byte;
+		ssize_t result = recv(fd, &byte, 1, 0);
+		if (result == 0)
+			return true;
+		if (result < 0)
+			return true;
+	}
+	return false;
+}
+
 static bool request(const std::string &bytes, std::string &response) {
 	int fd = connectToServer();
 	if (fd < 0)
@@ -306,6 +341,22 @@ int main() {
 			"fragmented pipelined follow-up is served after CGI");
 		close(fragmentedPipeline);
 	}
+
+	int oversizedPipeline = connectToServer();
+	expect(oversizedPipeline >= 0, "oversized CGI pipeline client connects");
+	if (oversizedPipeline >= 0) {
+		expect(sendAll(oversizedPipeline, getRequest("/cgi/test.sh?delayed")),
+			"delayed CGI request is sent before oversized deferred input");
+		usleep(200000);
+		std::string oversizedInput(17 * 1024 * 1024, 'x');
+		expect(sendUntilClosed(oversizedPipeline, oversizedInput),
+			"deferred CGI input is bounded and the connection is closed");
+		close(oversizedPipeline);
+	}
+	response.clear();
+	expect(request(getRequest("/static/index.html"), response) &&
+		response.find("HTTP/1.1 200 OK") == 0,
+		"server remains available after oversized deferred CGI input");
 
 	response.clear();
 	expect(request(getRequest("/cgi/test.sh?large"), response) && response.find("HTTP/1.1 200 OK") == 0 &&

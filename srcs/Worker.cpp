@@ -139,6 +139,10 @@ static const int kPollTimeoutMs = 1000;
 static const time_t kClientIdleTimeoutSeconds = 30;
 static const time_t kCgiTimeoutSeconds = 15;
 static const time_t kCgiTerminationGraceSeconds = 2;
+// A running CGI cannot parse the next request until its response is complete.
+// Bound that deferred input so a client cannot grow one connection's buffer
+// without limit during the CGI timeout window.
+static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
 
 void Worker::run() {
 	std::map<int, size_t> listeners;
@@ -482,6 +486,12 @@ void Worker::onReadable(Connection &conn) {
 
 	conn.inbuf.append(buf, n);
 	conn.last_activity = time(NULL);
+	if (conn.phase == RUNNING_CGI && conn.inbuf.size() > kMaxDeferredClientBytes) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd
+			<< " closing after deferred CGI input exceeded its limit";
+		closeConnection(conn);
+		return ;
+	}
 	if (conn.phase == READING) {
 		processBufferedRequest(conn);
 		return ;
