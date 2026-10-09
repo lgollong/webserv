@@ -1,6 +1,7 @@
 #include "Http.hpp"
 #include <sstream>
 #include <cctype>
+#include <cstddef>
 #include <limits>
 
 Http::Http() {}

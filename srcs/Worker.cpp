@@ -15,6 +15,8 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 
 // @note is error handling rigorous enough? memset etc. not handled?
 // @todo handle malformed requests
