@@ -90,7 +90,7 @@ static pid_t startServer() {
 		dup2(nullFd, STDERR_FILENO);
 		close(nullFd);
 	}
-	char *argv[] = {const_cast<char *>("./webserv"), const_cast<char *>("config/req.config"), NULL};
+	char *argv[] = {const_cast<char *>("./webserv"), const_cast<char *>("config/default.config"), NULL};
 	execv(argv[0], argv);
 	_exit(127);
 }
@@ -221,8 +221,9 @@ int main() {
 		!sessionCookiePair(invalid).empty(), "invalid cookie starts a clean session");
 
 	std::string staticResponse;
-	expect(serverRunning(server) && request(getRequest("/files/index.html", ""), staticResponse) &&
-		staticResponse.find("HTTP/1.1 200 OK") == 0 && staticResponse.find("<h1>HI</h1>") != std::string::npos,
+	expect(serverRunning(server) && request(getRequest("/index.html", ""), staticResponse) &&
+		staticResponse.find("HTTP/1.1 200 OK") == 0 &&
+		staticResponse.find("<h1 id=\"page-title\">webserv</h1>") != std::string::npos,
 		"session demonstration leaves normal static handling available");
 
 	stopServer(server);
