@@ -313,7 +313,16 @@ std::string Config::parseLocation(ServerConfig &server, std::vector<std::string>
 				throw std::runtime_error(formatError(configPath, dir_line, "invalid upload value"));
 			route.upload_enabled = isBooleanTrue(value);
 			expectSemicolon(tokens, index, configPath, lines);
-		} 
+		}
+		else if (directive == "session_demo") {
+			if (index >= tokens.size())
+				throw std::runtime_error(formatError(configPath, dir_line, "session_demo missing value"));
+			std::string value = tokens[index++];
+			if (!isBooleanTrue(value) && !isBooleanFalse(value))
+				throw std::runtime_error(formatError(configPath, dir_line, "invalid session_demo value"));
+			route.session_demo = isBooleanTrue(value);
+			expectSemicolon(tokens, index, configPath, lines);
+		}
 		else if (directive == "return") {
 			if (index >= tokens.size())
 				throw std::runtime_error(formatError(configPath, dir_line, "return missing target"));
