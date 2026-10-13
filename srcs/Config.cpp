@@ -30,7 +30,7 @@ static std::string formatError(const std::string &path, std::size_t line, const 
 	return oss.str();
 }
 
-Config::Config(const std::string &configPath) {
+Config::Config(const std::string &configPath) : log_level(LOG_ERROR), log_level_set(false) {
 	parseFile(configPath);
 	if (server_configs.empty())
 		throw std::runtime_error(formatError(configPath, 0, "no server blocks found"));
@@ -66,6 +66,10 @@ std::string Config::errorPage(size_t serverIndex, int status) const {
 	if (it == server_configs[serverIndex].error_pages.end())
 		return "";
 	return it->second;
+}
+
+LogLevel Config::logLevel() const {
+	return log_level;
 }
 
 size_t Config::bodyLimit(size_t serverIndex) const {
@@ -487,6 +491,26 @@ void Config::parseFile(const std::string &configPath) {
 	while (index < tokens.size()) {
 		if (tokens[index] == "server") {
 			parseServer(tokens, index, configPath, lines);
+		}
+		else if (tokens[index] == "log_level") {
+			std::size_t line = lines[index];
+			++index;
+			if (index >= tokens.size() || tokens[index] == ";")
+				throw std::runtime_error(formatError(configPath, line, "log_level missing value"));
+			if (log_level_set)
+				throw std::runtime_error(formatError(configPath, line, "duplicate log_level"));
+			std::string value = toLowerCopy(tokens[index++]);
+			if (value == "none")
+				log_level = LOG_NONE;
+			else if (value == "error")
+				log_level = LOG_ERROR;
+			else if (value == "debug")
+				log_level = LOG_DEBUG;
+			else
+				throw std::runtime_error(formatError(configPath, line,
+					"invalid log_level '" + tokens[index - 1] + "' (expected none, error, or debug)"));
+			log_level_set = true;
+			expectSemicolon(tokens, index, configPath, lines);
 		} 
 		else if (tokens[index] == "}") {
 			std::size_t line = (index < lines.size()) ? lines[index] : 0;

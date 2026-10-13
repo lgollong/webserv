@@ -8,9 +8,10 @@
 
 class Logger {
 	public:
-		Logger(std::ostream &access_log, std::ostream &error_log, int level);
+		Logger(std::ostream &access_log, std::ostream &error_log, LogLevel level);
 		~Logger();
 
+		bool enabled(LogLevel messageLevel) const;
 		void error(const std::string &msg);
 		void access(const Connection &conn);
 
@@ -19,6 +20,7 @@ class Logger {
 		// LogStream is destroyed, i.e. at the end of the full expression
 		// that created it. Copying transfers ownership of the buffer (like
 		// std::auto_ptr) so only the surviving instance ever flushes.
+		// A disabled stream owns no buffer and ignores everything streamed.
 		class LogStream {
 			public:
 				LogStream(std::ostream &out, bool enabled);
@@ -27,7 +29,7 @@ class Logger {
 
 				template <typename T>
 				LogStream& operator<<(const T &value) {
-					if (enabled && buf)
+					if (buf)
 						(*buf) << value;
 					return *this;
 				}
@@ -35,7 +37,6 @@ class Logger {
 			private:
 				std::ostream               &out;
 				mutable std::ostringstream *buf;
-				bool                        enabled;
 		};
 
 		LogStream debug();
@@ -43,7 +44,7 @@ class Logger {
 	private:
 		std::ostream  &access_log;
 		std::ostream  &error_log;
-		int            level;
+		LogLevel       level;
 
 		Logger(const Logger &other);
 		Logger& operator=(const Logger &other);

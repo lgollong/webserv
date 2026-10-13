@@ -552,8 +552,9 @@ void Worker::onReadable(Connection &conn) {
 		closeConnection(conn);
 		return ;
 	}
-	logger.debug() << "Worker: " << "fd: " << conn.fd << " read " << n << " bytes:\n"
-	        << std::string(buf, static_cast<size_t>(n));
+	if (logger.enabled(LOG_DEBUG))
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " read " << n << " bytes:\n"
+			<< std::string(buf, static_cast<size_t>(n));
 
 	conn.inbuf.append(buf, n);
 	conn.last_activity = time(NULL);
@@ -584,8 +585,9 @@ void Worker::onWritable(Connection &conn) {
 		closeConnection(conn);
 		return ;
 	}
-	logger.debug() << "Worker: " << "fd: " << conn.fd << " wrote " << n << " bytes:\n"
-	            << std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
+	if (logger.enabled(LOG_DEBUG))
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " wrote " << n << " bytes:\n"
+			<< std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
 
 	conn.sent += n;
 	conn.last_activity = time(NULL);
