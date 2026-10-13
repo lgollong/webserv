@@ -43,9 +43,11 @@ curl -i http://127.0.0.1:8080/
 curl -i http://127.0.0.1:8080/files
 curl -i http://127.0.0.1:8080/old-page
 curl -i http://127.0.0.1:8080/cgi/test.sh
+curl -i "http://127.0.0.1:8080/cgi/test.py?name=webserv"
+curl -i -d "message=hi" http://127.0.0.1:8080/cgi/test.py
 ```
 
-The first serves the dashboard, `/files` produces the configured autoindex listing, `/old-page` returns a `301` redirect to `/`, and the CGI request requires the configured handler to exist on the machine.
+The first serves the dashboard, `/files` produces the configured autoindex listing, `/old-page` returns a `301` redirect to `/`, and the CGI requests run `contents/cgi/test.sh` through `/bin/bash` and `contents/cgi/test.py` through `/usr/bin/python3`, the only two handlers in the supplied configurations.
 
 Upload, list, and delete files from a browser at `http://127.0.0.1:8080/upload.html`, or with curl:
 

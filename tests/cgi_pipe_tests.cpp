@@ -285,9 +285,43 @@ int main() {
 		"CGI receives complete request context and runs in its script directory");
 
 	response.clear();
-	expect(request(getRequest("/cgi/context.txt"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
-		response.find("CGI working directory is correct.\n") != std::string::npos,
-		"configured text CGI handler runs through the shared event-loop path");
+	expect(request(getRequest("/cgi/test.py?name=webserv"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("Content-Type: text/html\r\n") != std::string::npos &&
+		response.find("<li>Method: GET</li>") != std::string::npos &&
+		response.find("<li>Query string: name=webserv</li>") != std::string::npos,
+		"Python CGI receives the query string of a GET request");
+
+	response.clear();
+	std::string pythonPost = "POST /cgi/test.py HTTP/1.1\r\nHost: localhost\r\nContent-Length: ";
+	snprintf(length, sizeof(length), "%lu", static_cast<unsigned long>(body.size()));
+	pythonPost += length;
+	pythonPost += "\r\n\r\n" + body;
+	expect(request(pythonPost, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("<li>Body: " + body + "</li>") != std::string::npos,
+		"Python CGI receives a Content-Length request body");
+
+	const std::string chunkedBody = "7\r\nchunked\r\n5\r\n body\r\n0\r\n\r\n";
+	response.clear();
+	expect(request("POST /cgi/test.py HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n" +
+		chunkedBody, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("<li>Body: chunked body</li>") != std::string::npos,
+		"Python CGI receives an un-chunked body");
+	response.clear();
+	expect(request("POST /cgi/test.sh HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n" +
+		chunkedBody, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("You sent: chunked body") != std::string::npos,
+		"shell CGI receives an un-chunked body");
+
+	response.clear();
+	expect(request(getRequest("/cgi/test.py/extra?context"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("SCRIPT_NAME=/cgi/test.py\n") != std::string::npos &&
+		response.find("SCRIPT_FILENAME=test.py\n") != std::string::npos &&
+		response.find("PATH_INFO=/extra\n") != std::string::npos &&
+		response.find("REQUEST_URI=/cgi/test.py/extra?context\n") != std::string::npos &&
+		response.find("REMOTE_ADDR=127.0.0.1\n") != std::string::npos &&
+		response.find("REDIRECT_STATUS=200\n") != std::string::npos &&
+		response.find("RELATIVE_FILE=CGI working directory is correct.\n") != std::string::npos,
+		"Python CGI receives the extended environment and runs in its script directory");
 
 	response.clear();
 	expect(request(getRequest("/cgi/test.sh?delayed"), response) && response.find("HTTP/1.1 200 OK") == 0 &&

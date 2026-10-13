@@ -335,10 +335,11 @@ void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 	connection.server_index = serverIndex;
 	connection.phase = READING;
 	connection.last_activity = time(NULL);
+	connection.remote_addr = ipv4ToString(client_addr.sin_addr);
 	connections[client_fd] = connection;
 	fdToConnection[client_fd] = &connections[client_fd];
 
-	logger.debug() << "Worker: " << "fd: " << client_fd << " accepted from " << ipv4ToString(client_addr.sin_addr);
+	logger.debug() << "Worker: " << "fd: " << client_fd << " accepted from " << connection.remote_addr;
 }
 
 void Worker::onCgiReadable(Connection &conn) {
@@ -506,7 +507,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 	if (conn.txn.route.is_cgi == true) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
 		conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route,
-			config.servers()[conn.server_index]);
+			config.servers()[conn.server_index], conn.remote_addr);
 		if (conn.txn.cgi.failed) {
 			failCgiJob(conn);
 			return ;
