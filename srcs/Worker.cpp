@@ -93,17 +93,38 @@ static void addErrorBody(Config &config, StaticFile &files, Http &http, size_t s
 	response = http.defaultErrorResponse(response.status);
 }
 
+static bool isImplementedMethod(const std::string &method) {
+	return method == "GET" || method == "POST" || method == "DELETE";
+}
+
 static bool routeAllowsMethod(const Route &route, const std::string &method) {
 	return route.allowed_methods.empty() || route.allowed_methods.find(method) != route.allowed_methods.end();
 }
 
+// Whether the resolved route has a handler for an implemented method.
+// Redirects and the session demo answer any method; otherwise GET and
+// DELETE use the static handlers and POST needs an upload store or CGI.
+static bool routeHandlesMethod(const Route &route, const std::string &method) {
+	if (route.redirect_status != 0 || route.session_demo)
+		return true;
+	if (method == "POST")
+		return route.is_cgi || (route.upload_enabled && !route.upload_store.empty());
+	return method == "GET" || method == "DELETE";
+}
+
+static bool routeAcceptsMethod(const Route &route, const std::string &method) {
+	return routeAllowsMethod(route, method) && routeHandlesMethod(route, method);
+}
+
 static std::string allowedMethodsValue(const Route &route) {
+	static const char *const methods[] = {"DELETE", "GET", "POST"};
 	std::string value;
-	for (std::set<std::string>::const_iterator it = route.allowed_methods.begin();
-		it != route.allowed_methods.end(); ++it) {
+	for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); ++i) {
+		if (!routeAcceptsMethod(route, methods[i]))
+			continue;
 		if (!value.empty())
 			value += ", ";
-		value += *it;
+		value += methods[i];
 	}
 	return value;
 }
@@ -405,7 +426,20 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.keep_alive = !conn.close_after_write;
 	conn.txn.route = config.route(conn.server_index, conn.txn.request);
 
-	if (!routeAllowsMethod(conn.txn.route, conn.txn.request.method)) {
+	if (!isImplementedMethod(conn.txn.request.method)) {
+		logger.debug() << "Worker: " << "fd: " << conn.fd << " method not implemented "
+			<< conn.txn.request.method;
+		conn.txn.response.status = 501;
+		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
+		applyConnectionPolicy(conn, conn.txn.response);
+		conn.outbuf = http.build(conn.txn.response);
+		conn.sent = 0;
+		conn.phase = WRITING;
+		poller.setEvents(conn.fd, POLLOUT);
+		return ;
+	}
+
+	if (!routeAcceptsMethod(conn.txn.route, conn.txn.request.method)) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " rejected method "
 			<< conn.txn.request.method;
 		conn.txn.response.status = 405;
