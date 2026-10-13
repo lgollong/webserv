@@ -133,10 +133,20 @@ int main() {
 
 	Route uploads = routeFor("/uploads", "./contents");
 	uploads.upload_store = "./contents/uploads";
+	uploads.upload_enabled = true;
 	Request upload = requestFor("/uploads/focused-upload.txt");
 	upload.body = "focused upload body";
 	expect(files.upload(uploads, upload).status == 201, "stores an authorized upload");
 	expect(files.upload(uploads, upload).status == 403, "does not overwrite an existing upload");
+	Content uploaded = files.serve(uploads, requestFor("/uploads/focused-upload.txt"));
+	expect(uploaded.status == 200 && uploaded.body == "focused upload body",
+		"upload route serves the stored file from upload_store at its upload URL");
+	expect(files.serve(uploads, requestFor("/uploads/index.html")).status == 404,
+		"upload route does not fall back to files under the route root");
+	expect(files.erase(uploads, requestFor("/uploads/focused-upload.txt")).status == 204,
+		"upload route deletes the stored file at its upload URL");
+	expect(files.serve(uploads, requestFor("/uploads/focused-upload.txt")).status == 404,
+		"deleted upload is no longer served");
 	expect(files.upload(uploads, requestFor("/uploads/../unsafe.txt")).status == 400,
 		"rejects traversal upload names");
 	std::remove("./contents/uploads/focused-upload.txt");
