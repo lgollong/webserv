@@ -27,6 +27,38 @@ static Request requestFor(const std::string &path) {
 	return request;
 }
 
+static Request multipartRequest(const std::string &path, const std::string &contentType,
+	const std::string &body) {
+	Request request = requestFor(path);
+	request.method = "POST";
+	request.headers["content-type"] = contentType;
+	request.body = body;
+	return request;
+}
+
+static std::string filePart(const std::string &boundary, const std::string &filename,
+	const std::string &data) {
+	return "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" +
+		filename + "\"\r\nContent-Type: application/octet-stream\r\n\r\n" + data + "\r\n";
+}
+
+static bool fileContains(const std::string &path, const std::string &expected) {
+	int fd = open(path.c_str(), O_RDONLY);
+	if (fd < 0)
+		return false;
+	std::string contents;
+	char buffer[4096];
+	ssize_t count;
+	while ((count = read(fd, buffer, sizeof(buffer))) > 0)
+		contents.append(buffer, static_cast<size_t>(count));
+	close(fd);
+	return count == 0 && contents == expected;
+}
+
+static bool missing(const std::string &path) {
+	return access(path.c_str(), F_OK) != 0;
+}
+
 static bool writeFixture(const std::string &path) {
 	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
 	if (fd < 0)
@@ -150,6 +182,57 @@ int main() {
 	expect(files.upload(uploads, requestFor("/uploads/../unsafe.txt")).status == 400,
 		"rejects traversal upload names");
 	std::remove("./contents/uploads/focused-upload.txt");
+
+	const std::string boundary = "----webservBoundary7MA4YWxk";
+	const std::string multipartType = "multipart/form-data; boundary=" + boundary;
+	const std::string binaryPayload("line one\r\n--not-a-boundary\r\n\0\x01\xff end", 37);
+	std::string formBody = "preamble is ignored\r\n" +
+		std::string("--") + boundary + "\r\nContent-Disposition: form-data; name=\"note\"\r\n\r\nplain field\r\n" +
+		filePart(boundary, "multipart-binary.bin", binaryPayload) + "--" + boundary + "--\r\n";
+	Content form = files.upload(uploads, multipartRequest("/uploads", multipartType, formBody));
+	expect(form.status == 201 && form.location == "/uploads/multipart-binary.bin" &&
+		form.body.find("href=\"/uploads/multipart-binary.bin\"") != std::string::npos,
+		"multipart upload stores one file part and reports its URL");
+	expect(fileContains("./contents/uploads/multipart-binary.bin", binaryPayload),
+		"multipart upload stores only the byte-identical part payload");
+	std::remove("./contents/uploads/multipart-binary.bin");
+
+	std::string twoFiles = filePart(boundary, "multipart-one.txt", "one") +
+		filePart(boundary, "C:\\Users\\me\\My Report (final).txt", "two") + "--" + boundary + "--\r\n";
+	Content multiple = files.upload(uploads, multipartRequest("/uploads/", "Multipart/Form-Data; boundary=\"" +
+		boundary + "\"", twoFiles));
+	expect(multiple.status == 201 && multiple.location.empty(),
+		"multipart upload stores several files without a single Location");
+	expect(fileContains("./contents/uploads/multipart-one.txt", "one") &&
+		fileContains("./contents/uploads/My_Report__final_.txt", "two"),
+		"multipart filenames keep their base name with unsafe characters replaced");
+
+	std::string conflicting = filePart(boundary, "multipart-new.txt", "new") +
+		filePart(boundary, "multipart-one.txt", "again") + "--" + boundary + "--\r\n";
+	expect(files.upload(uploads, multipartRequest("/uploads", multipartType, conflicting)).status == 403 &&
+		missing("./contents/uploads/multipart-new.txt") && fileContains("./contents/uploads/multipart-one.txt", "one"),
+		"failed multipart upload removes files stored earlier in the same request");
+	std::remove("./contents/uploads/multipart-one.txt");
+	std::remove("./contents/uploads/My_Report__final_.txt");
+
+	expect(files.upload(uploads, multipartRequest("/uploads", "multipart/form-data", formBody)).status == 400,
+		"multipart upload without a boundary is rejected");
+	expect(files.upload(uploads, multipartRequest("/uploads", multipartType,
+		filePart(boundary, "unterminated.txt", "data"))).status == 400 && missing("./contents/uploads/unterminated.txt"),
+		"multipart upload without a closing delimiter is rejected");
+	expect(files.upload(uploads, multipartRequest("/uploads", multipartType,
+		"--" + boundary + "\r\nContent-Disposition: form-data; name=\"note\"\r\n\r\ntext\r\n--" + boundary + "--\r\n")).status == 400,
+		"multipart upload without file parts is rejected");
+	expect(files.upload(uploads, multipartRequest("/uploads", multipartType,
+		filePart(boundary, "..", "x") + "--" + boundary + "--\r\n")).status == 400,
+		"multipart upload rejects an unsafe filename");
+	expect(files.upload(uploads, multipartRequest("/uploads", multipartType,
+		filePart(boundary, "same.txt", "a") + filePart(boundary, "same.txt", "b") + "--" + boundary + "--\r\n")).status == 400 &&
+		missing("./contents/uploads/same.txt"),
+		"multipart upload rejects duplicate filenames before writing");
+	expect(files.upload(uploads, multipartRequest("/uploads/named.txt", multipartType, formBody)).status == 400 &&
+		missing("./contents/uploads/named.txt"),
+		"multipart upload must target the upload location itself");
 
 	if (failures == 0)
 		std::cout << "static file tests passed" << std::endl;

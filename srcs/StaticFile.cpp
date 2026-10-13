@@ -275,30 +275,225 @@ static bool safeUploadName(const std::string &name) {
 	return true;
 }
 
+// Writes data to a new file; never replaces an existing one.
+static int storeFile(const std::string &path, const std::string &data) {
+	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (fd < 0)
+		return 403;
+	std::string::size_type written = 0;
+	while (written < data.size()) {
+		ssize_t count = write(fd, data.data() + written, data.size() - written);
+		if (count <= 0) {
+			close(fd);
+			std::remove(path.c_str());
+			return 500;
+		}
+		written += static_cast<std::string::size_type>(count);
+	}
+	close(fd);
+	return 201;
+}
+
+static std::string lowerCopy(const std::string &value) {
+	std::string lowered(value);
+	for (std::string::size_type i = 0; i < lowered.size(); ++i)
+		lowered[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(lowered[i])));
+	return lowered;
+}
+
+static std::string trimSpaces(const std::string &value) {
+	std::string::size_type first = value.find_first_not_of(" \t");
+	if (first == std::string::npos)
+		return "";
+	std::string::size_type last = value.find_last_not_of(" \t");
+	return value.substr(first, last - first + 1);
+}
+
+static bool startsAt(const std::string &value, std::string::size_type pos, const std::string &prefix) {
+	return pos <= value.size() && value.compare(pos, prefix.size(), prefix) == 0;
+}
+
+// Reads one parameter of a header such as
+// `form-data; name="file"; filename="a.txt"`. Quoted values may contain ';'.
+static bool headerParameter(const std::string &header, const std::string &name, std::string &value) {
+	std::string::size_type pos = header.find(';');
+	while (pos != std::string::npos) {
+		++pos;
+		std::string::size_type equal = header.find('=', pos);
+		if (equal == std::string::npos)
+			return false;
+		std::string key = lowerCopy(trimSpaces(header.substr(pos, equal - pos)));
+		std::string parsed;
+		std::string::size_type i = equal + 1;
+		while (i < header.size() && (header[i] == ' ' || header[i] == '\t'))
+			++i;
+		if (i < header.size() && header[i] == '"') {
+			// Browsers percent-encode '"' in multipart filenames and send
+			// backslashes literally (HTML form submission), so nothing is unescaped.
+			for (++i; i < header.size() && header[i] != '"'; ++i)
+				parsed += header[i];
+			if (i >= header.size())
+				return false;
+			++i;
+		} else {
+			while (i < header.size() && header[i] != ';')
+				parsed += header[i++];
+			parsed = trimSpaces(parsed);
+		}
+		if (key == name) {
+			value = parsed;
+			return true;
+		}
+		pos = header.find(';', i);
+	}
+	return false;
+}
+
+static bool isMultipartFormData(const std::string &contentType) {
+	std::string type = lowerCopy(trimSpaces(contentType.substr(0, contentType.find(';'))));
+	return type == "multipart/form-data";
+}
+
+struct UploadPart {
+	std::string filename;
+	std::string data;
+};
+
+// Returns the part's Content-Disposition filename, or false for parts that
+// are not files (plain form fields or file inputs left empty).
+static bool partFilename(const std::string &headers, std::string &filename) {
+	std::string::size_type pos = 0;
+	while (pos <= headers.size()) {
+		std::string::size_type end = headers.find("\r\n", pos);
+		if (end == std::string::npos)
+			end = headers.size();
+		std::string line = headers.substr(pos, end - pos);
+		std::string::size_type colon = line.find(':');
+		if (colon != std::string::npos &&
+			lowerCopy(trimSpaces(line.substr(0, colon))) == "content-disposition") {
+			std::string value = line.substr(colon + 1);
+			return lowerCopy(trimSpaces(value.substr(0, value.find(';')))) == "form-data" &&
+				headerParameter(value, "filename", filename) && !filename.empty();
+		}
+		pos = end + 2;
+	}
+	return false;
+}
+
+// multipart/form-data framing (RFC 7578, RFC 2046 section 5.1.1).
+static bool parseMultipart(const std::string &body, const std::string &boundary,
+	std::vector<UploadPart> &files) {
+	const std::string delimiter = "--" + boundary;
+	std::string::size_type pos = body.find(delimiter);
+	if (pos == std::string::npos || (pos != 0 && (pos < 2 || !startsAt(body, pos - 2, "\r\n"))))
+		return false;
+	pos += delimiter.size();
+	while (true) {
+		if (startsAt(body, pos, "--"))
+			return true;
+		if (!startsAt(body, pos, "\r\n"))
+			return false;
+		pos += 2;
+
+		std::string headers;
+		std::string::size_type dataStart = pos + 2;
+		if (!startsAt(body, pos, "\r\n")) {
+			std::string::size_type headerEnd = body.find("\r\n\r\n", pos);
+			if (headerEnd == std::string::npos)
+				return false;
+			headers = body.substr(pos, headerEnd - pos);
+			dataStart = headerEnd + 4;
+		}
+		std::string::size_type next = body.find("\r\n" + delimiter, dataStart);
+		if (next == std::string::npos)
+			return false;
+
+		UploadPart part;
+		if (partFilename(headers, part.filename)) {
+			part.data = body.substr(dataStart, next - dataStart);
+			files.push_back(part);
+		}
+		pos = next + 2 + delimiter.size();
+	}
+}
+
+// Browsers send the client's file name; keep its base name and replace
+// characters outside the safe upload set instead of rejecting the file.
+static std::string sanitizeUploadName(const std::string &filename) {
+	std::string::size_type slash = filename.find_last_of("/\\");
+	std::string name = (slash == std::string::npos) ? filename : filename.substr(slash + 1);
+	for (std::string::size_type i = 0; i < name.size(); ++i) {
+		unsigned char character = static_cast<unsigned char>(name[i]);
+		if (!std::isalnum(character) && character != '.' && character != '_' && character != '-')
+			name[i] = '_';
+	}
+	return name;
+}
+
+static Content uploadMultipart(const Route &route, const Request &request,
+	const std::string &contentType) {
+	std::string boundary;
+	std::vector<UploadPart> parts;
+	if (!headerParameter(contentType, "boundary", boundary) || boundary.empty() ||
+		boundary.size() > 70 || !parseMultipart(request.body, boundary, parts) || parts.empty())
+		return errorContent(400);
+
+	std::vector<std::string> names;
+	for (std::vector<UploadPart>::const_iterator it = parts.begin(); it != parts.end(); ++it) {
+		std::string name = sanitizeUploadName(it->filename);
+		if (!safeUploadName(name) || std::find(names.begin(), names.end(), name) != names.end())
+			return errorContent(400);
+		names.push_back(name);
+	}
+
+	for (size_t i = 0; i < parts.size(); ++i) {
+		int status = storeFile(joinPath(route.upload_store, names[i]), parts[i].data);
+		if (status != 201) {
+			for (size_t stored = 0; stored < i; ++stored)
+				std::remove(joinPath(route.upload_store, names[stored]).c_str());
+			return errorContent(status);
+		}
+	}
+
+	std::string base = urlEncodePath(route.location);
+	if (base.empty() || base[base.size() - 1] != '/')
+		base += '/';
+	Content content;
+	content.status = 201;
+	content.mime_type = "text/html";
+	content.body = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Upload complete</title>"
+		"</head><body><h1>Upload complete</h1><ul>";
+	for (std::vector<std::string>::const_iterator it = names.begin(); it != names.end(); ++it)
+		content.body += "<li><a href=\"" + htmlEscape(base + urlEncodePath(*it)) + "\">" +
+			htmlEscape(*it) + "</a></li>";
+	content.body += "</ul></body></html>";
+	if (names.size() == 1)
+		content.location = base + urlEncodePath(names[0]);
+	return content;
+}
+
 Content StaticFile::upload(const Route &route, const Request &request) {
 	if (route.upload_store.empty() || !matchesLocation(request.path, route.location))
 		return errorContent(403);
 	std::string name = request.path.substr(route.location.size());
 	while (!name.empty() && name[0] == '/')
 		name.erase(0, 1);
+
+	// Form uploads post to the location itself and name files in the body.
+	std::map<std::string, std::string>::const_iterator contentType = request.headers.find("content-type");
+	if (contentType != request.headers.end() && isMultipartFormData(contentType->second)) {
+		if (!name.empty())
+			return errorContent(400);
+		return uploadMultipart(route, request, contentType->second);
+	}
+
 	if (!safeUploadName(name))
 		return errorContent(400);
-	std::string path = joinPath(route.upload_store, name);
-	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
-	if (fd < 0)
-		return errorContent(403);
-	std::string::size_type written = 0;
-	while (written < request.body.size()) {
-		ssize_t count = write(fd, request.body.data() + written, request.body.size() - written);
-		if (count <= 0) {
-			close(fd);
-			std::remove(path.c_str());
-			return errorContent(500);
-		}
-		written += static_cast<std::string::size_type>(count);
-	}
-	close(fd);
+	int status = storeFile(joinPath(route.upload_store, name), request.body);
+	if (status != 201)
+		return errorContent(status);
 	Content content;
 	content.status = 201;
+	content.location = request.path;
 	return content;
 }
