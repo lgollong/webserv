@@ -285,6 +285,19 @@ int main() {
 		"CGI receives complete request context and runs in its script directory");
 
 	response.clear();
+	expect(request(getRequest("/cgi/test.sh?malformed"), response) &&
+		response.find("HTTP/1.1 502 Bad Gateway") == 0 &&
+		response.find("no CGI header block") == std::string::npos,
+		"CGI output without a header block is a 502 without leaking the output");
+	response.clear();
+	expect(request(getRequest("/cgi/test.sh?teapot"), response) &&
+		response.find("HTTP/1.1 502 Bad Gateway") == 0,
+		"CGI Status the server cannot serialize is a 502");
+	response.clear();
+	expect(request(getRequest("/cgi/test.sh"), response) && response.find("HTTP/1.1 200 OK") == 0,
+		"server keeps serving CGI after malformed CGI responses");
+
+	response.clear();
 	expect(request(getRequest("/cgi/test.py?name=webserv"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
 		response.find("Content-Type: text/html\r\n") != std::string::npos &&
 		response.find("<li>Method: GET</li>") != std::string::npos &&

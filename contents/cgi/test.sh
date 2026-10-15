@@ -5,6 +5,16 @@ if [ "$QUERY_STRING" = "stall" ]; then
 	exec /bin/sleep 60
 fi
 
+if [ "$QUERY_STRING" = "malformed" ]; then
+	printf "this output has no CGI header block\n"
+	exit 0
+fi
+
+if [ "$QUERY_STRING" = "teapot" ]; then
+	printf "Status: 418 I'm a teapot\r\nContent-Type: text/plain\r\n\r\nshort and stout\n"
+	exit 0
+fi
+
 if [ "$QUERY_STRING" = "close-input" ]; then
 	exec 0<&-
 	/bin/sleep 1
