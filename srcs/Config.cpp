@@ -558,10 +558,13 @@ static bool hasUnsafeSegment(const std::string &path) {
 	return false;
 }
 
+// Same location-prefix/root rule as static files: for location /cgi rooted
+// at /var/www/cgi, SCRIPT_NAME /cgi/test.py resolves to /var/www/cgi/test.py.
+// Rejecting "." and ".." segments keeps the script beneath the root.
 static bool resolveCgiScriptPath(const Route &route, const std::string &scriptName, std::string &scriptPath) {
 	if (route.root.empty() || !matchesLocation(scriptName, route.location))
 		return false;
-	std::string relative = scriptName;
+	std::string relative = scriptName.substr(route.location.size());
 	while (!relative.empty() && relative[0] == '/')
 		relative.erase(0, 1);
 	if (relative.empty() || hasUnsafeSegment(relative))
