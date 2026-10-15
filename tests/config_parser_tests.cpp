@@ -222,6 +222,28 @@ int main() {
 	expectConfigError(quotePath, "unclosed quote", "reports unclosed quotes");
 	std::remove(quotePath.c_str());
 
+	const std::string quoteLinePath = temporaryPath("quote-line");
+	expect(writeFile(quoteLinePath,
+		"server {\n\tlisten 9001;\n\troot \"/var/www;\n\tserver_name x;\n}\n\n"),
+		"write multi-line unclosed quote fixture");
+	expectConfigError(quoteLinePath, ":3: unclosed quote",
+		"reports the line where an unclosed quote was opened");
+	std::remove(quoteLinePath.c_str());
+
+	const std::string lineEndPath = temporaryPath("line-end");
+	expect(writeFile(lineEndPath, "server {\n\tlisten 9001;\n\tbogus\n\tfoo;\n}\n"),
+		"write directive-at-line-end fixture");
+	expectConfigError(lineEndPath, ":3: unknown directive 'bogus'",
+		"reports the line of a token that ends at a newline");
+	std::remove(lineEndPath.c_str());
+
+	const std::string commentSplitPath = temporaryPath("comment-split");
+	expect(writeFile(commentSplitPath, "server {\n\tbogus# trailing comment\n\tfoo;\n}\n"),
+		"write token-before-comment fixture");
+	expectConfigError(commentSplitPath, ":2: unknown directive 'bogus'",
+		"ends a token at an inline comment");
+	std::remove(commentSplitPath.c_str());
+
 	const std::string semicolonPath = temporaryPath("semicolon");
 	expect(writeFile(semicolonPath, "server { listen 9001 location / { root ./contents; } }\n"),
 		"write missing semicolon fixture");
