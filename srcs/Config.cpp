@@ -91,6 +91,8 @@ std::vector<std::string> Config::tokenize(const std::string &configPath, std::ve
 	bool in_single = false;
 	bool in_double = false;
 	size_t line = 1;
+	size_t tokenLine = 1;
+	size_t quoteLine = 1;
 
 	for (std::string::size_type i = 0; i < source.size(); ++i) {
 		char c = source[i];
@@ -99,6 +101,11 @@ std::vector<std::string> Config::tokenize(const std::string &configPath, std::ve
 			++line;
 		
 		if (c == '#' && !in_single && !in_double) {
+			if (!current.empty()) {
+				tokens.push_back(current);
+				tokenLines.push_back(tokenLine);
+				current.clear();
+			}
 			while (i < source.size() && source[i] != '\n')
 				++i;
 			if (i < source.size())
@@ -133,7 +140,7 @@ std::vector<std::string> Config::tokenize(const std::string &configPath, std::ve
 		if (std::isspace(static_cast<unsigned char>(c))) {
 			if (!current.empty()) {
 				tokens.push_back(current);
-				tokenLines.push_back(line);
+				tokenLines.push_back(tokenLine);
 				current.clear();
 			}
 			continue;
@@ -142,7 +149,7 @@ std::vector<std::string> Config::tokenize(const std::string &configPath, std::ve
 		if (c == ';' || c == '{' || c == '}') {
 			if (!current.empty()) {
 				tokens.push_back(current);
-				tokenLines.push_back(line);
+				tokenLines.push_back(tokenLine);
 				current.clear();
 			}
 			tokens.push_back(std::string(1, c));
@@ -151,30 +158,36 @@ std::vector<std::string> Config::tokenize(const std::string &configPath, std::ve
 		}
 		
 		if (c == '\\' && i + 1 < source.size() && !in_single && !in_double) {
+			if (current.empty()) tokenLine = line;
 			current += source[++i];
 			if (source[i] == '\n') ++line;
 			continue;
 		}
 		
 		if (c == '\'') {
+			if (current.empty()) tokenLine = line;
+			quoteLine = line;
 			in_single = true;
 			continue;
 		}
 		
 		if (c == '"') {
+			if (current.empty()) tokenLine = line;
+			quoteLine = line;
 			in_double = true;
 			continue;
 		}
 		
+		if (current.empty()) tokenLine = line;
 		current += c;
 	}
 	
 	if (in_single || in_double)
-		throw std::runtime_error(formatError(configPath, line, "unclosed quote"));
+		throw std::runtime_error(formatError(configPath, quoteLine, "unclosed quote"));
 	
 	if (!current.empty()) {
 		tokens.push_back(current);
-		tokenLines.push_back(line);
+		tokenLines.push_back(tokenLine);
 	}
 	
 	lines = tokenLines;
