@@ -304,9 +304,13 @@ void Worker::dispatchReadyEvents(const std::vector<pollfd> &readyFds,
 				onWritable(*conn);
 			}
 
-			if (readyFds[i].revents & POLLHUP) {
+			// macOS reports a client's half-close (shutdown(SHUT_WR)) as
+			// POLLIN|POLLHUP while the socket stays writable. Keep reading
+			// until EOF instead of closing on POLLHUP, and let a queued
+			// response flush; the write result decides if the peer is gone.
+			if ((readyFds[i].revents & POLLHUP) && !(readyFds[i].revents & POLLIN)) {
 				std::map<int, Connection*>::iterator current = fdToConnection.find(readyFds[i].fd);
-				if (current != fdToConnection.end())
+				if (current != fdToConnection.end() && current->second->phase != WRITING)
 					closeConnection(*current->second);
 			}
 		}

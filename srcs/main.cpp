@@ -1,3 +1,4 @@
+#include <csignal>
 #include <iostream>
 #include "../headers/types.hpp"
 #include "../headers/StaticFile.hpp"
@@ -15,6 +16,10 @@ int main(int argc, char *argv[]){
 		return (1);
 	}
 	const char *configPath = (argc == 2) ? argv[1] : kDefaultConfigPath;
+
+	// Writing to a peer that has fully disconnected must fail with an error
+	// result the event loop handles, not terminate the process.
+	signal(SIGPIPE, SIG_IGN);
 
 	// Errors that stop the server are always reported, whatever log_level says.
 	try {
