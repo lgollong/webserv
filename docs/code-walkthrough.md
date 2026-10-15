@@ -53,7 +53,17 @@ The parser preserves the upload authorization flag, so `upload off` prevents wri
 
 ## 6. Static Responses
 
-[`StaticFile`](../srcs/StaticFile.cpp) removes the location prefix, rejects lexical traversal components, and combines the remainder with the route root. It serves regular files, optionally serves a safe configured index file, or builds an escaped directory listing when `autoindex` is enabled. Missing files are `404`; rejected paths and non-autoindexed directories are `403`.
+[`StaticFile`](../srcs/StaticFile.cpp) removes the location prefix, rejects lexical traversal components, and combines the remainder with the route root. It serves regular files, optionally serves a safe configured index file, or builds an escaped directory listing when `autoindex` is enabled. Filesystem failures are mapped from the `errno` of the failed `stat`/`open`/`opendir`/`remove` call:
+
+| Case | Status |
+| --- | --- |
+| Missing target, or a path component that is not a directory | `404` |
+| Permission denied (file, directory listing, delete, upload store) | `403` |
+| Rejected traversal path, non-regular file, directory `DELETE`, directory without index or autoindex | `403` |
+| Upload target already exists | `409` |
+| Missing upload store, failed `write`, or any other filesystem error | `500` |
+
+A failed `write()` is never inspected through `errno`, following the subject's I/O rule. Each status uses the configured error page when one exists, otherwise the default HTML page.
 
 Permitted uploads use an exclusive create in `upload_store`. A raw body posted to `<location>/<name>` stores one safe filename; a `multipart/form-data` body posted to the location itself stores every file part under its sanitized client filename (base name only, characters outside `[A-Za-z0-9._-]` become `_`), validating all names before writing and removing earlier files if a later write fails. Both answer `201 Created`, with a `Location` header when one file was stored. On an upload-enabled route, static GET, DELETE, and autoindex resolve under `upload_store` instead of `root`, so an uploaded file is reachable at the URL it was posted to. Permitted DELETE removes only a regular file. Static content and configured error pages are presently collected into memory before `Http` serializes the response.
 

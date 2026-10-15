@@ -105,7 +105,7 @@ int main() {
 			"supported status is serialized");
 	}
 
-	const int defaultErrorStatuses[] = {400, 403, 404, 405, 413, 431, 500, 502};
+	const int defaultErrorStatuses[] = {400, 403, 404, 405, 409, 413, 431, 500, 501, 502, 505};
 	for (size_t i = 0; i < sizeof(defaultErrorStatuses) / sizeof(defaultErrorStatuses[0]); ++i) {
 		Response error = http.defaultErrorResponse(defaultErrorStatuses[i]);
 		raw = http.build(error);

@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <iostream>
 #include <unistd.h>
 
@@ -169,7 +170,7 @@ int main() {
 	Request upload = requestFor("/uploads/focused-upload.txt");
 	upload.body = "focused upload body";
 	expect(files.upload(uploads, upload).status == 201, "stores an authorized upload");
-	expect(files.upload(uploads, upload).status == 403, "does not overwrite an existing upload");
+	expect(files.upload(uploads, upload).status == 409, "an existing upload target is a 409 conflict and is not overwritten");
 	Content uploaded = files.serve(uploads, requestFor("/uploads/focused-upload.txt"));
 	expect(uploaded.status == 200 && uploaded.body == "focused upload body",
 		"upload route serves the stored file from upload_store at its upload URL");
@@ -209,7 +210,7 @@ int main() {
 
 	std::string conflicting = filePart(boundary, "multipart-new.txt", "new") +
 		filePart(boundary, "multipart-one.txt", "again") + "--" + boundary + "--\r\n";
-	expect(files.upload(uploads, multipartRequest("/uploads", multipartType, conflicting)).status == 403 &&
+	expect(files.upload(uploads, multipartRequest("/uploads", multipartType, conflicting)).status == 409 &&
 		missing("./contents/uploads/multipart-new.txt") && fileContains("./contents/uploads/multipart-one.txt", "one"),
 		"failed multipart upload removes files stored earlier in the same request");
 	std::remove("./contents/uploads/multipart-one.txt");
@@ -233,6 +234,44 @@ int main() {
 	expect(files.upload(uploads, multipartRequest("/uploads/named.txt", multipartType, formBody)).status == 400 &&
 		missing("./contents/uploads/named.txt"),
 		"multipart upload must target the upload location itself");
+
+	expect(files.serve(root, requestFor("/index.html/below")).status == 404,
+		"a path below a regular file is not found");
+	Route missingStore = routeFor("/uploads", "./contents");
+	missingStore.upload_store = "./contents/missing-upload-store";
+	missingStore.upload_enabled = true;
+	Request storeless = requestFor("/uploads/orphan.txt");
+	storeless.body = "x";
+	expect(files.upload(missingStore, storeless).status == 500,
+		"a missing upload_store is a server-side 500, not a client 404");
+
+	// Root ignores permission bits, so these cases only run unprivileged.
+	if (geteuid() != 0) {
+		const std::string lockedDir = "./contents/permission-fixture";
+		mkdir(lockedDir.c_str(), 0700);
+		expect(writeFixture(lockedDir + "/secret.txt"), "creates a permission fixture file");
+		chmod((lockedDir + "/secret.txt").c_str(), 0000);
+		expect(files.serve(root, requestFor("/permission-fixture/secret.txt")).status == 403,
+			"an unreadable file is forbidden");
+		chmod((lockedDir + "/secret.txt").c_str(), 0600);
+
+		Route listing = routeFor("/", "./contents");
+		listing.autoindex = true;
+		chmod(lockedDir.c_str(), 0300);
+		expect(files.serve(listing, requestFor("/permission-fixture")).status == 403,
+			"an unreadable directory listing is forbidden");
+		chmod(lockedDir.c_str(), 0500);
+		expect(files.erase(root, requestFor("/permission-fixture/secret.txt")).status == 403,
+			"deleting from a read-only directory is forbidden");
+		Route lockedStore = routeFor("/uploads", "./contents");
+		lockedStore.upload_store = lockedDir;
+		lockedStore.upload_enabled = true;
+		expect(files.upload(lockedStore, storeless).status == 403,
+			"uploading into a read-only store is forbidden");
+		chmod(lockedDir.c_str(), 0700);
+		std::remove((lockedDir + "/secret.txt").c_str());
+		rmdir(lockedDir.c_str());
+	}
 
 	if (failures == 0)
 		std::cout << "static file tests passed" << std::endl;
