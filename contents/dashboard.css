@@ -378,3 +378,28 @@ font-size:11px}
 scroll-behavior:auto!important;
 transition-duration:.01ms!important}
 }
+.upload-controls{display:grid;
+grid-template-columns:1fr auto;
+gap:9px}
+.upload-input{min-width:0;
+padding:8px 10px;
+background:var(--white);
+border-radius:5px;
+color:var(--ink);
+font:inherit}
+.upload-list{margin:0;
+padding:0;
+list-style:none;
+border-top:2px solid var(--ink)}
+.upload-list li{display:flex;
+justify-content:space-between;
+align-items:center;
+gap:12px;
+padding:12px 0;
+border-bottom:1px solid var(--line)}
+.upload-list a{color:var(--cyan);
+font-weight:720;
+overflow-wrap:anywhere}
+.upload-empty{color:var(--muted)}
+@media(max-width:620px){.upload-controls{grid-template-columns:1fr}
+}

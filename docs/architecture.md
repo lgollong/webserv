@@ -53,7 +53,7 @@ main
 ### `StaticFile` - Partial
 
 - Resolves route-relative paths, rejects lexical `.` and `..` segments, identifies MIME types, serves regular files, and supports configured indexes/autoindex.
-- Implements permitted static `DELETE` and exclusive single-filename uploads; upload-enabled routes serve and delete from their `upload_store`.
+- Implements permitted static `DELETE`, exclusive raw-body uploads, and `multipart/form-data` browser uploads; upload-enabled routes serve and delete from their `upload_store`.
 - Loads configured error-page files while preserving the original response status.
 - `To Fix`: canonicalize static paths to prevent symlinks beneath a root from exposing files outside it; avoid reading arbitrary static files fully into memory.
 

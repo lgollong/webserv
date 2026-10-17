@@ -422,6 +422,24 @@ int main() {
 			"duplicate upload request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
 			"duplicate upload target is not overwritten");
+		const std::string formBody =
+			"--lifecycleBoundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"lifecycle form.txt\"\r\n"
+			"Content-Type: text/plain\r\n\r\nform upload body\r\n--lifecycleBoundary--\r\n";
+		std::ostringstream formLength;
+		formLength << formBody.size();
+		expect(sendAll(persistent, "POST /uploads HTTP/1.1\r\nHost: localhost\r\n"
+			"Content-Type: multipart/form-data; boundary=lifecycleBoundary\r\nContent-Length: " +
+			formLength.str() + "\r\n\r\n" + formBody), "browser-style multipart upload is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 201 Created") == 0 &&
+			response.find("Location: /uploads/lifecycle_form.txt\r\n") != std::string::npos &&
+			storedBodyMatches("./contents/uploads/lifecycle_form.txt", "form upload body"),
+			"multipart upload stores the file part under its sanitized filename");
+		expect(sendAll(persistent, requestWithMethod("DELETE", "/uploads/lifecycle_form.txt", "")),
+			"multipart-uploaded file DELETE is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 204 No Content") == 0 &&
+			fileDoesNotExist("./contents/uploads/lifecycle_form.txt"),
+			"multipart-uploaded file is deleted at its upload URL");
+
 		expect(sendAll(persistent, requestWithMethod("DELETE", "/uploads/lifecycle-upload.txt", "")),
 			"uploaded file DELETE is sent to its upload URL");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 204 No Content") == 0 &&
@@ -541,6 +559,7 @@ int main() {
 	stopServer(server);
 	std::remove("./contents/delete-lifecycle-fixture.txt");
 	std::remove("./contents/uploads/lifecycle-upload.txt");
+	std::remove("./contents/uploads/lifecycle_form.txt");
 	if (failures == 0)
 		std::cout << "connection lifecycle tests passed" << std::endl;
 	return failures == 0 ? 0 : 1;
