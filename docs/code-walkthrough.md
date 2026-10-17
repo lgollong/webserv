@@ -38,7 +38,7 @@ The parser validates the request line (HTTP/1.x only; other major versions are r
 
 ## 5. Route and Handler Selection
 
-After parsing, `Worker` asks `Config` for the route using the connection's server index. It rejects methods outside the route's `allowed_methods` set with `405 Method Not Allowed` and an `Allow` header.
+After parsing, `Worker` asks `Config` for the route using the connection's server index. Methods other than `GET`, `POST`, and `DELETE` receive `501 Not Implemented`, even when listed in `allowed_methods`. An implemented method receives `405 Method Not Allowed` when it is outside the route's `allowed_methods` set or the route has no handler for it (a `POST` needs an enabled upload store or a matched CGI script; redirects and the session demo answer any method). The `Allow` header lists only methods that are both configured and handled.
 
 For allowed requests, dispatch order is:
 
