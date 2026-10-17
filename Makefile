@@ -11,20 +11,20 @@ OBJ_DIR = objs
 OBJ = $(SRC:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
 NAME = webserv
-RESILIENCE_TEST = /private/tmp/webserv-resilience-tests
-CONNECTION_LIFECYCLE_TEST = /private/tmp/webserv-connection-lifecycle-tests
-CGI_PIPE_TEST = /private/tmp/webserv-cgi-pipe-tests
-CGI_LIFECYCLE_TEST = /private/tmp/webserv-cgi-lifecycle-tests
+RESILIENCE_TEST = /tmp/webserv-resilience-tests
+CONNECTION_LIFECYCLE_TEST = /tmp/webserv-connection-lifecycle-tests
+CGI_PIPE_TEST = /tmp/webserv-cgi-pipe-tests
+CGI_LIFECYCLE_TEST = /tmp/webserv-cgi-lifecycle-tests
 CGI_FIXTURE = contents/cgi/test.cgi
-CONFIG_MODEL_TEST = /private/tmp/webserv-config-model-tests
-CONFIG_PARSER_TEST = /private/tmp/webserv-config-parser-tests
-STATIC_FILE_TEST = /private/tmp/webserv-static-file-tests
-EVENT_LOOP_STRESS_TEST = /private/tmp/webserv-event-loop-stress-tests
-SESSION_STORE_TEST = /private/tmp/webserv-session-store-tests
-COOKIE_SESSION_TEST = /private/tmp/webserv-cookie-session-tests
-HTTP_REQUEST_LINE_TEST = /private/tmp/webserv-http-request-line-tests
-HTTP_RESPONSE_TEST = /private/tmp/webserv-http-response-tests
-CONNECTION_TIMEOUT_TEST = /private/tmp/webserv-connection-timeout-tests
+CONFIG_MODEL_TEST = /tmp/webserv-config-model-tests
+CONFIG_PARSER_TEST = /tmp/webserv-config-parser-tests
+STATIC_FILE_TEST = /tmp/webserv-static-file-tests
+EVENT_LOOP_STRESS_TEST = /tmp/webserv-event-loop-stress-tests
+SESSION_STORE_TEST = /tmp/webserv-session-store-tests
+COOKIE_SESSION_TEST = /tmp/webserv-cookie-session-tests
+HTTP_REQUEST_LINE_TEST = /tmp/webserv-http-request-line-tests
+HTTP_RESPONSE_TEST = /tmp/webserv-http-response-tests
+CONNECTION_TIMEOUT_TEST = /tmp/webserv-connection-timeout-tests
 CORE_SRC = $(filter-out $(SRC_DIR)/main.cpp,$(SRC))
 
 all: $(NAME)

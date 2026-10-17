@@ -13,7 +13,7 @@ The implementation parses nginx-style `server` and `location` blocks from the co
 ### Prerequisites
 
 - A C++ compiler that supports C++98.
-- A POSIX-like environment with `poll()`, sockets, and standard build tools. The project is developed on macOS.
+- A POSIX-like environment with `poll()`, sockets, and standard build tools. The project is developed on macOS; `make` and `make test` are also verified on Linux with g++ and clang++.
 
 ### Build
 
