@@ -1,5 +1,6 @@
 #include "../headers/Session.hpp"
 
+#include <cstddef>
 #include <iostream>
 
 static int failures = 0;

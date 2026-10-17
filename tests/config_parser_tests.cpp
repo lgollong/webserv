@@ -18,7 +18,7 @@ static void expect(bool condition, const char *message) {
 
 static std::string temporaryPath(const char *label) {
 	std::ostringstream path;
-	path << "/private/tmp/webserv-config-parser-" << getpid() << "-" << label << ".conf";
+	path << "/tmp/webserv-config-parser-" << getpid() << "-" << label << ".conf";
 	return path.str();
 }
 
