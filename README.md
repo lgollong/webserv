@@ -56,7 +56,7 @@ open http://127.0.0.1:8080/
 make test
 ```
 
-The test target is sequential because several suites bind fixed loopback ports. **Current status:** parser model, CGI-pipe, and resilience coverage use parser-backed fixtures. The combined target still stops at `cookie-session-test`, because that optional session demonstration intentionally remains tied to the retired mock configuration. [Testing and Evaluation](docs/testing.md) records the affected target and useful passing focused tests.
+The test target is sequential because several suites bind fixed loopback ports. All fourteen targets pass on macOS and on Linux (g++ and clang++). [Testing and Evaluation](docs/testing.md) lists what each target covers, plus browser, curl, and load checks.
 
 ### Cleanup
 
