@@ -59,7 +59,7 @@ Permitted uploads use an exclusive create in `upload_store`, allowing only one s
 
 ## 7. CGI
 
-[`Cgi::start()`](../srcs/Cgi.cpp) resolves the script with `realpath`, verifies it lies beneath the route root, creates stdin/stdout pipes, forks, and uses `execve()` for either the configured handler plus script or the script itself. The child receives CGI variables including method, path info, query, protocol, server name/port, content type, content length, and normalized request headers.
+[`Cgi::start()`](../srcs/Cgi.cpp) checks that the route-root script path (already free of `.`/`..` segments) is a regular file, creates stdin/stdout pipes, makes the parent ends non-blocking with `fcntl(F_SETFL, O_NONBLOCK)`, forks, changes into the script directory, and uses `execve()` for either the absolute configured handler plus the script base name or `./<script>` itself. The child receives CGI variables including method, path info, query, protocol, server name/port, content type, content length, and normalized request headers.
 
 The parent registers CGI stdin for `POLLOUT` when there is a request body and CGI stdout for `POLLIN`. `Cgi::sendBody()` and `Cgi::collect()` advance through readiness callbacks without blocking the event loop. At EOF and after non-blocking reaping, the CGI output is converted to a `Response` and passes through the same HTTP serializer as static content.
 

@@ -60,7 +60,7 @@ main
 ### `Cgi` - Partial
 
 - Creates stdin/stdout pipes, forks only for CGI, and makes the parent pipe ends non-blocking.
-- Separates configured handlers from scripts, constructs CGI/1.1 environment variables, canonicalizes scripts beneath the route root, and runs the child from its script directory.
+- Separates configured handlers from scripts, constructs CGI/1.1 environment variables, keeps scripts beneath the route root through lexical `.`/`..` rejection, and runs the child from its script directory with the script addressed by its base name.
 - Streams request bodies to CGI through readiness events, collects output, applies timeouts, and frames the result through `Http`.
 - `To Fix`: bound collected CGI output, validate CGI response headers more strictly, and ensure process-level shutdown cleans up active children.
 

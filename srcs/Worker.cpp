@@ -7,10 +7,11 @@
 
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <cctype>
+#include <cerrno>
 #include <cstring>
 #include <ctime>
 #include <iostream>
@@ -27,33 +28,50 @@ Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &
 Worker::~Worker() {}
 
 static int setupListener(const ServerConfig &server) {
-	int fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (fd < 0)
+	addrinfo hints;
+	std::memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV;
+
+	std::ostringstream port;
+	port << server.port;
+	addrinfo *address = NULL;
+	int status = getaddrinfo(server.host.c_str(), port.str().c_str(), &hints, &address);
+	if (status != 0)
+		throw std::runtime_error("invalid IPv4 listener address '" + server.host + "': " +
+			gai_strerror(status));
+
+	int fd = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
+	if (fd < 0) {
+		freeaddrinfo(address);
 		throw std::runtime_error(std::string("socket: ") + strerror(errno));
-
-	int opt = 1;
-	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
-		throw std::runtime_error(std::string("setsockopt: ") + strerror(errno));
-
-	sockaddr_in addr;
-	std::memset(&addr, 0, sizeof(addr));
-
-	addr.sin_family = AF_INET;
-	if (inet_pton(AF_INET, server.host.c_str(), &addr.sin_addr) != 1) {
-		close(fd);
-		throw std::runtime_error("invalid IPv4 listener address");
 	}
-	addr.sin_port = htons(server.port);
 
-	if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
-		throw std::runtime_error(std::string("bind: ") + strerror(errno));
-	if (listen(fd, SOMAXCONN) < 0)
-		throw std::runtime_error(std::string("listen: ") + strerror(errno));
-		
-	if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0)
-		throw std::runtime_error(std::string("fcntl: ") + strerror(errno));
-
+	std::string failure;
+	int opt = 1;
+	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+		failure = std::string("setsockopt: ") + strerror(errno);
+	else if (bind(fd, address->ai_addr, address->ai_addrlen) < 0)
+		failure = std::string("bind: ") + strerror(errno);
+	else if (listen(fd, SOMAXCONN) < 0)
+		failure = std::string("listen: ") + strerror(errno);
+	else if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0)
+		failure = std::string("fcntl: ") + strerror(errno);
+	freeaddrinfo(address);
+	if (!failure.empty()) {
+		close(fd);
+		throw std::runtime_error(failure);
+	}
 	return fd;
+}
+
+static std::string ipv4ToString(const in_addr &address) {
+	unsigned long value = ntohl(address.s_addr);
+	std::ostringstream out;
+	out << ((value >> 24) & 0xFF) << '.' << ((value >> 16) & 0xFF) << '.'
+		<< ((value >> 8) & 0xFF) << '.' << (value & 0xFF);
+	return out.str();
 }
 
 static void addErrorBody(Config &config, StaticFile &files, Http &http, size_t serverIndex,
@@ -283,7 +301,7 @@ void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 	connections[client_fd] = connection;
 	fdToConnection[client_fd] = &connections[client_fd];
 
-	logger.debug() << "Worker: " << "fd: " << client_fd << " accepted from " << inet_ntoa(client_addr.sin_addr);
+	logger.debug() << "Worker: " << "fd: " << client_fd << " accepted from " << ipv4ToString(client_addr.sin_addr);
 }
 
 void Worker::onCgiReadable(Connection &conn) {

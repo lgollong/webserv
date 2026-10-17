@@ -30,7 +30,7 @@ Location directives:
 | `upload_store <path>;` | Storage directory for uploads. It does not enable upload dispatch by itself. |
 | `upload on|off;` | `on` authorizes POST uploads and requires `upload_store`; `off` prevents uploads even when a store is configured. |
 | `return [300-399] <target>;` | Configured redirect. The status defaults to `302`. |
-| `cgi <extension> <handler>;` | Maps a script extension to an interpreter/executable path. |
+| `cgi <extension> <handler>;` | Maps a script extension to an absolute interpreter/executable path. Relative handler paths are configuration errors because CGI children run from the script directory. |
 | `session_demo on|off;` | `on` dispatches this route to the bonus cookie/session demonstration (`SessionStore`) instead of static/CGI handling; `off` (the default) leaves the route unaffected. |
 
 The parser defaults a missing `listen` directive to port `8080` and inserts a GET-only `/` route rooted at `./contents` when a server has no locations. It accepts IPv4 listener addresses; invalid addresses are rejected when `Worker` creates the listener.
@@ -59,7 +59,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 | `autoindex`, `index_file` | Directory-serving behavior. |
 | `upload_store`, `upload_enabled` | Storage directory and authorization policy used together before POST upload dispatch. |
 | `cgi_handlers` | Extension-to-handler mappings from the configuration. |
-| `is_cgi`, `cgi_handler`, `cgi_script_name`, `cgi_script_path` | Per-request CGI selection derived during route resolution. `Cgi` canonicalizes the script and rejects it if it escapes the route root. |
+| `is_cgi`, `cgi_handler`, `cgi_script_name`, `cgi_script_path` | Per-request CGI selection derived during route resolution. Route resolution rejects `.`/`..` segments so the script stays beneath the route root lexically; `Cgi` requires it to be a regular file. Symlink confinement is tracked in #67. |
 
 `session_demo` is parsed as a location directive (see above); `config/default.config` enables it on `/session`.
 
