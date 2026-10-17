@@ -309,9 +309,29 @@ int main() {
 			uploadRequest("/uploads-disabled/disabled-upload.txt", "must not be stored")),
 			"disabled-upload request is sent");
 		expect(takeResponse(disabledUpload, pending, response) &&
-			response.find("HTTP/1.1 404 Not Found") == 0 && fileDoesNotExist(disabledUploadPath),
-			"upload off prevents a write even with upload_store configured");
+			response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
+			countOccurrences(response, "Allow: \r\n") == 1 && fileDoesNotExist(disabledUploadPath),
+			"upload off rejects POST without a handler and prevents a write");
 		close(disabledUpload);
+	}
+
+	int unimplemented = connectToServer(8008);
+	expect(unimplemented >= 0, "unimplemented-method listener accepts a client");
+	pending.clear();
+	if (unimplemented >= 0) {
+		expect(sendAll(unimplemented, requestWithMethod("PUT", "/api/", "")),
+			"configured but unimplemented PUT is sent");
+		expect(takeResponse(unimplemented, pending, response) &&
+			response.find("HTTP/1.1 501 Not Implemented") == 0,
+			"method listed in allowed_methods without an implementation returns 501");
+		expect(sendAll(unimplemented, requestWithMethod("FOO", "/api/", "")), "unknown method is sent");
+		expect(takeResponse(unimplemented, pending, response) &&
+			response.find("HTTP/1.1 501 Not Implemented") == 0,
+			"unknown method returns 501 and keeps the connection usable");
+		expect(sendAll(unimplemented, request("/api/", "")), "request after 501 is sent");
+		expect(takeResponse(unimplemented, pending, response) && response.find("HTTP/1.1 200 OK") == 0,
+			"connection serves a request after 501 responses");
+		close(unimplemented);
 	}
 	std::remove(disabledUploadPath.c_str());
 
@@ -367,10 +387,15 @@ int main() {
 			countOccurrences(response, "Allow: DELETE, POST\r\n") == 1,
 			"disallowed upload-route method returns its route policy");
 
-		expect(sendAll(persistent, requestWithMethod("PUT", "/", "")), "disallowed root-route PUT is sent");
+		expect(sendAll(persistent, requestWithMethod("POST", "/", "")), "handlerless root-route POST is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 405 Method Not Allowed") == 0 &&
-			countOccurrences(response, "Allow: DELETE, GET, POST\r\n") == 1,
-			"multi-method route returns one deterministically ordered Allow header");
+			response.find("<h1>HI</h1>") == std::string::npos &&
+			countOccurrences(response, "Allow: DELETE, GET\r\n") == 1,
+			"POST without upload or CGI is not served as GET and lists only handled methods");
+
+		expect(sendAll(persistent, requestWithMethod("PUT", "/", "")), "unimplemented root-route PUT is sent");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 501 Not Implemented") == 0,
+			"unimplemented method returns 501 before route policy");
 
 		expect(sendAll(persistent, requestWithMethod("GET", "/redirect-test", "")), "redirect request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 301 Moved Permanently") == 0 &&

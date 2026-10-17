@@ -26,7 +26,7 @@ Location directives:
 | `root <path>;` | Filesystem root for this location. Missing values inherit the containing server root, or `./contents`. |
 | `index <file>;` | Safe index file to serve from a directory. |
 | `autoindex on|off;` | Enables or disables generated directory listings. |
-| `allowed_methods <method> ...;` | Permitted request methods. `allow_methods` is accepted as an alias. Missing values default to `GET`. |
+| `allowed_methods <method> ...;` | Permitted request methods. `allow_methods` is accepted as an alias. Missing values default to `GET`. Only `GET`, `POST`, and `DELETE` are implemented; other listed methods are accepted by the parser but answered with `501`. |
 | `upload_store <path>;` | Storage directory for uploads. It does not enable upload dispatch by itself. |
 | `upload on|off;` | `on` authorizes POST uploads and requires `upload_store`; `off` prevents uploads even when a store is configured. |
 | `return [300-399] <target>;` | Configured redirect. The status defaults to `302`. |
@@ -54,7 +54,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 | --- | --- |
 | `location` | Boundary-aware URL-prefix match. |
 | `root` | Filesystem root used by static and CGI resolution. |
-| `allowed_methods` | Method policy enforced before a handler runs. |
+| `allowed_methods` | Method policy enforced before a handler runs; combined with handler availability for `405` and the `Allow` header. |
 | `redirect_status`, `redirect_target` | A configured redirect, or status `0`. |
 | `autoindex`, `index_file` | Directory-serving behavior. |
 | `upload_store`, `upload_enabled` | Storage directory and authorization policy used together before POST upload dispatch. |
