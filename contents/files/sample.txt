@@ -1,0 +1,2 @@
+Plain text file in ./contents/files.
+This route is GET-only: DELETE /files/sample.txt answers 405.

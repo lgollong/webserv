@@ -1,9 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<title>Secondary webserv</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Website 2 | webserv</title>
+	<style>
+		:root { --bg: #fff8ef; --surface: #ffffff; --text: #2b1d0e; --muted: #7a5c3c; --accent: #c2410c; --line: #f0dcc4; color-scheme: light; }
+		@media (prefers-color-scheme: dark) {
+			:root { --bg: #1a130c; --surface: #241a10; --text: #f6e9da; --muted: #c4a582; --accent: #fb923c; --line: #3a2a1a; color-scheme: dark; }
+		}
+		body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 Georgia, "Times New Roman", serif; }
+		main { max-width: 40rem; margin: 0 auto; padding: 48px 16px; }
+		.tag { margin: 0; color: var(--muted); font: 0.85rem system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.08em; }
+		h1 { margin: 4px 0 12px; font-size: 2.6rem; }
+		ul { padding: 0; list-style: none; }
+		li { padding: 10px 0; border-top: 1px solid var(--line); }
+		code { font-family: ui-monospace, Menlo, monospace; font-size: 0.88em; }
+		a { color: var(--accent); }
+	</style>
 </head>
 <body>
-	<h1>Secondary index</h1>
+	<main>
+		<p class="tag">Website 2 &middot; 127.0.0.1:8081</p>
+		<h1>A different website</h1>
+		<p>Same <code>webserv</code> process, second <code>server</code> block. It listens on another interface and port, and has its own root (<code>./contents/secondary</code>), its own 404 page and a 32-byte body limit.</p>
+		<ul>
+			<li><a href="/missing-page">/missing-page</a>: website 2's custom 404</li>
+			<li><code>POST /cgi/test.sh</code>: 200 for up to 32 bytes, 413 above</li>
+			<li><a href="http://127.0.0.1:8080/">Back to the evaluation guide on :8080</a></li>
+		</ul>
+	</main>
 </body>
 </html>
