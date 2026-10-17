@@ -452,6 +452,48 @@ int main() {
 		close(redirectClosing);
 	}
 
+	int http10Closing = connectToServer();
+	expect(http10Closing >= 0, "HTTP/1.0 client connects");
+	pending.clear();
+	if (http10Closing >= 0) {
+		expect(sendAll(http10Closing, "GET /static/index.html HTTP/1.0\r\n\r\n"), "HTTP/1.0 request is sent");
+		expect(takeResponse(http10Closing, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+			countOccurrences(response, "Connection: close\r\n") == 1,
+			"HTTP/1.0 request is served with one close header");
+		expect(waitForClose(http10Closing, pending), "HTTP/1.0 connection closes by default after its response");
+		close(http10Closing);
+	}
+
+	int http10KeepAlive = connectToServer();
+	expect(http10KeepAlive >= 0, "HTTP/1.0 keep-alive client connects");
+	pending.clear();
+	if (http10KeepAlive >= 0) {
+		const std::string keepAliveRequest =
+			"GET /static/index.html HTTP/1.0\r\nConnection: keep-alive\r\n\r\n";
+		expect(sendAll(http10KeepAlive, keepAliveRequest), "first HTTP/1.0 keep-alive request is sent");
+		expect(takeResponse(http10KeepAlive, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+			countOccurrences(response, "Connection: keep-alive\r\n") == 1,
+			"HTTP/1.0 keep-alive response confirms the persistent connection");
+		expect(sendAll(http10KeepAlive, keepAliveRequest), "second HTTP/1.0 keep-alive request is sent");
+		expect(takeResponse(http10KeepAlive, pending, response) && response.find("HTTP/1.1 200 OK") == 0,
+			"HTTP/1.0 keep-alive connection serves a second request");
+		close(http10KeepAlive);
+	}
+
+	int unsupportedVersion = connectToServer();
+	expect(unsupportedVersion >= 0, "unsupported-version client connects");
+	pending.clear();
+	if (unsupportedVersion >= 0) {
+		expect(sendAll(unsupportedVersion, "GET / HTTP/2.0\r\nHost: localhost\r\n\r\n"),
+			"unsupported-version request is sent");
+		expect(takeResponse(unsupportedVersion, pending, response) &&
+			response.find("HTTP/1.1 505 HTTP Version Not Supported") == 0 &&
+			countOccurrences(response, "Connection: close\r\n") == 1,
+			"unsupported HTTP version receives one closing 505 response");
+		expect(waitForClose(unsupportedVersion, pending), "unsupported-version connection closes after its response");
+		close(unsupportedVersion);
+	}
+
 	int malformed = connectToServer();
 	expect(malformed >= 0, "malformed-request client connects");
 	pending.clear();

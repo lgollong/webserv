@@ -11,6 +11,7 @@ Http::~Http() {}
 static const int kBadRequest = 400;
 static const int kPayloadTooLarge = 413;
 static const int kRequestHeaderFieldsTooLarge = 431;
+static const int kHttpVersionNotSupported = 505;
 
 // request-line = method SP request-target SP HTTP-version CRLF
 // request-target = path [ "?" query ]
@@ -45,21 +46,33 @@ static bool isOriginFormTarget(const std::string &target) {
 	return true;
 }
 
-static bool parseRequestLine(const std::string &line, Request &request) {
+// HTTP-version = "HTTP" "/" DIGIT "." DIGIT
+static bool isHttpVersion(const std::string &version) {
+	return version.size() == 8 && version.compare(0, 5, "HTTP/") == 0 &&
+		std::isdigit(static_cast<unsigned char>(version[5])) && version[6] == '.' &&
+		std::isdigit(static_cast<unsigned char>(version[7]));
+}
+
+// Returns 0 on success, otherwise the HTTP status for the rejected line.
+// Any HTTP/1.x minor version is accepted (RFC 9110 section 2.5); other
+// major versions are well-formed but unsupported.
+static int parseRequestLine(const std::string &line, Request &request) {
 	std::string::size_type sp1 = line.find(' ');
 	if (sp1 == std::string::npos || sp1 == 0)
-		return false;
+		return kBadRequest;
 	std::string::size_type sp2 = line.find(' ', sp1 + 1);
 	if (sp2 == std::string::npos || sp2 == sp1 + 1)
-		return false;
+		return kBadRequest;
 	if (line.find(' ', sp2 + 1) != std::string::npos)
-		return false;
+		return kBadRequest;
 
 	std::string method = line.substr(0, sp1);
 	std::string target  = line.substr(sp1 + 1, sp2 - sp1 - 1);
 	std::string version = line.substr(sp2 + 1);
-	if (!isMethodToken(method) || !isOriginFormTarget(target) || version != "HTTP/1.1")
-		return false;
+	if (!isMethodToken(method) || !isOriginFormTarget(target) || !isHttpVersion(version))
+		return kBadRequest;
+	if (version[5] != '1')
+		return kHttpVersionNotSupported;
 
 	request.method = method;
 	request.version = version;
@@ -73,7 +86,7 @@ static bool parseRequestLine(const std::string &line, Request &request) {
 		request.query = target.substr(qpos + 1);
 	}
 
-	return true;
+	return 0;
 }
 
 static std::string lowerCase(const std::string &value) {
@@ -350,9 +363,10 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 	std::string requestLine = (lineEnd == std::string::npos) ? headerBlock : headerBlock.substr(0, lineEnd);
 
 	Request parsed;
-	if (!parseRequestLine(requestLine, parsed)) {
-		errorStatus = kBadRequest;
-		return -1; // malformed request-line
+	int requestLineStatus = parseRequestLine(requestLine, parsed);
+	if (requestLineStatus != 0) {
+		errorStatus = requestLineStatus;
+		return -1; // malformed or unsupported request-line
 	}
 
 	std::string::size_type headersStart = (lineEnd == std::string::npos) ? headerBlock.size() : lineEnd + 2;
@@ -429,6 +443,7 @@ static const char *reasonPhrase(int status) {
 		case 501: return "Not Implemented";
 		case 502: return "Bad Gateway";
 		case 503: return "Service Unavailable";
+		case 505: return "HTTP Version Not Supported";
 	}
 	return NULL;
 }
