@@ -448,6 +448,10 @@ static const char *reasonPhrase(int status) {
 	return NULL;
 }
 
+bool Http::supportsStatus(int status) const {
+	return reasonPhrase(status) != NULL;
+}
+
 Response Http::defaultErrorResponse(int status) const {
 	const char *reason = reasonPhrase(status);
 	if (status < 400 || reason == NULL) {
