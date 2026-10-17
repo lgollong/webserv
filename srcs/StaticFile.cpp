@@ -135,8 +135,6 @@ static Content readRegularFile(const std::string &path, const struct stat &info,
 	return content;
 }
 
-// Opens a served file for streaming; Worker reads it in chunks while the
-// client is writable, so large files never sit in memory whole.
 static Content openRegularFile(const std::string &path, const struct stat &info,
 	const std::map<std::string, std::string> &mimeTypes) {
 	int fd = open(path.c_str(), O_RDONLY);
@@ -306,9 +304,6 @@ static bool safeUploadName(const std::string &name) {
 	return true;
 }
 
-// Writes data to a new file; never replaces an existing one. An existing
-// target is a 409 conflict; a missing upload_store is a server
-// configuration problem (500), not a missing client resource.
 static int storeFile(const std::string &path, const std::string &data) {
 	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
 	if (fd < 0) {

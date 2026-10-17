@@ -56,8 +56,6 @@ Cgi::Cgi() {}
 
 Cgi::~Cgi() {}
 
-// The subject permits fcntl() only with F_SETFL and O_NONBLOCK, so the
-// descriptor flags are replaced rather than read and extended.
 static bool setNonBlocking(int fd) {
 	return fcntl(fd, F_SETFL, O_NONBLOCK) == 0;
 }
@@ -155,8 +153,7 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 	const std::string &remoteAddr, const std::vector<int> &serverFds) {
 	CgiJob job;
 	std::string scriptPath;
-	// Handlers must be absolute: the child changes into the script directory
-	// before execve(), which would break a handler path relative to the server.
+
 	if (!resolveScriptPath(route, scriptPath) ||
 		(!route.cgi_handler.empty() && route.cgi_handler[0] != '/')) {
 		job.failed = true;
@@ -189,7 +186,6 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 		
 		if (chdir(directoryOf(scriptPath).c_str()) != 0)
 			std::exit(127);
-		// After chdir() the script is addressed relative to its own directory.
 		const std::string scriptFile = baseNameOf(scriptPath);
 		const std::string directScript = "./" + scriptFile;
 
@@ -368,11 +364,6 @@ static Response badGateway() {
 	return response;
 }
 
-// CGI-Response = *( header-field NL ) NL response-body   (RFC 3875 section 6)
-// Header lines end in LF or CRLF; the first empty line ends the header block.
-// Content-Type, Status, and Location are matched case-insensitively and may
-// appear once. A document response needs Content-Type; a redirect needs
-// Location and defaults to 302. Anything else malformed is a 502.
 Response Cgi::buildResponse(const CgiJob &job) const {
 	const std::string &raw = job.output;
 	if (job.failed || raw.empty())

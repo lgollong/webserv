@@ -4,7 +4,6 @@
 #include <vector>
 #include "types.hpp"
 
-// Forks/execs a script, wires up its I/O, collects output non-blockingly.
 class Cgi {
 	public:
 		// Collected CGI output is capped; a larger response becomes a 502.
@@ -13,8 +12,6 @@ class Cgi {
 		Cgi();
 		~Cgi();
 
-		// serverFds lists every descriptor the server owns; the child closes
-		// them so listeners, clients, and other CGI pipes do not survive execve().
 		CgiJob    start(const Request &request, const Route &route, const ServerConfig &server,
 			const std::string &remoteAddr, const std::vector<int> &serverFds);
 		bool      collect(CgiJob &cgi);
