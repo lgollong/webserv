@@ -48,6 +48,58 @@ static void drainReadable(int fd, std::string &received) {
 
 class WorkerEventLoopTests {
 	public:
+		// A complete request arriving together with the client's half-close
+		// must still produce a queued response.
+		static bool halfClosedRequestQueuesResponse() {
+			int sockets[2] = {-1, -1};
+			if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0)
+				return false;
+			const std::string request = "GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n";
+			if (write(sockets[1], request.data(), request.size()) != static_cast<ssize_t>(request.size()) ||
+				shutdown(sockets[1], SHUT_WR) != 0) {
+				close(sockets[0]);
+				close(sockets[1]);
+				return false;
+			}
+
+			std::ostringstream log;
+			Config config("./config/req.config");
+			Http http;
+			Cgi cgi;
+			StaticFile files;
+			Logger logger(log, log, LOG_ERROR);
+			Worker worker(config, http, cgi, files, logger);
+
+			Connection connection;
+			connection.fd = sockets[0];
+			connection.phase = READING;
+			worker.connections[sockets[0]] = connection;
+			worker.fdToConnection[sockets[0]] = &worker.connections[sockets[0]];
+			worker.poller.add(sockets[0], POLLIN);
+
+			std::vector<pollfd> ready(1);
+			ready[0].fd = sockets[0];
+			ready[0].events = POLLIN;
+			ready[0].revents = POLLIN | POLLHUP;
+			std::map<int, size_t> listeners;
+			worker.dispatchReadyEvents(ready, listeners, config.servers());
+
+			std::map<int, Connection>::iterator kept = worker.connections.find(sockets[0]);
+			bool queued = kept != worker.connections.end() && kept->second.phase == WRITING &&
+				kept->second.outbuf.find("HTTP/1.1 200 OK") == 0;
+
+			ready[0].events = POLLOUT;
+			ready[0].revents = POLLOUT | POLLHUP;
+			worker.dispatchReadyEvents(ready, listeners, config.servers());
+			char reply[64] = {0};
+			bool flushed = read(sockets[1], reply, sizeof(reply) - 1) > 0 &&
+				std::string(reply).find("HTTP/1.1 200 OK") == 0;
+			if (!worker.connections.empty())
+				worker.closeConnection(worker.connections.begin()->second);
+			close(sockets[1]);
+			return queued && flushed;
+		}
+
 		static bool clientErrorClosesOnlyClient(short revents) {
 			int sockets[2] = {-1, -1};
 			if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0)
@@ -208,6 +260,8 @@ static bool pollerReportsInvalidFd() {
 
 int main() {
 	expect(pollerReportsInvalidFd(), "poller reports POLLNVAL for a closed registered descriptor");
+	expect(WorkerEventLoopTests::halfClosedRequestQueuesResponse(),
+		"complete request with POLLIN|POLLHUP queues and flushes its response");
 	expect(WorkerEventLoopTests::clientErrorClosesOnlyClient(POLLERR),
 		"client POLLERR removes only the managed client state");
 	expect(WorkerEventLoopTests::clientErrorClosesOnlyClient(POLLHUP),

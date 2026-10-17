@@ -40,7 +40,8 @@ main
 - Buffers fragmented input, preserves pipelined bytes, handles partial writes, and keeps HTTP/1.1 connections open unless `Connection: close` is requested or an error requires closing after flush.
 - Resolves the route using the accepted listener's server index, applies method policy, and dispatches static files, uploads, deletes, redirects, sessions, or CGI.
 - Sweeps idle clients after 30 seconds and CGI jobs after 15 seconds; CGI cleanup escalates from `SIGTERM` to `SIGKILL` and uses non-blocking reaping.
-- `To Fix`: accept until the listener would block; retain a queued response when `POLLIN` and `POLLHUP` arrive together; add graceful process shutdown that terminates/reaps active CGI children.
+- Treats `POLLHUP` together with `POLLIN` as "read until EOF" (macOS reports a client half-close that way), never discards a queued response because of `POLLHUP`, and ignores `SIGPIPE` so writes to a vanished peer fail through their return value. EOF while CGI is still running aborts the CGI, as nginx does for a client that closes its request.
+- `To Fix`: accept until the listener would block; add graceful process shutdown that terminates/reaps active CGI children.
 
 ### `Http` - Partial
 
