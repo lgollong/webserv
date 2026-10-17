@@ -100,7 +100,7 @@ cgi-pipe-test: $(NAME)
 	@$(CGI_PIPE_TEST)
 
 cgi-lifecycle-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/cgi_lifecycle_tests.cpp srcs/Cgi.cpp -o $(CGI_LIFECYCLE_TEST)
+	@$(CXX) $(CXXFLAGS) tests/cgi_lifecycle_tests.cpp srcs/Cgi.cpp srcs/PathPolicy.cpp -o $(CGI_LIFECYCLE_TEST)
 	@$(CGI_LIFECYCLE_TEST)
 
 config-model-test: $(NAME)
@@ -112,7 +112,7 @@ config-parser-test: $(NAME)
 	@$(CONFIG_PARSER_TEST)
 
 static-file-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/static_file_tests.cpp srcs/StaticFile.cpp -o $(STATIC_FILE_TEST)
+	@$(CXX) $(CXXFLAGS) tests/static_file_tests.cpp srcs/StaticFile.cpp srcs/PathPolicy.cpp -o $(STATIC_FILE_TEST)
 	@$(STATIC_FILE_TEST)
 
 event-loop-stress-test: $(NAME)

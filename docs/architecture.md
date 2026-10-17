@@ -57,7 +57,7 @@ main
 - Implements permitted static `DELETE`, exclusive raw-body uploads, and `multipart/form-data` browser uploads; upload-enabled routes serve and delete from their `upload_store`.
 - Loads configured error-page files while preserving the original response status.
 - Streams served files from disk in 64 KiB chunks, so memory use does not grow with file size.
-- `To Fix`: canonicalize static paths to prevent symlinks beneath a root from exposing files outside it.
+- Never follows symlinks below a route root: static GET, index lookup, DELETE, and CGI scripts reject a path with a symlinked component (`403`), and autoindex hides symlinks. Detection uses `readdir()` `d_type` because `realpath`, `lstat`, and `readlink` are not authorized; file systems that report `DT_UNKNOWN` cannot be checked.
 
 ### `Cgi` - Partial
 

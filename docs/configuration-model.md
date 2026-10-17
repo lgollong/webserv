@@ -65,7 +65,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 | `autoindex`, `index_file` | Directory-serving behavior. |
 | `upload_store`, `upload_enabled` | Storage directory and authorization policy used together before POST upload dispatch. |
 | `cgi_handlers` | Extension-to-handler mappings from the configuration. |
-| `is_cgi`, `cgi_handler`, `cgi_script_name`, `cgi_script_path` | Per-request CGI selection derived during route resolution. Route resolution rejects `.`/`..` segments so the script stays beneath the route root lexically; `Cgi` requires it to be a regular file. Symlink confinement is tracked in #67. |
+| `is_cgi`, `cgi_handler`, `cgi_script_name`, `cgi_script_path` | Per-request CGI selection derived during route resolution. Route resolution rejects `.`/`..` segments so the script stays beneath the route root lexically; `Cgi` requires it to be a regular file. Symlinked components below the root are rejected (see `PathPolicy`). |
 
 `session_demo` is parsed as a location directive (see above); `config/default.config` enables it on `/session`.
 

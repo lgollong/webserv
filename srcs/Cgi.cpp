@@ -1,4 +1,5 @@
 #include "Cgi.hpp"
+#include "PathPolicy.hpp"
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
@@ -125,8 +126,10 @@ static std::vector<std::string> buildEnv(const Request &request, const Route &ro
 // "." and ".." segments, so containment is checked lexically there.
 static bool resolveScriptPath(const Route &route, std::string &path) {
 	struct stat info;
-	if (route.root.empty() || route.cgi_script_path.empty() ||
-		stat(route.cgi_script_path.c_str(), &info) != 0 || !S_ISREG(info.st_mode))
+	const std::string &script = route.cgi_script_path;
+	if (route.root.empty() || script.compare(0, route.root.size(), route.root) != 0 ||
+		pathHasSymlink(route.root, script.substr(route.root.size())) ||
+		stat(script.c_str(), &info) != 0 || !S_ISREG(info.st_mode))
 		return false;
 	path = route.cgi_script_path;
 	return true;

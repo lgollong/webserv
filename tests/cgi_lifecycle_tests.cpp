@@ -1,4 +1,5 @@
 #include "../headers/Cgi.hpp"
+#include <cstdio>
 
 #include <iostream>
 #include <poll.h>
@@ -147,6 +148,16 @@ int main() {
 		stalled.out_fd = -1;
 	}
 	expect(waitForReap(cgi, stalled), "terminated cgi is reaped without blocking");
+
+	symlink("test.sh", "./contents/cgi/linked-test.sh");
+	Route linkedScript;
+	linkedScript.root = "./contents/cgi";
+	linkedScript.cgi_handler = "/bin/sh";
+	linkedScript.cgi_script_name = "/cgi/linked-test.sh";
+	linkedScript.cgi_script_path = "./contents/cgi/linked-test.sh";
+	CgiJob linked = cgi.start(request, linkedScript, server, "127.0.0.1", std::vector<int>());
+	expect(linked.failed && linked.pid <= 0, "a CGI script reached through a symlink is not executed");
+	std::remove("./contents/cgi/linked-test.sh");
 
 	testResponseParsing(cgi);
 
