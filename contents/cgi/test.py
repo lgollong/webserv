@@ -9,6 +9,16 @@ query = os.environ.get("QUERY_STRING", "")
 length = int(os.environ.get("CONTENT_LENGTH") or 0)
 body = sys.stdin.buffer.read(length).decode("utf-8", "replace") if length > 0 else ""
 
+if query == "fds":
+    # Descriptors the CGI child inherited; listing the directory itself
+    # opens one more, which is reported separately.
+    fd_dir = "/proc/self/fd" if os.path.isdir("/proc/self/fd") else "/dev/fd"
+    listed = sorted(int(name) for name in os.listdir(fd_dir))
+    inherited = [fd for fd in listed if fd <= 2 or os.path.exists("%s/%d" % (fd_dir, fd))]
+    sys.stdout.write("Content-Type: text/plain\r\n\r\n")
+    sys.stdout.write("FDS=%s\n" % " ".join(str(fd) for fd in inherited))
+    sys.exit(0)
+
 if query == "context":
     sys.stdout.write("Content-Type: text/plain\r\n\r\n")
     for name in ("REQUEST_METHOD", "SCRIPT_NAME", "SCRIPT_FILENAME", "PATH_INFO",
