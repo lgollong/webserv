@@ -73,7 +73,7 @@ Permitted uploads use an exclusive create in `upload_store`. A raw body posted t
 
 The parent registers CGI stdin for `POLLOUT` when there is a request body and CGI stdout for `POLLIN`. `Cgi::sendBody()` and `Cgi::collect()` advance through readiness callbacks without blocking the event loop. At EOF and after non-blocking reaping, `Cgi::buildResponse()` converts the output to a `Response` (RFC 3875 section 6): header lines end in LF or CRLF and the first empty line ends them; `Content-Type`, `Status`, and `Location` are matched case-insensitively and may appear once; `Status` must be a three-digit code from 200 to 599; a response needs `Content-Type` or `Location` (a `Location` without `Status` becomes `302`); framing headers such as `Content-Length`, `Transfer-Encoding`, and `Connection` from the script are dropped. Any other malformed output, or a status `Http` cannot serialize, becomes `502 Bad Gateway`. The result passes through the same HTTP serializer as static content.
 
-CGI jobs time out after 15 seconds, receive `SIGTERM`, then `SIGKILL` after a two-second grace period if necessary. Client-disconnect cleanup follows the same reap path. Process termination of the whole server does not yet perform this cleanup.
+CGI jobs time out after 15 seconds, receive `SIGTERM`, then `SIGKILL` after a two-second grace period if necessary. Client-disconnect cleanup follows the same reap path. A client that half-closes (`shutdown(SHUT_WR)`) after a complete request still receives a queued static, error, or redirect response before the connection closes; EOF while that request's CGI is still running is treated as an abort, like nginx's `499`. Process termination of the whole server does not yet perform this cleanup.
 
 ## 8. Writing and Persistence
 

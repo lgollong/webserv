@@ -502,6 +502,43 @@ int main() {
 		close(redirectClosing);
 	}
 
+	int halfClosed = connectToServer();
+	expect(halfClosed >= 0, "half-closing client connects");
+	pending.clear();
+	if (halfClosed >= 0) {
+		expect(sendAll(halfClosed, request("/static/index.html", "")) && shutdown(halfClosed, SHUT_WR) == 0,
+			"complete request is sent before the client half-closes");
+		expect(takeResponse(halfClosed, pending, response) && response.find("HTTP/1.1 200 OK") == 0 &&
+			response.find("<h1>HI</h1>") != std::string::npos,
+			"response is flushed to a client that half-closed after its request");
+		expect(waitForClose(halfClosed, pending), "half-closed connection closes after its response");
+		close(halfClosed);
+	}
+
+	int halfClosedLarge = connectToServer();
+	expect(halfClosedLarge >= 0, "large half-closing client connects");
+	pending.clear();
+	if (halfClosedLarge >= 0) {
+		const std::string largeRequest = "GET /static/index.html HTTP/1.1\r\nHost: localhost\r\nX-Padding: " +
+			std::string(9000, 'p') + "\r\n\r\n";
+		expect(sendAll(halfClosedLarge, largeRequest) && shutdown(halfClosedLarge, SHUT_WR) == 0,
+			"request larger than one read is sent before the client half-closes");
+		expect(takeResponse(halfClosedLarge, pending, response) && response.find("HTTP/1.1 200 OK") == 0,
+			"request spanning several reads after half-close is still answered");
+		close(halfClosedLarge);
+	}
+
+	int halfClosedIncomplete = connectToServer();
+	expect(halfClosedIncomplete >= 0, "incomplete half-closing client connects");
+	pending.clear();
+	if (halfClosedIncomplete >= 0) {
+		expect(sendAll(halfClosedIncomplete, "GET /static/index.html HTTP/1.1\r\nHost: local") &&
+			shutdown(halfClosedIncomplete, SHUT_WR) == 0, "incomplete request is sent before half-close");
+		expect(waitForClose(halfClosedIncomplete, pending) && pending.empty(),
+			"EOF during an incomplete request closes cleanly without a response");
+		close(halfClosedIncomplete);
+	}
+
 	int http10Closing = connectToServer();
 	expect(http10Closing >= 0, "HTTP/1.0 client connects");
 	pending.clear();
