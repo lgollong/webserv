@@ -77,10 +77,10 @@ CGI jobs time out after 15 seconds, receive `SIGTERM`, then `SIGKILL` after a tw
 
 ## 8. Writing and Persistence
 
-Every handler result becomes `Response`, then `Http::build()` produces `Connection::outbuf`. It supplies one `Content-Length`, chooses a content type, and filters invalid extension headers.
+Every handler result becomes `Response`, then `Http::build()` produces `Connection::outbuf`; for a streamed static file, `Http::buildHead()` produces only the head and the body follows in chunks from disk. It supplies one `Content-Length`, chooses a content type, and filters invalid extension headers.
 
 `Worker::onWritable()` tracks partial writes with `Connection::sent`. Once all bytes are written, a `Connection: close` response closes the client; otherwise the transaction resets to `READING` and one buffered pipelined request can begin immediately.
 
 ## 9. Current Verification State
 
-The focused HTTP, parser-model/malformed-config, static-file, event-loop, CGI lifecycle, CGI-pipe, resilience, and connection-lifecycle targets exercise the paths above. The full `make test` target currently reaches `cookie-session-test` before stopping because the optional session demonstration still has mock-era configuration expectations. See [Testing and Evaluation](testing.md) for the exact status and outstanding coverage.
+The HTTP, logger, parser-model/malformed-config, static-file, event-loop, CGI lifecycle, CGI-pipe, cookie-session, resilience, and connection-lifecycle targets exercise the paths above, and `make test` runs all of them. See [Testing and Evaluation](testing.md) for what each covers.

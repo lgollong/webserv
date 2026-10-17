@@ -18,16 +18,16 @@ Targets run sequentially because integration suites bind fixed loopback ports.
 | `make logger-test` | `none`/`error`/`debug` level matrix and debug-stream flushing. | Passing. |
 | `make config-model-test` | Parsed `config/req.config` model and routing. | Passing. |
 | `make config-parser-test` | Valid multi-server/multi-location configuration, parser defaults, and unreadable or malformed inputs. | Passing. |
-| `make static-file-test` | Static files, MIME types, index/autoindex, uploads, DELETE, lexical traversal. | Passing. |
+| `make static-file-test` | Static files, streamed file descriptors, MIME types, index/autoindex, raw and multipart uploads, DELETE, filesystem status codes, lexical traversal, symlink confinement. | Passing. |
 | `make session-store-test` | Cookie parsing, random identifiers, expiry. | Passing. |
-| `make event-loop-stress-test` | Poll error handling and partial writes. | Passing. |
-| `make cgi-lifecycle-test` | CGI process arguments and reaping. | Passing. |
-| `make connection-lifecycle-test` | `config/req.config` listeners, routing, methods, errors, uploads, persistence. | Passing. |
-| `make cgi-pipe-test` | CGI HTTP integration through the configured `8002` shell and text CGI routes. | Passing. |
-| `make cookie-session-test` | `/session` HTTP integration. | Stale: no parser directive/configured `/session` route exists. |
-| `make resilience-test` | Client and CGI timeout integration through the configured `8002` listener. | Passing. |
+| `make event-loop-stress-test` | Poll error handling, partial writes, and half-closed clients. | Passing. |
+| `make cgi-lifecycle-test` | CGI process arguments, reaping, symlinked scripts, and CGI response parsing. | Passing. |
+| `make connection-lifecycle-test` | `config/req.config` listeners, routing, methods (`405`/`501`), HTTP/1.0, errors, uploads, half-close, large-file streaming, persistence. | Passing. |
+| `make cgi-pipe-test` | CGI HTTP integration through the `8002` Python and shell routes: bodies, chunked bodies, environment, descriptor isolation, malformed and oversized output. | Passing. |
+| `make cookie-session-test` | `/session` HTTP integration through the `session_demo on;` route in `config/default.config`. | Passing. |
+| `make resilience-test` | Client and CGI timeouts, disconnect cleanup, and listener rebinding after shutdown through the `8002` listener. | Passing. |
 
-As a result, `make test` is currently expected to stop at `cookie-session-test`, after the parser-backed CGI-pipe target passes. The resilience target also passes when run directly, but follows cookie-session in the aggregate target. The passing focused targets are useful regression checks but are not a substitute for restoring the complete suite.
+`make test` runs all fourteen targets and passes on macOS and on Linux with g++ and clang++.
 
 ## Browser and Curl Checks
 
@@ -62,10 +62,7 @@ To exercise the configured request-body limit, send a request above 10 MiB to a 
 
 ## Configuration Checks Still Needed
 
-The parser should gain automated cases for:
-
-- duplicate host/port rejection and invalid listener addresses;
-- a parser-backed session demonstration, if the optional session feature is kept in the evaluated configuration.
+Duplicate host/port pairs and invalid listener addresses are rejected when `Worker` creates the listeners at startup (`bind` fails, or `getaddrinfo` rejects the address), not by the parser, and have no automated test yet.
 
 ## Optional Comparison and Stress Checks
 
@@ -79,4 +76,9 @@ wait
 curl -i http://127.0.0.1:8080/files/index.html
 ```
 
-This is a manual smoke test, not a replacement for load testing or the missing end-to-end parser coverage.
+This is a manual smoke test. For load, ApacheBench works with and without keep-alive:
+
+```sh
+ab -n 1000 -c 50 http://127.0.0.1:8080/
+ab -k -n 1000 -c 50 http://127.0.0.1:8080/
+```
