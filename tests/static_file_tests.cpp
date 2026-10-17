@@ -287,6 +287,38 @@ int main() {
 		rmdir(lockedDir.c_str());
 	}
 
+	// Symlinks below the root are never followed, whether they point outside
+	// the root or stay inside it.
+	const std::string outside = "/tmp/webserv-symlink-outside";
+	mkdir(outside.c_str(), 0700);
+	expect(writeFixture(outside + "/secret.txt"), "creates a file outside the route root");
+	symlink((outside + "/secret.txt").c_str(), "./contents/link-to-outside-file.txt");
+	symlink(outside.c_str(), "./contents/link-to-outside-dir");
+	symlink("index.html", "./contents/link-to-inside-file.html");
+	expect(serveFully(files, root, requestFor("/link-to-outside-file.txt")).status == 403,
+		"a symlink to a file outside the root is not served");
+	expect(serveFully(files, root, requestFor("/link-to-outside-dir/secret.txt")).status == 403,
+		"a file below a symlinked directory outside the root is not served");
+	expect(serveFully(files, root, requestFor("/link-to-inside-file.html")).status == 403,
+		"a symlink that stays inside the root follows the same no-follow policy");
+	expect(files.erase(root, requestFor("/link-to-outside-dir/secret.txt")).status == 403 &&
+		access((outside + "/secret.txt").c_str(), F_OK) == 0,
+		"DELETE cannot remove a file outside the root through a symlinked directory");
+	Route linkedIndex = routeFor("/", "./contents");
+	linkedIndex.index_file = "link-to-inside-file.html";
+	linkedIndex.autoindex = true;
+	Content linkedListing = serveFully(files, linkedIndex, requestFor("/"));
+	expect(linkedListing.status == 200 && linkedListing.body.find("Index of") != std::string::npos &&
+		linkedListing.body.find("link-to-") == std::string::npos,
+		"a symlinked index file is skipped and autoindex hides symlinks");
+	expect(serveFully(files, root, requestFor("/index.html")).status == 200,
+		"regular files next to symlinks are still served");
+	std::remove("./contents/link-to-outside-file.txt");
+	std::remove("./contents/link-to-outside-dir");
+	std::remove("./contents/link-to-inside-file.html");
+	std::remove((outside + "/secret.txt").c_str());
+	rmdir(outside.c_str());
+
 	Content streamed = files.serve(root, requestFor("/files/index.html"));
 	expect(streamed.status == 200 && streamed.body.empty() && streamed.file_fd >= 0 &&
 		streamed.file_size > 0, "regular files are returned as an open descriptor for streaming");

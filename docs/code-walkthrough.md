@@ -53,7 +53,7 @@ The parser preserves the upload authorization flag, so `upload off` prevents wri
 
 ## 6. Static Responses
 
-[`StaticFile`](../srcs/StaticFile.cpp) removes the location prefix, rejects lexical traversal components, and combines the remainder with the route root. It serves regular files, optionally serves a safe configured index file, or builds an escaped directory listing when `autoindex` is enabled. Filesystem failures are mapped from the `errno` of the failed `stat`/`open`/`opendir`/`remove` call:
+[`StaticFile`](../srcs/StaticFile.cpp) removes the location prefix, rejects lexical traversal components and any symlinked component below the root ([`pathHasSymlink()`](../srcs/PathPolicy.cpp), which reads `d_type` from `readdir()`), and combines the remainder with the route root. It serves regular files, optionally serves a safe configured index file, or builds an escaped directory listing when `autoindex` is enabled. Filesystem failures are mapped from the `errno` of the failed `stat`/`open`/`opendir`/`remove` call:
 
 | Case | Status |
 | --- | --- |
