@@ -16,9 +16,12 @@ class Config {
 		const std::vector<ServerConfig> & servers() const;
 		std::string                       errorPage(size_t serverIndex, int status) const;
 		size_t                            bodyLimit(size_t serverIndex) const;
+		LogLevel                          logLevel() const;
 
 	private:
 		std::vector<ServerConfig> 	server_configs;
+		LogLevel					log_level;
+		bool						log_level_set;
 
 		std::string					parseLocation(ServerConfig &server, std::vector<std::string> &tokens,std::size_t &index, const std::string &configPath, std::vector<size_t> &lines);
 		void 						parseFile(const std::string &configPath);

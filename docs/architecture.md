@@ -71,8 +71,8 @@ main
 
 ### `Logger` - Partial
 
-- Provides error and stream-style debug logging.
-- `To Fix`: implement access logging and avoid logging complete request bodies or sensitive headers at the default debug level.
+- Provides error and stream-style debug logging gated by the top-level `log_level none|error|debug;` directive (default `error`). Disabled debug streams allocate nothing, and full payload dumps are skipped unless debug is enabled.
+- `To Fix`: implement access logging; debug level still logs complete request bodies and headers, so keep it for local troubleshooting.
 
 ## Request Flow
 

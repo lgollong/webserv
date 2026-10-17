@@ -58,7 +58,7 @@ class WorkerEventLoopTests {
 			Http http;
 			Cgi cgi;
 			StaticFile files;
-			Logger logger(log, log, ERROR);
+			Logger logger(log, log, LOG_ERROR);
 			Worker worker(config, http, cgi, files, logger);
 
 			Connection connection;
@@ -97,7 +97,7 @@ class WorkerEventLoopTests {
 			Http http;
 			Cgi cgi;
 			StaticFile files;
-			Logger logger(log, log, ERROR);
+			Logger logger(log, log, LOG_ERROR);
 			Worker worker(config, http, cgi, files, logger);
 
 			Connection connection;
@@ -153,7 +153,7 @@ class WorkerEventLoopTests {
 			Http http;
 			Cgi cgi;
 			StaticFile files;
-			Logger logger(log, log, ERROR);
+			Logger logger(log, log, LOG_ERROR);
 			Worker worker(config, http, cgi, files, logger);
 
 			const std::string payload(131072, 'w');

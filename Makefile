@@ -25,6 +25,7 @@ COOKIE_SESSION_TEST = /tmp/webserv-cookie-session-tests
 HTTP_REQUEST_LINE_TEST = /tmp/webserv-http-request-line-tests
 HTTP_RESPONSE_TEST = /tmp/webserv-http-response-tests
 CONNECTION_TIMEOUT_TEST = /tmp/webserv-connection-timeout-tests
+LOGGER_TEST = /tmp/webserv-logger-tests
 CORE_SRC = $(filter-out $(SRC_DIR)/main.cpp,$(SRC))
 
 all: $(NAME)
@@ -52,12 +53,13 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re test resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test config-parser-test static-file-test event-loop-stress-test session-store-test cookie-session-test http-request-line-test http-response-test connection-timeout-test
+.PHONY: all clean fclean re test resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test config-parser-test static-file-test event-loop-stress-test session-store-test cookie-session-test http-request-line-test http-response-test connection-timeout-test logger-test
 
 test:
 	@$(MAKE) http-request-line-test
 	@$(MAKE) http-response-test
 	@$(MAKE) connection-timeout-test
+	@$(MAKE) logger-test
 	@$(MAKE) config-model-test
 	@$(MAKE) config-parser-test
 	@$(MAKE) static-file-test
@@ -76,6 +78,10 @@ http-request-line-test:
 http-response-test:
 	@$(CXX) $(CXXFLAGS) tests/http_response_tests.cpp srcs/Http.cpp -o $(HTTP_RESPONSE_TEST)
 	@$(HTTP_RESPONSE_TEST)
+
+logger-test:
+	@$(CXX) $(CXXFLAGS) tests/logger_tests.cpp srcs/Logger.cpp -o $(LOGGER_TEST)
+	@$(LOGGER_TEST)
 
 connection-timeout-test:
 	@$(CXX) $(CXXFLAGS) tests/connection_timeout_tests.cpp -o $(CONNECTION_TIMEOUT_TEST)

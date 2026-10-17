@@ -268,6 +268,41 @@ int main() {
 		"rejects enabled uploads without a storage directory");
 	std::remove(uploadErrorPath.c_str());
 
+	const std::string defaultLogPath = temporaryPath("log-level-default");
+	expect(writeFile(defaultLogPath, "server { listen 8080; }\n"), "write default log level fixture");
+	{
+		Config config(defaultLogPath);
+		expect(config.logLevel() == LOG_ERROR, "log level defaults to error");
+	}
+	std::remove(defaultLogPath.c_str());
+
+	const char *const logValues[] = {"none", "ERROR", "debug"};
+	const LogLevel logLevels[] = {LOG_NONE, LOG_ERROR, LOG_DEBUG};
+	for (size_t i = 0; i < 3; ++i) {
+		const std::string logPath = temporaryPath("log-level");
+		expect(writeFile(logPath, std::string("log_level ") + logValues[i] + ";\nserver { listen 8080; }\n"),
+			"write log level fixture");
+		Config config(logPath);
+		expect(config.logLevel() == logLevels[i], "parses top-level log_level values case-insensitively");
+		std::remove(logPath.c_str());
+	}
+
+	const std::string invalidLogPath = temporaryPath("log-level-invalid");
+	expect(writeFile(invalidLogPath, "server { listen 8080; }\nlog_level verbose;\n"), "write invalid log level fixture");
+	expectConfigError(invalidLogPath, ":2: invalid log_level 'verbose'", "rejects unknown log levels with their line");
+	std::remove(invalidLogPath.c_str());
+
+	const std::string duplicateLogPath = temporaryPath("log-level-duplicate");
+	expect(writeFile(duplicateLogPath, "log_level none;\nlog_level debug;\nserver { listen 8080; }\n"),
+		"write duplicate log level fixture");
+	expectConfigError(duplicateLogPath, ":2: duplicate log_level", "rejects a repeated log_level");
+	std::remove(duplicateLogPath.c_str());
+
+	const std::string missingLogPath = temporaryPath("log-level-missing");
+	expect(writeFile(missingLogPath, "log_level;\nserver { listen 8080; }\n"), "write missing log level fixture");
+	expectConfigError(missingLogPath, "log_level missing value", "rejects log_level without a value");
+	std::remove(missingLogPath.c_str());
+
 	const std::string relativeHandlerPath = temporaryPath("relative-cgi-handler");
 	expect(writeFile(relativeHandlerPath, "server {\n location /cgi {\n  cgi .py python3;\n }\n}\n"),
 		"write relative CGI handler fixture");
