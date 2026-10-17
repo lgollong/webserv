@@ -71,11 +71,14 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 
 ## Supplied Configurations
 
-`config/default.config` is the browser demonstration configuration:
+`config/default.config` is the evaluation configuration:
 
 | Listener | Routes |
 | --- | --- |
-| `0.0.0.0:8080` | `/`, `/files`, `/uploads` (with the `/upload.html` browser demo), `/cgi`, `/old-page`, and `/session` |
+| `0.0.0.0:8080` | `/` (the evaluation guide, GET only), `/files` (autoindex of `./contents/files`), `/uploads` (with the `/upload.html` browser demo), `/cgi`, `/old-page`, and `/session`; 10 MiB body limit |
+| `127.0.0.1:8081` | `/` (`./contents/secondary`, own 404 page) and `/cgi` (shell); 32-byte body limit |
+
+`config/conflict.config` defines two servers on `127.0.0.1:8090`; startup fails with `bind: Address already in use`, because virtual hosts are not implemented.
 
 `config/req.config` is a multi-listener fixture used by the updated configuration and connection-lifecycle tests. It defines servers on ports `8002`, `8003`, `8008`, and `8001` with static, upload, redirect, documentation, and CGI route examples.
 

@@ -12,7 +12,7 @@ This walkthrough follows the code that currently runs on `main`, beginning at `m
 
 [`Config`](../srcs/Config.cpp) stores every parsed server in `std::vector<ServerConfig>`. A server contains its host, port, CGI-facing name, body limit, custom error pages, and locations. A location contains a URL prefix, static root, method set, directory behavior, upload store, redirect, and CGI extension handlers.
 
-The default demonstration file opens `0.0.0.0:8080`; `config/req.config` instead defines four loopback listeners for integration coverage. `Worker` does not select a server from the HTTP `Host` header. It uses the server index associated with the listener that accepted the client.
+The default configuration opens `0.0.0.0:8080` and `127.0.0.1:8081`; `config/req.config` instead defines four loopback listeners for integration coverage. `Worker` does not select a server from the HTTP `Host` header. It uses the server index associated with the listener that accepted the client.
 
 `Config::route(serverIndex, request)` chooses the longest location prefix with a path boundary. It returns a route copy and, when a request path matches a configured CGI extension, fills in the handler path, URL script name, and script path. The script path uses the same rule as static files: the location prefix is removed and the rest is joined to the location root, so `/cgi/test.py` under `location /cgi { root ./contents/cgi; }` runs `./contents/cgi/test.py`. A suffix after the script becomes CGI `PATH_INFO`.
 

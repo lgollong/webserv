@@ -3,36 +3,35 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="Upload, list, and delete files through the webserv /uploads route.">
+	<meta name="description" content="Upload, list, retrieve, and delete files through the webserv /uploads route.">
 	<title>webserv | uploads</title>
+	<link rel="icon" href="/files/favicon.ico">
 	<link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
-	<a class="skip-link" href="#main">Skip to content</a>
-	<header class="site-header">
-		<a class="wordmark" href="/" aria-label="webserv dashboard home">webserv</a>
-		<nav aria-label="Primary navigation"><a href="/#demos">Demos</a><a href="/uploads/">Raw listing</a></nav>
+	<header class="topbar">
+		<div class="topbar-inner">
+			<a class="wordmark" href="/">webserv</a>
+			<nav aria-label="Pages"><a href="/#basics">Back to the guide</a><a href="/uploads/">Raw /uploads/ listing</a></nav>
+		</div>
 	</header>
-	<main id="main">
-		<section class="section inspector-section" aria-labelledby="upload-title"><div class="page-width inspector-layout">
-			<div class="section-heading">
-				<p class="eyebrow eyebrow-dark">POST multipart/form-data</p>
-				<h2 id="upload-title">Upload files</h2>
-				<p>The form posts to <code>/uploads</code>, which <code>config/default.config</code> stores in <code>./contents/uploads</code>. File names keep letters, digits, <code>.</code>, <code>_</code>, and <code>-</code>; other characters become <code>_</code>. Existing files are never overwritten.</p>
-			</div>
-			<div class="inspector-tool">
-				<form id="upload-form" action="/uploads" method="post" enctype="multipart/form-data">
-					<label for="upload-file">Files</label>
-					<div class="upload-controls">
-						<input id="upload-file" class="upload-input" type="file" name="file" multiple required>
-						<button class="button button-primary" type="submit">Upload</button>
-					</div>
-				</form>
-				<p id="upload-status" class="inspector-status" role="status">Choose one or more files. The page works without JavaScript; with it, the list below refreshes in place.</p>
-			</div>
-		</div></section>
-		<section class="section page-width" aria-labelledby="stored-title">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">GET and DELETE /uploads/&lt;name&gt;</p><h2 id="stored-title">Stored files</h2><p>Each file is served and deleted at the same URL it was uploaded to.</p></div>
+	<main class="page">
+		<section class="intro">
+			<p class="eyebrow">POST multipart/form-data &rarr; /uploads</p>
+			<h1>Uploads</h1>
+			<p class="lead">Files are stored byte-for-byte in <code>./contents/uploads</code>. File names keep letters, digits, <code>.</code>, <code>_</code> and <code>-</code>; any other character becomes <code>_</code>. An existing file is never overwritten (<code>409</code>). The body limit is 10&nbsp;MB.</p>
+		</section>
+		<section class="block">
+			<h2>Upload</h2>
+			<form id="upload-form" class="upload-form" action="/uploads" method="post" enctype="multipart/form-data">
+				<input id="upload-file" type="file" name="file" multiple required aria-label="Files">
+				<button class="run" type="submit">Upload</button>
+			</form>
+			<p id="upload-status" class="upload-status" role="status">Choose one or more files. Works without JavaScript too.</p>
+		</section>
+		<section class="block">
+			<h2>Stored files</h2>
+			<p>Click a name to retrieve it (GET); <strong>Delete</strong> sends DELETE to the same URL.</p>
 			<ul id="upload-list" class="upload-list"><li class="upload-empty">Loading the <a href="/uploads/">/uploads/</a> listing...</li></ul>
 		</section>
 	</main>
