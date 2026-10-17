@@ -119,7 +119,7 @@ static bool equalsIgnoreCase(const std::string &value, const char *expected) {
 	return true;
 }
 
-static bool requestWantsClose(const Request &request) {
+static bool hasConnectionOption(const Request &request, const char *option) {
 	std::map<std::string, std::string>::const_iterator header = request.headers.find("connection");
 	if (header == request.headers.end())
 		return false;
@@ -136,13 +136,25 @@ static bool requestWantsClose(const Request &request) {
 		std::string::size_type last = end;
 		while (last > first && (value[last - 1] == ' ' || value[last - 1] == '\t'))
 			--last;
-		if (equalsIgnoreCase(value.substr(first, last - first), "close"))
+		if (equalsIgnoreCase(value.substr(first, last - first), option))
 			return true;
 		if (end == value.size())
 			break;
 		start = end + 1;
 	}
 	return false;
+}
+
+static bool isHttp10(const Request &request) {
+	return request.version == "HTTP/1.0";
+}
+
+// HTTP/1.1 connections persist unless the client sends "close"; HTTP/1.0
+// connections close unless the client asks for "keep-alive".
+static bool requestWantsClose(const Request &request) {
+	if (hasConnectionOption(request, "close"))
+		return true;
+	return isHttp10(request) && !hasConnectionOption(request, "keep-alive");
 }
 
 static void applyConnectionPolicy(const Connection &conn, Response &response) {
@@ -153,6 +165,8 @@ static void applyConnectionPolicy(const Connection &conn, Response &response) {
 	}
 	if (conn.close_after_write)
 		response.headers["Connection"] = "close";
+	else if (isHttp10(conn.txn.request))
+		response.headers["Connection"] = "keep-alive";
 }
 
 static const int kPollTimeoutMs = 1000;

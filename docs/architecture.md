@@ -44,7 +44,7 @@ main
 
 ### `Http` - Partial
 
-- Parses exact HTTP/1.1 origin-form request lines and CRLF header fields.
+- Parses HTTP/1.x origin-form request lines (HTTP/1.0 and HTTP/1.1; a higher 1.x minor version is treated as 1.1) and CRLF header fields; other major versions receive `505`. HTTP/1.0 connections close after the response unless the client sends `Connection: keep-alive`.
 - Enforces a 16 KiB header limit, 100 header fields, one `Content-Length`, and only `Transfer-Encoding: chunked` as a transfer coding.
 - Parses fixed-length and chunked bodies, applies the selected server's decoded body limit, and leaves pipelined bytes for the next transaction.
 - Builds responses with controlled status/reason phrases, one calculated `Content-Length`, a selected `Content-Type`, and validated extension headers.
