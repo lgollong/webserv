@@ -90,11 +90,9 @@ main
 
 ## Supplied Configurations
 
-- `config/default.config`: browser demonstration on port `8080`, with `/`, `/files`, `/uploads`, `/cgi`, and `/old-page`.
+- `config/default.config`: browser demonstration on port `8080`, with `/`, `/files`, `/uploads` (and the `/upload.html` page), `/cgi` (Python and shell), `/old-page`, and the `/session` cookie demonstration.
 - `config/req.config`: multi-listener fixture on ports `8002`, `8003`, `8008`, and `8001` used by parser and connection-lifecycle coverage.
 
 ## Verification Status
 
-Focused tests currently passing include HTTP parser/response tests, parsed configuration model and malformed-input tests, static-file tests, session-store tests, event-loop stress tests, CGI lifecycle and CGI-pipe tests, resilience tests, and connection-lifecycle tests.
-
-`make test` is currently **not green**. Parser-backed CGI-pipe and resilience targets pass, but the aggregate target stops at `cookie-session-test` because the optional session demonstration remains tied to the retired mock configuration. This is a bonus-feature configuration decision, not evidence that the parser or mandatory runtime tests are mock-backed.
+`make test` is **green**: all fourteen targets (HTTP parser/response, timeout predicates, logger, configuration model and parser, static files, session store, event loop, CGI lifecycle, connection lifecycle, CGI pipes, cookie sessions, and resilience) pass on macOS and on Linux with g++ and clang++. See [Testing and Evaluation](testing.md).
