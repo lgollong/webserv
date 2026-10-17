@@ -149,7 +149,7 @@ static std::string directoryOf(const std::string &path) {
 }
 
 CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig &server,
-	const std::string &remoteAddr) {
+	const std::string &remoteAddr, const std::vector<int> &serverFds) {
 	CgiJob job;
 	std::string scriptPath;
 	// Handlers must be absolute: the child changes into the script directory
@@ -179,6 +179,10 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 		close(inPipe[1]);
 		close(outPipe[0]);
 		close(outPipe[1]);
+		for (std::vector<int>::const_iterator fd = serverFds.begin(); fd != serverFds.end(); ++fd) {
+			if (*fd > STDERR_FILENO)
+				close(*fd);
+		}
 		
 		if (chdir(directoryOf(scriptPath).c_str()) != 0)
 			std::exit(127);

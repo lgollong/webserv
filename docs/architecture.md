@@ -64,6 +64,7 @@ main
 - Separates configured handlers from scripts, constructs CGI/1.1 environment variables, keeps scripts beneath the route root through lexical `.`/`..` rejection, and runs the child from its script directory with the script addressed by its base name.
 - Streams request bodies to CGI through readiness events, collects output, applies timeouts, and frames the result through `Http`.
 - Validates CGI response framing, header syntax, and `Status`; malformed output becomes `502`.
+- Closes all server-owned descriptors in the child before `execve()`, so a CGI never holds a listener port or another client's connection open.
 - `To Fix`: bound collected CGI output, and ensure process-level shutdown cleans up active children.
 
 ### `SessionStore` - Implemented

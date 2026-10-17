@@ -510,8 +510,12 @@ void Worker::processBufferedRequest(Connection &conn) {
 
 	if (conn.txn.route.is_cgi == true) {
 		logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
+		std::vector<int> serverFds;
+		const std::vector<pollfd> &managed = poller.events();
+		for (std::vector<pollfd>::const_iterator it = managed.begin(); it != managed.end(); ++it)
+			serverFds.push_back(it->fd);
 		conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route,
-			config.servers()[conn.server_index], conn.remote_addr);
+			config.servers()[conn.server_index], conn.remote_addr, serverFds);
 		if (conn.txn.cgi.failed) {
 			failCgiJob(conn);
 			return ;
