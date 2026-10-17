@@ -193,6 +193,11 @@ static std::string sessionCookiePair(const std::string &response) {
 }
 
 int main() {
+	// A server may close a connection while the test is still sending; that
+	// must surface as a failed send(), not kill this process and orphan the
+	// server it started.
+	signal(SIGPIPE, SIG_IGN);
+
 	pid_t server = startServer();
 	bool started = server > 0 && waitForServer(server);
 	expect(started, "server starts on loopback port 8080");

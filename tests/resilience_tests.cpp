@@ -210,6 +210,11 @@ static bool waitForProcessExit(pid_t &server, pid_t cgiPid) {
 }
 
 int main() {
+	// A server may close a connection while the test is still sending; that
+	// must surface as a failed send(), not kill this process and orphan the
+	// server it started.
+	signal(SIGPIPE, SIG_IGN);
+
 	unlink(kCgiPidFile);
 	pid_t server = startServer();
 	expect(server > 0 && waitForServer(server), "server starts on configured loopback port 8002");

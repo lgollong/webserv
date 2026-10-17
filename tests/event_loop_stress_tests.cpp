@@ -1,5 +1,6 @@
 #include "../headers/Worker.hpp"
 
+#include <csignal>
 #include <cstring>
 #include <iostream>
 #include <poll.h>
@@ -259,6 +260,11 @@ static bool pollerReportsInvalidFd() {
 }
 
 int main() {
+	// A server may close a connection while the test is still sending; that
+	// must surface as a failed send(), not kill this process and orphan the
+	// server it started.
+	signal(SIGPIPE, SIG_IGN);
+
 	expect(pollerReportsInvalidFd(), "poller reports POLLNVAL for a closed registered descriptor");
 	expect(WorkerEventLoopTests::halfClosedRequestQueuesResponse(),
 		"complete request with POLLIN|POLLHUP queues and flushes its response");
