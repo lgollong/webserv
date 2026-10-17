@@ -244,6 +244,11 @@ static std::string getRequest(const std::string &path) {
 }
 
 int main() {
+	// A server may close a connection while the test is still sending; that
+	// must surface as a failed send(), not kill this process and orphan the
+	// server it started.
+	signal(SIGPIPE, SIG_IGN);
+
 	pid_t server = startServer();
 	bool started = server > 0 && waitForServer(server);
 	expect(started, "server starts on configured loopback port 8002");

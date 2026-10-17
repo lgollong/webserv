@@ -250,6 +250,11 @@ static int countOccurrences(const std::string &value, const std::string &wanted)
 }
 
 int main() {
+	// A server may close a connection while the test is still sending; that
+	// must surface as a failed send(), not kill this process and orphan the
+	// server it started.
+	signal(SIGPIPE, SIG_IGN);
+
 	expect(writeDeleteFixture(), "creates a disposable delete lifecycle fixture");
 	pid_t server = startServer();
 	bool started = server > 0 && waitForServer(server);
