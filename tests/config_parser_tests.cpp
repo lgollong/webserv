@@ -303,6 +303,29 @@ int main() {
 	expectConfigError(missingLogPath, "log_level missing value", "rejects log_level without a value");
 	std::remove(missingLogPath.c_str());
 
+	const std::string cgiRootPath = temporaryPath("cgi-root");
+	expect(writeFile(cgiRootPath, "server {\n listen 8080;\n location /scripts {\n  root /var/www/cgi-bin;\n"
+		"  cgi .py /usr/bin/python3;\n }\n location / {\n  root ./contents;\n  cgi .sh /bin/bash;\n }\n}\n"),
+		"write CGI root fixture");
+	{
+		Config config(cgiRootPath);
+		Route direct = config.route(0, requestFor("/scripts/test.py"));
+		expect(direct.is_cgi && direct.cgi_script_name == "/scripts/test.py" &&
+			direct.cgi_script_path == "/var/www/cgi-bin/test.py",
+			"CGI script resolves beneath its location root with the location prefix removed");
+		Route pathInfo = config.route(0, requestFor("/scripts/nested/test.py/extra/info"));
+		expect(pathInfo.is_cgi && pathInfo.cgi_script_name == "/scripts/nested/test.py" &&
+			pathInfo.cgi_script_path == "/var/www/cgi-bin/nested/test.py",
+			"PATH_INFO stays outside the resolved script path");
+		Route rootLocation = config.route(0, requestFor("/cgi/test.sh"));
+		expect(rootLocation.is_cgi && rootLocation.cgi_script_path == "./contents/cgi/test.sh",
+			"root location keeps the full URL path beneath its root");
+		Route traversal = config.route(0, requestFor("/scripts/../test.py"));
+		expect(!traversal.is_cgi && traversal.cgi_script_path.empty(),
+			"CGI script traversal is rejected lexically");
+	}
+	std::remove(cgiRootPath.c_str());
+
 	const std::string relativeHandlerPath = temporaryPath("relative-cgi-handler");
 	expect(writeFile(relativeHandlerPath, "server {\n location /cgi {\n  cgi .py python3;\n }\n}\n"),
 		"write relative CGI handler fixture");
