@@ -69,7 +69,7 @@ The parser defaults a missing `listen` directive to port `8080` and inserts a GE
 
 | Listener | Routes |
 | --- | --- |
-| `0.0.0.0:8080` | `/`, `/files`, `/uploads`, `/cgi`, `/old-page`, and `/session` |
+| `0.0.0.0:8080` | `/`, `/files`, `/uploads` (with the `/upload.html` browser demo), `/cgi`, `/old-page`, and `/session` |
 
 `config/req.config` is a multi-listener fixture used by the updated configuration and connection-lifecycle tests. It defines servers on ports `8002`, `8003`, `8008`, and `8001` with static, upload, redirect, documentation, and CGI route examples.
 

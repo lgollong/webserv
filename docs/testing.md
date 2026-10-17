@@ -47,6 +47,14 @@ curl -i http://127.0.0.1:8080/cgi/test.sh
 
 The first serves the dashboard, `/files` produces the configured autoindex listing, `/old-page` returns a `301` redirect to `/`, and the CGI request requires the configured handler to exist on the machine.
 
+Upload, list, and delete files from a browser at `http://127.0.0.1:8080/upload.html`, or with curl:
+
+```sh
+curl -i -F "file=@README.md" http://127.0.0.1:8080/uploads          # 201, Location: /uploads/README.md
+curl http://127.0.0.1:8080/uploads/README.md                        # the uploaded bytes
+curl -i -X DELETE http://127.0.0.1:8080/uploads/README.md           # 204
+```
+
 To exercise the configured request-body limit, send a request above 10 MiB to a route that accepts POST and confirm `413 Payload Too Large`. To inspect the multi-server fixture instead, run `./webserv config/req.config` and connect to ports `8002`, `8003`, `8008`, and `8001`.
 
 ## Configuration Checks Still Needed

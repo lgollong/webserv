@@ -110,6 +110,7 @@ struct Content {
 	int          status;
 	std::string  body;
 	std::string  mime_type;
+	std::string  location;   // URL of a created resource, sent as Location
 
 	Content() : status(0) {}
 };
