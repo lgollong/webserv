@@ -28,6 +28,20 @@ static Request requestFor(const std::string &path) {
 	return request;
 }
 
+// serve() streams regular files through file_fd; tests read them back whole.
+static Content serveFully(StaticFile &files, const Route &route, const Request &request) {
+	Content content = files.serve(route, request);
+	if (content.file_fd >= 0) {
+		char buffer[4096];
+		ssize_t count;
+		while ((count = read(content.file_fd, buffer, sizeof(buffer))) > 0)
+			content.body.append(buffer, static_cast<size_t>(count));
+		close(content.file_fd);
+		content.file_fd = -1;
+	}
+	return content;
+}
+
 static Request multipartRequest(const std::string &path, const std::string &contentType,
 	const std::string &body) {
 	Request request = requestFor(path);
@@ -75,24 +89,24 @@ int main() {
 	Route root = routeFor("/", "./contents");
 	root.index_file = "index.html";
 
-	Content text = files.serve(root, requestFor("/files/index.html"));
+	Content text = serveFully(files, root, requestFor("/files/index.html"));
 	expect(text.status == 200 && text.mime_type == "text/html" &&
 		text.body.find("<h1>HI</h1>") != std::string::npos,
 		"serves a text file from the route root");
 
-	Content dashboardPage = files.serve(root, requestFor("/index.html"));
+	Content dashboardPage = serveFully(files, root, requestFor("/index.html"));
 	expect(dashboardPage.status == 200 && dashboardPage.mime_type == "text/html" &&
 		dashboardPage.body.find("browser-served project dashboard") != std::string::npos &&
 		dashboardPage.body.find("Runtime contract and current boundaries") != std::string::npos,
 		"serves the project dashboard from the default document root");
-	Content dashboardStyle = files.serve(root, requestFor("/dashboard.css"));
+	Content dashboardStyle = serveFully(files, root, requestFor("/dashboard.css"));
 	expect(dashboardStyle.status == 200 && dashboardStyle.mime_type == "text/css" &&
 		!dashboardStyle.body.empty(), "serves the dashboard stylesheet");
-	Content dashboardScript = files.serve(root, requestFor("/dashboard.js"));
+	Content dashboardScript = serveFully(files, root, requestFor("/dashboard.js"));
 	expect(dashboardScript.status == 200 && dashboardScript.mime_type == "application/javascript" &&
 		!dashboardScript.body.empty(), "serves the dashboard request inspector script");
 
-	Content binary = files.serve(root, requestFor("/files/favicon.ico"));
+	Content binary = serveFully(files, root, requestFor("/files/favicon.ico"));
 	expect(binary.status == 200 && binary.mime_type == "image/x-icon" &&
 		binary.body.size() > 32 && binary.body[0] == '\0',
 		"serves binary bytes with the matching MIME type");
@@ -104,21 +118,21 @@ int main() {
 	expect(files.readErrorPage("./contents/errors/missing.html").status != 200,
 		"reports a missing configured error page without serving content");
 
-	expect(files.serve(root, requestFor("/files/missing.txt")).status == 404,
+	expect(serveFully(files, root, requestFor("/files/missing.txt")).status == 404,
 		"missing files return 404");
-	Content rootIndex = files.serve(root, requestFor("/"));
+	Content rootIndex = serveFully(files, root, requestFor("/"));
 	expect(rootIndex.status == 200 && rootIndex.mime_type == "text/html" &&
 		rootIndex.body.find("browser-served project dashboard") != std::string::npos,
 		"serves the configured index for the route root");
 
-	Content directoryIndex = files.serve(root, requestFor("/files"));
+	Content directoryIndex = serveFully(files, root, requestFor("/files"));
 	expect(directoryIndex.status == 200 && directoryIndex.body.find("<title>Index Page</title>") != std::string::npos,
 		"serves a configured index for a directory request");
 
 	Route gallery = routeFor("/gallery", "./contents/gallery");
 	gallery.index_file = "gallery.html";
 	gallery.autoindex = true;
-	Content listing = files.serve(gallery, requestFor("/gallery"));
+	Content listing = serveFully(files, gallery, requestFor("/gallery"));
 	std::string::size_type alpha = listing.body.find("alpha.txt");
 	std::string::size_type nested = listing.body.find("nested/");
 	expect(listing.status == 200 && listing.mime_type == "text/html" &&
@@ -130,31 +144,31 @@ int main() {
 
 	Route noIndex = routeFor("/no-index", "./contents/no-index");
 	noIndex.index_file = "index.html";
-	expect(files.serve(noIndex, requestFor("/no-index")).status == 403,
+	expect(serveFully(files, noIndex, requestFor("/no-index")).status == 403,
 		"directories without an index require enabled autoindex");
 	Route unsafeIndex = routeFor("/files", "./contents/files");
 	unsafeIndex.index_file = "../AGENTS.md";
-	expect(files.serve(unsafeIndex, requestFor("/files")).status == 403,
+	expect(serveFully(files, unsafeIndex, requestFor("/files")).status == 403,
 		"unsafe configured index paths are rejected");
-	expect(files.serve(root, requestFor("/../AGENTS.md")).status == 403,
+	expect(serveFully(files, root, requestFor("/../AGENTS.md")).status == 403,
 		"parent traversal is rejected before disk access");
-	expect(files.serve(root, requestFor("/files/./index.html")).status == 403,
+	expect(serveFully(files, root, requestFor("/files/./index.html")).status == 403,
 		"current-directory traversal is rejected before disk access");
 
 	Route assets = routeFor("/assets", "./contents/files");
-	Content stripped = files.serve(assets, requestFor("/assets/index.html"));
+	Content stripped = serveFully(files, assets, requestFor("/assets/index.html"));
 	expect(stripped.status == 200 && stripped.body.find("<title>Index Page</title>") != std::string::npos,
 		"location prefix is stripped before resolving under the selected root");
-	expect(files.serve(assets, requestFor("/files/index.html")).status == 403,
+	expect(serveFully(files, assets, requestFor("/files/index.html")).status == 403,
 		"requests outside the selected location are rejected");
-	expect(files.serve(routeFor("/", ""), requestFor("/files/index.html")).status == 403,
+	expect(serveFully(files, routeFor("/", ""), requestFor("/files/index.html")).status == 403,
 		"an empty root is rejected");
 
 	const std::string fixturePath = "./contents/static-delete-fixture.txt";
 	expect(writeFixture(fixturePath), "creates a disposable static delete fixture");
 	Content deleted = files.erase(root, requestFor("/static-delete-fixture.txt"));
 	expect(deleted.status == 204 && deleted.body.empty(), "deletes a regular route-relative file without a body");
-	expect(files.serve(root, requestFor("/static-delete-fixture.txt")).status == 404,
+	expect(serveFully(files, root, requestFor("/static-delete-fixture.txt")).status == 404,
 		"deleted static file is no longer served");
 	expect(files.erase(root, requestFor("/files")).status == 403,
 		"directory deletion is rejected");
@@ -171,14 +185,14 @@ int main() {
 	upload.body = "focused upload body";
 	expect(files.upload(uploads, upload).status == 201, "stores an authorized upload");
 	expect(files.upload(uploads, upload).status == 409, "an existing upload target is a 409 conflict and is not overwritten");
-	Content uploaded = files.serve(uploads, requestFor("/uploads/focused-upload.txt"));
+	Content uploaded = serveFully(files, uploads, requestFor("/uploads/focused-upload.txt"));
 	expect(uploaded.status == 200 && uploaded.body == "focused upload body",
 		"upload route serves the stored file from upload_store at its upload URL");
-	expect(files.serve(uploads, requestFor("/uploads/index.html")).status == 404,
+	expect(serveFully(files, uploads, requestFor("/uploads/index.html")).status == 404,
 		"upload route does not fall back to files under the route root");
 	expect(files.erase(uploads, requestFor("/uploads/focused-upload.txt")).status == 204,
 		"upload route deletes the stored file at its upload URL");
-	expect(files.serve(uploads, requestFor("/uploads/focused-upload.txt")).status == 404,
+	expect(serveFully(files, uploads, requestFor("/uploads/focused-upload.txt")).status == 404,
 		"deleted upload is no longer served");
 	expect(files.upload(uploads, requestFor("/uploads/../unsafe.txt")).status == 400,
 		"rejects traversal upload names");
@@ -235,7 +249,7 @@ int main() {
 		missing("./contents/uploads/named.txt"),
 		"multipart upload must target the upload location itself");
 
-	expect(files.serve(root, requestFor("/index.html/below")).status == 404,
+	expect(serveFully(files, root, requestFor("/index.html/below")).status == 404,
 		"a path below a regular file is not found");
 	Route missingStore = routeFor("/uploads", "./contents");
 	missingStore.upload_store = "./contents/missing-upload-store";
@@ -251,14 +265,14 @@ int main() {
 		mkdir(lockedDir.c_str(), 0700);
 		expect(writeFixture(lockedDir + "/secret.txt"), "creates a permission fixture file");
 		chmod((lockedDir + "/secret.txt").c_str(), 0000);
-		expect(files.serve(root, requestFor("/permission-fixture/secret.txt")).status == 403,
+		expect(serveFully(files, root, requestFor("/permission-fixture/secret.txt")).status == 403,
 			"an unreadable file is forbidden");
 		chmod((lockedDir + "/secret.txt").c_str(), 0600);
 
 		Route listing = routeFor("/", "./contents");
 		listing.autoindex = true;
 		chmod(lockedDir.c_str(), 0300);
-		expect(files.serve(listing, requestFor("/permission-fixture")).status == 403,
+		expect(serveFully(files, listing, requestFor("/permission-fixture")).status == 403,
 			"an unreadable directory listing is forbidden");
 		chmod(lockedDir.c_str(), 0500);
 		expect(files.erase(root, requestFor("/permission-fixture/secret.txt")).status == 403,
@@ -272,6 +286,12 @@ int main() {
 		std::remove((lockedDir + "/secret.txt").c_str());
 		rmdir(lockedDir.c_str());
 	}
+
+	Content streamed = files.serve(root, requestFor("/files/index.html"));
+	expect(streamed.status == 200 && streamed.body.empty() && streamed.file_fd >= 0 &&
+		streamed.file_size > 0, "regular files are returned as an open descriptor for streaming");
+	if (streamed.file_fd >= 0)
+		close(streamed.file_fd);
 
 	if (failures == 0)
 		std::cout << "static file tests passed" << std::endl;

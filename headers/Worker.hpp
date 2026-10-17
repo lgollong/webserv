@@ -39,6 +39,9 @@ class Worker {
 		void acceptNew(int listen_fd, size_t serverIndex);
 		void dispatchReadyEvents(const std::vector<pollfd> &readyFds, std::map<int, size_t> &listeners,
 			const std::vector<ServerConfig> &servers);
+		void dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners,
+			const std::vector<ServerConfig> &servers);
+		bool refillFromBodyFile(Connection &conn);
 		void onReadable(Connection &conn);
 		void onWritable(Connection &conn);
 		void onCgiReadable(Connection &conn);

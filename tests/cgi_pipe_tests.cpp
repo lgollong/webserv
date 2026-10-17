@@ -302,6 +302,10 @@ int main() {
 		response.find("no CGI header block") == std::string::npos,
 		"CGI output without a header block is a 502 without leaking the output");
 	response.clear();
+	expect(request(getRequest("/cgi/test.sh?huge"), response) &&
+		response.find("HTTP/1.1 502 Bad Gateway") == 0 && response.size() < 4096,
+		"CGI output above the 16 MiB cap is a 502 instead of being buffered");
+	response.clear();
 	expect(request(getRequest("/cgi/test.sh?teapot"), response) &&
 		response.find("HTTP/1.1 502 Bad Gateway") == 0,
 		"CGI Status the server cannot serialize is a 502");

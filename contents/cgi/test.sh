@@ -10,6 +10,12 @@ if [ "$QUERY_STRING" = "malformed" ]; then
 	exit 0
 fi
 
+if [ "$QUERY_STRING" = "huge" ]; then
+	printf "Content-Type: application/octet-stream\r\n\r\n"
+	head -c 17000000 /dev/zero
+	exit 0
+fi
+
 if [ "$QUERY_STRING" = "teapot" ]; then
 	printf "Status: 418 I'm a teapot\r\nContent-Type: text/plain\r\n\r\nshort and stout\n"
 	exit 0
