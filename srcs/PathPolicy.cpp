@@ -2,9 +2,7 @@
 
 #include <dirent.h>
 
-// True when one of relative's '/'-separated components, looked up from root
-// downwards, is a symbolic link. A missing component is left to the caller's
-// stat()/open(), which reports it as 404 or 403.
+// is in separate file to not violate separation of concerns, as both Cgi and StaticFile depend on this
 bool pathHasSymlink(const std::string &root, const std::string &relative) {
 	std::string directory = root.empty() ? "." : root;
 	std::string::size_type start = 0;
