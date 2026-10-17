@@ -18,12 +18,6 @@
 #include <sstream>
 #include <stdexcept>
 
-// @note is error handling rigorous enough? memset etc. not handled?
-// @todo handle malformed requests
-// @note are we following the norm everywhere? e.g. no copy operator implemented etc.
-// @todo whole keep-alive shit isnt handled
-// @todo cgi logic incomplete
-
 Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &logger)
 : config(config), http(http), cgi(cgi), files(files), logger(logger) {}
 
