@@ -29,6 +29,9 @@ class Http {
 		Response     defaultErrorResponse(int status) const;
 		bool         supportsStatus(int status) const;
 		std::string  build(const Response &response);
+		// Status line and headers only, for a body of bodyLength bytes that the
+		// caller sends separately (streamed files).
+		std::string  buildHead(const Response &response, size_t bodyLength);
 };
 
 #endif

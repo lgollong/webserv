@@ -7,6 +7,9 @@
 // Forks/execs a script, wires up its I/O, collects output non-blockingly.
 class Cgi {
 	public:
+		// Collected CGI output is capped; a larger response becomes a 502.
+		enum { MAX_OUTPUT_BYTES = 16 * 1024 * 1024 };
+
 		Cgi();
 		~Cgi();
 

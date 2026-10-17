@@ -56,7 +56,8 @@ main
 - Resolves route-relative paths, rejects lexical `.` and `..` segments, identifies MIME types, serves regular files, and supports configured indexes/autoindex.
 - Implements permitted static `DELETE`, exclusive raw-body uploads, and `multipart/form-data` browser uploads; upload-enabled routes serve and delete from their `upload_store`.
 - Loads configured error-page files while preserving the original response status.
-- `To Fix`: canonicalize static paths to prevent symlinks beneath a root from exposing files outside it; avoid reading arbitrary static files fully into memory.
+- Streams served files from disk in 64 KiB chunks, so memory use does not grow with file size.
+- `To Fix`: canonicalize static paths to prevent symlinks beneath a root from exposing files outside it.
 
 ### `Cgi` - Partial
 
@@ -65,7 +66,8 @@ main
 - Streams request bodies to CGI through readiness events, collects output, applies timeouts, and frames the result through `Http`.
 - Validates CGI response framing, header syntax, and `Status`; malformed output becomes `502`.
 - Closes all server-owned descriptors in the child before `execve()`, so a CGI never holds a listener port or another client's connection open.
-- `To Fix`: bound collected CGI output, and ensure process-level shutdown cleans up active children.
+- Caps collected CGI output at 16 MiB; larger output terminates the child and returns `502`.
+- `To Fix`: ensure process-level shutdown cleans up active children.
 
 ### `SessionStore` - Implemented
 

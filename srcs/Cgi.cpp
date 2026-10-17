@@ -235,6 +235,11 @@ bool Cgi::collect(CgiJob &cgi) {
 	ssize_t n = read(cgi.out_fd, buf, sizeof(buf));
 
 	if (n > 0) {
+		if (cgi.output.size() + static_cast<size_t>(n) > MAX_OUTPUT_BYTES) {
+			cgi.failed = true;
+			cgi.done = true;
+			return true;
+		}
 		cgi.output.append(buf, static_cast<size_t>(n));
 		cgi.last_activity = time(NULL);
 		return false;

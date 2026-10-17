@@ -492,24 +492,30 @@ static bool isResponseHeader(const std::string &name, const std::string &value) 
 	return true;
 }
 
-std::string Http::build(const Response &response) {
+static int serializedStatus(const Response &response) {
 	int status = response.status ? response.status : 200;
-	const char *reason = reasonPhrase(status);
-	if (reason == NULL) {
-		status = 500;
-		reason = reasonPhrase(status);
-	}
+	return reasonPhrase(status) == NULL ? 500 : status;
+}
 
-	std::string body = response.body;
+std::string Http::build(const Response &response) {
+	int status = serializedStatus(response);
 	if (status == 204 || status == 304)
-		body.clear();
+		return buildHead(response, 0);
+	return buildHead(response, response.body.size()) + response.body;
+}
+
+std::string Http::buildHead(const Response &response, size_t bodyLength) {
+	int status = serializedStatus(response);
+	const char *reason = reasonPhrase(status);
+	if (status == 204 || status == 304)
+		bodyLength = 0;
 
 	std::string contentType;
 	if (!hasResponseHeader(response.headers, "content-type", contentType))
 		contentType = "text/html";
 
 	std::ostringstream len;
-	len << body.size();
+	len << bodyLength;
 
 	std::ostringstream out;
 	out << "HTTP/1.1 " << status << " " << reason << "\r\n";
@@ -521,7 +527,7 @@ std::string Http::build(const Response &response) {
 			continue;
 		out << it->first << ": " << it->second << "\r\n";
 	}
-	out << "\r\n" << body;
+	out << "\r\n";
 
 	return out.str();
 }

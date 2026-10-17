@@ -502,6 +502,62 @@ int main() {
 		close(redirectClosing);
 	}
 
+	// A large static file is streamed in chunks: a slow reader receives all of
+	// it with the announced length while other clients are still served.
+	const std::string largePath = "./contents/files/large-stream-fixture.bin";
+	const size_t largeSize = 40 * 1024 * 1024;
+	{
+		int largeFd = open(largePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		std::string block(1024 * 1024, 'L');
+		bool written = largeFd >= 0;
+		for (size_t i = 0; written && i < largeSize / block.size(); ++i)
+			written = write(largeFd, block.data(), block.size()) == static_cast<ssize_t>(block.size());
+		if (largeFd >= 0)
+			close(largeFd);
+		expect(written, "large static fixture is written");
+	}
+	int slowReader = connectToServer();
+	expect(slowReader >= 0, "large-file client connects");
+	if (slowReader >= 0) {
+		expect(sendAll(slowReader, request("/static/large-stream-fixture.bin", "close")), "large-file request is sent");
+		std::string head;
+		char chunk[65536];
+		while (head.find("\r\n\r\n") == std::string::npos && waitForFd(slowReader, POLLIN, kResponseTimeoutMs)) {
+			ssize_t count = read(slowReader, chunk, sizeof(chunk));
+			if (count <= 0)
+				break;
+			head.append(chunk, static_cast<size_t>(count));
+		}
+		std::ostringstream announced;
+		announced << "Content-Length: " << largeSize << "\r\n";
+		expect(head.find("HTTP/1.1 200 OK") == 0 && head.find(announced.str()) != std::string::npos,
+			"large file response announces its full length before streaming");
+
+		pending.clear();
+		int concurrent = connectToServer();
+		expect(concurrent >= 0 && sendAll(concurrent, request("/static/index.html", "")) &&
+			takeResponse(concurrent, pending, response) && response.find("<h1>HI</h1>") != std::string::npos,
+			"another client is served while a large file is still streaming");
+		if (concurrent >= 0)
+			close(concurrent);
+
+		size_t received = head.size() - (head.find("\r\n\r\n") + 4);
+		bool intact = true;
+		for (size_t i = head.find("\r\n\r\n") + 4; i < head.size(); ++i)
+			intact = intact && head[i] == 'L';
+		while (waitForFd(slowReader, POLLIN, kResponseTimeoutMs)) {
+			ssize_t count = read(slowReader, chunk, sizeof(chunk));
+			if (count <= 0)
+				break;
+			for (ssize_t i = 0; i < count; ++i)
+				intact = intact && chunk[i] == 'L';
+			received += static_cast<size_t>(count);
+		}
+		expect(received == largeSize && intact, "large file body arrives complete and unmodified");
+		close(slowReader);
+	}
+	std::remove(largePath.c_str());
+
 	int halfClosed = connectToServer();
 	expect(halfClosed >= 0, "half-closing client connects");
 	pending.clear();

@@ -105,6 +105,15 @@ int main() {
 			"supported status is serialized");
 	}
 
+	Response streamedHead;
+	streamedHead.status = 200;
+	streamedHead.headers["Content-Type"] = "application/octet-stream";
+	streamedHead.body = "ignored";
+	raw = http.buildHead(streamedHead, 123456);
+	expect(raw.find("HTTP/1.1 200 OK\r\n") == 0 && headerValue(raw, "Content-Length") == "123456" &&
+		raw.size() >= 4 && raw.compare(raw.size() - 4, 4, "\r\n\r\n") == 0,
+		"buildHead serializes only the head with the caller's body length");
+
 	const int defaultErrorStatuses[] = {400, 403, 404, 405, 409, 413, 431, 500, 501, 502, 505};
 	for (size_t i = 0; i < sizeof(defaultErrorStatuses) / sizeof(defaultErrorStatuses[0]); ++i) {
 		Response error = http.defaultErrorResponse(defaultErrorStatuses[i]);
