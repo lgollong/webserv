@@ -71,12 +71,19 @@ static std::string pathInfo(const Request &request, const Route &route) {
 	return request.path.substr(scriptName.size());
 }
 
+// scriptFile is the script's path as seen from the child's working
+// directory (its own directory), which is what interpreters such as
+// php-cgi open through SCRIPT_FILENAME.
 static std::vector<std::string> buildEnv(const Request &request, const Route &route,
-	const ServerConfig &server) {
+	const ServerConfig &server, const std::string &remoteAddr, const std::string &scriptFile) {
 	std::vector<std::string> env;
 
 	env.push_back("REQUEST_METHOD=" + request.method);
 	env.push_back("SCRIPT_NAME=" + route.cgi_script_name);
+	env.push_back("SCRIPT_FILENAME=" + scriptFile);
+	env.push_back("REQUEST_URI=" + request.path + (request.query.empty() ? "" : "?" + request.query));
+	env.push_back("REMOTE_ADDR=" + remoteAddr);
+	env.push_back("REDIRECT_STATUS=200");
 	env.push_back("PATH_INFO=" + pathInfo(request, route));
 	env.push_back("QUERY_STRING=" + request.query);
 	env.push_back("GATEWAY_INTERFACE=CGI/1.1");
@@ -139,7 +146,8 @@ static std::string directoryOf(const std::string &path) {
 	return path.substr(0, slash);
 }
 
-CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig &server) {
+CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig &server,
+	const std::string &remoteAddr) {
 	CgiJob job;
 	std::string scriptPath;
 	// Handlers must be absolute: the child changes into the script directory
@@ -176,7 +184,7 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 		const std::string scriptFile = baseNameOf(scriptPath);
 		const std::string directScript = "./" + scriptFile;
 
-		std::vector<std::string> envStrings = buildEnv(request, route, server);
+		std::vector<std::string> envStrings = buildEnv(request, route, server, remoteAddr, scriptFile);
 		std::vector<char*> envp;
 		for (size_t i = 0; i < envStrings.size(); ++i)
 				envp.push_back(const_cast<char*>(envStrings[i].c_str()));
