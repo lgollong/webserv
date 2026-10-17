@@ -619,7 +619,6 @@ void Worker::onReadable(Connection &conn) {
 	// response has been fully written.
 }
 
-// @todo test with response thats too big for one write cycle
 // write logic
 	// write() outbuff into fd
 	// keep track of what has been written and what remains
