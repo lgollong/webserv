@@ -28,7 +28,7 @@ Location directives:
 | `autoindex on|off;` | Enables or disables generated directory listings. |
 | `allowed_methods <method> ...;` | Permitted request methods. `allow_methods` is accepted as an alias. Missing values default to `GET`. Only `GET`, `POST`, and `DELETE` are implemented; other listed methods are accepted by the parser but answered with `501`. |
 | `upload_store <path>;` | Storage directory for uploads. It does not enable upload dispatch by itself. |
-| `upload on|off;` | `on` authorizes POST uploads and requires `upload_store`; `off` prevents uploads even when a store is configured. |
+| `upload on|off;` | `on` authorizes POST uploads and requires `upload_store`; `off` prevents uploads even when a store is configured. With `upload on`, `upload_store` also replaces `root` for GET, DELETE, and autoindex on that location, so `POST /uploads/a.txt`, `GET /uploads/a.txt`, and `DELETE /uploads/a.txt` address the same file. |
 | `return [300-399] <target>;` | Configured redirect. The status defaults to `302`. |
 | `cgi <extension> <handler>;` | Maps a script extension to an absolute interpreter/executable path. Relative handler paths are configuration errors because CGI children run from the script directory. |
 | `session_demo on|off;` | `on` dispatches this route to the bonus cookie/session demonstration (`SessionStore`) instead of static/CGI handling; `off` (the default) leaves the route unaffected. |

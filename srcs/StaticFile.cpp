@@ -49,8 +49,17 @@ static bool hasUnsafeSegment(const std::string &path) {
 	return false;
 }
 
+// Upload routes keep their files in upload_store, so GET, DELETE, and
+// autoindex on the same URL resolve there instead of under the route root.
+static const std::string &filesystemBase(const Route &route) {
+	if (route.upload_enabled && !route.upload_store.empty())
+		return route.upload_store;
+	return route.root;
+}
+
 static bool resolvePath(const Route &route, const Request &request, std::string &path) {
-	if (route.root.empty() || !matchesLocation(request.path, route.location))
+	const std::string &base = filesystemBase(route);
+	if (base.empty() || !matchesLocation(request.path, route.location))
 		return false;
 
 	std::string relative = request.path.substr(route.location.size());
@@ -59,7 +68,7 @@ static bool resolvePath(const Route &route, const Request &request, std::string 
 	if (hasUnsafeSegment(relative))
 		return false;
 
-	path = route.root;
+	path = base;
 	if (path[path.size() - 1] != '/')
 		path += '/';
 	path += relative;
