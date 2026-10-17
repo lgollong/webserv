@@ -33,7 +33,7 @@ make SANITIZE=address re
 
 ### Run
 
-The executable takes an optional configuration-file argument. Without one it loads `config/default.config`, relative to the working directory, so run it from the repository root. The default demonstration configuration listens on `0.0.0.0:8080`:
+The executable takes an optional configuration-file argument. Without one it loads `config/default.config`, relative to the working directory, so run it from the repository root. The default configuration serves the evaluation guide on `0.0.0.0:8080` and a second website on `127.0.0.1:8081`:
 
 ```sh
 ./webserv                         # same as ./webserv config/default.config
@@ -42,13 +42,15 @@ The executable takes an optional configuration-file argument. Without one it loa
 
 Logging is set by the top-level `log_level none|error|debug;` line in the configuration file (default `error`). Use `debug` to trace every connection, request, and response; `none` silences runtime logs. Errors that stop the server are always printed.
 
-Open the dashboard at:
+Open the evaluation guide at:
 
 ```sh
 open http://127.0.0.1:8080/
 ```
 
-`config/req.config` is a multi-server integration fixture. It listens on `127.0.0.1:8002`, `:8003`, `:8008`, and `:8001`; it is not the configuration for the dashboard command above. See [Runtime Configuration Model](docs/configuration-model.md) for supported directives and their current semantics.
+The guide follows the evaluation sheet section by section and runs each check (status codes, uploads, DELETE permissions, CGI errors and timeouts, redirects, sessions) from the browser. Terminal-only checks, such as the port conflict and siege, are listed as commands.
+
+`config/conflict.config` puts two servers on the same interface and port; `./webserv config/conflict.config` must stop with `bind: Address already in use`. `config/req.config` is a multi-server integration fixture. It listens on `127.0.0.1:8002`, `:8003`, `:8008`, and `:8001`; it is not the configuration for the guide. See [Runtime Configuration Model](docs/configuration-model.md) for supported directives and their current semantics.
 
 ### Tests
 

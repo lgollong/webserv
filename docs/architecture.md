@@ -90,7 +90,8 @@ main
 
 ## Supplied Configurations
 
-- `config/default.config`: browser demonstration on port `8080`, with `/`, `/files`, `/uploads` (and the `/upload.html` page), `/cgi` (Python and shell), `/old-page`, and the `/session` cookie demonstration.
+- `config/default.config`: the evaluation guide on `0.0.0.0:8080`, with a GET-only `/`, `/files` (autoindex of `./contents/files`), `/uploads` (and the `/upload.html` page), `/cgi` (Python and shell, plus the `crash.py` and `loop.py` error fixtures), `/old-page`, and the `/session` cookie demonstration; and a second website on `127.0.0.1:8081` with its own root, 404 page, and a 32-byte body limit.
+- `config/conflict.config`: two servers on the same interface and port, which must fail at startup.
 - `config/req.config`: multi-listener fixture on ports `8002`, `8003`, `8008`, and `8001` used by parser and connection-lifecycle coverage.
 
 ## Verification Status

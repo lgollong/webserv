@@ -31,13 +31,13 @@ Targets run sequentially because integration suites bind fixed loopback ports.
 
 ## Browser and Curl Checks
 
-Build and start the default demonstration configuration:
+Build and start the default configuration:
 
 ```sh
 make && ./webserv config/default.config
 ```
 
-Then inspect these parser-backed routes:
+Open `http://127.0.0.1:8080/`. The evaluation guide follows the evaluation sheet and runs each check from the browser, marking it green when the status code matches. Or inspect these routes with curl:
 
 ```sh
 curl -i http://127.0.0.1:8080/
@@ -48,7 +48,7 @@ curl -i "http://127.0.0.1:8080/cgi/test.py?name=webserv"
 curl -i -d "message=hi" http://127.0.0.1:8080/cgi/test.py
 ```
 
-The first serves the dashboard, `/files` produces the configured autoindex listing, `/old-page` returns a `301` redirect to `/`, and the CGI requests run `contents/cgi/test.sh` through `/bin/bash` and `contents/cgi/test.py` through `/usr/bin/python3`, the only two handlers in the supplied configurations.
+The first serves the guide, `/files` produces the configured autoindex listing, `/old-page` returns a `301` redirect to `/`, and the CGI requests run `contents/cgi/test.sh` through `/bin/bash` and `contents/cgi/test.py` through `/usr/bin/python3`, the only two handlers in the supplied configurations.
 
 Upload, list, and delete files from a browser at `http://127.0.0.1:8080/upload.html`, or with curl:
 
@@ -58,11 +58,20 @@ curl http://127.0.0.1:8080/uploads/README.md                        # the upload
 curl -i -X DELETE http://127.0.0.1:8080/uploads/README.md           # 204
 ```
 
-To exercise the configured request-body limit, send a request above 10 MiB to a route that accepts POST and confirm `413 Payload Too Large`. To inspect the multi-server fixture instead, run `./webserv config/req.config` and connect to ports `8002`, `8003`, `8008`, and `8001`.
+CGI error handling: `/cgi/crash.py` and `/cgi/test.sh?malformed` return `502`, and `/cgi/loop.py` returns `502` after the 15-second CGI timeout while other requests keep being served.
+
+To exercise the request-body limit, use the second website's 32-byte limit:
+
+```sh
+curl -i -X POST --data "short" http://127.0.0.1:8081/cgi/test.sh                                                    # 200
+curl -i -X POST -H "Content-Type: plain/text" --data "BODY IS HERE write something shorter or longer than body limit" http://127.0.0.1:8081/cgi/test.sh   # 413
+```
+
+To inspect the multi-server fixture instead, run `./webserv config/req.config` and connect to ports `8002`, `8003`, `8008`, and `8001`.
 
 ## Configuration Checks Still Needed
 
-Duplicate host/port pairs and invalid listener addresses are rejected when `Worker` creates the listeners at startup (`bind` fails, or `getaddrinfo` rejects the address), not by the parser, and have no automated test yet.
+Duplicate host/port pairs and invalid listener addresses are rejected when `Worker` creates the listeners at startup (`bind` fails, or `getaddrinfo` rejects the address), not by the parser, and have no automated test yet. Check it manually with `./webserv config/conflict.config`, which must exit with `bind: Address already in use`.
 
 ## Optional Comparison and Stress Checks
 
