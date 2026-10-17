@@ -188,12 +188,7 @@ static const int kPollTimeoutMs = 1000;
 static const time_t kClientIdleTimeoutSeconds = 30;
 static const time_t kCgiTimeoutSeconds = 15;
 static const time_t kCgiTerminationGraceSeconds = 2;
-// A running CGI cannot parse the next request until its response is complete.
-// Bound that deferred input so a client cannot grow one connection's buffer
-// without limit during the CGI timeout window.
 static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
-// Static files are streamed from disk in chunks of this size, refilled each
-// time the client socket has drained the previous chunk.
 static const size_t kFileChunkBytes = 64 * 1024;
 
 void Worker::run() {
@@ -208,15 +203,6 @@ void Worker::run() {
 		logger.debug() << "Worker: " << "fd: " << listenFd << " listening on :" << servers[index].port;
 	}
 
-	// loop
-		// poll to get ready fds
-		// loop over ready fds
-			// if ready fd = listen fd && ready fd revents = POLLIN
-				// accept new connection
-			// else if ready fd revents = POLLIN, POLLHUP, POLLERR
-				// read logic
-			// else if ready fd revents = POLLOUT
-				// write logic
 	while (true) {
 		int ready_count = poller.poll(kPollTimeoutMs);
 		if (ready_count < 0) {
@@ -228,9 +214,6 @@ void Worker::run() {
 			continue;
 		}
 
-		// Callbacks can remove fds, so iterate a stable snapshot of poll results.
-		// Per-event failures are handled in dispatchReadyEvents(); this guard
-		// keeps the loop alive if the snapshot or the sweep itself fails.
 		try {
 			std::vector<pollfd> ready_fds = poller.events();
 
@@ -246,8 +229,6 @@ void Worker::run() {
 	}
 }
 
-// One failing event (for example std::bad_alloc while building a response)
-// closes only the connection it belongs to instead of ending the loop.
 void Worker::dispatchReadyEvents(const std::vector<pollfd> &readyFds,
 	std::map<int, size_t> &listeners, const std::vector<ServerConfig> &servers) {
 	for (size_t i = 0; i < readyFds.size(); i++) {
@@ -330,10 +311,6 @@ void Worker::dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners
 			onWritable(*conn);
 		}
 
-		// macOS reports a client's half-close (shutdown(SHUT_WR)) as
-		// POLLIN|POLLHUP while the socket stays writable. Keep reading
-		// until EOF instead of closing on POLLHUP, and let a queued
-		// response flush; the write result decides if the peer is gone.
 		if ((event.revents & POLLHUP) && !(event.revents & POLLIN)) {
 			std::map<int, Connection*>::iterator current = fdToConnection.find(event.fd);
 			if (current != fdToConnection.end() && current->second->phase != WRITING)
@@ -375,7 +352,6 @@ void Worker::onCgiReadable(Connection &conn) {
 	if (!cgi.collect(conn.txn.cgi))
 		return ;
 	if (conn.txn.cgi.failed) {
-		// Read error or output above Cgi::MAX_OUTPUT_BYTES: stop the child.
 		failCgiJob(conn);
 		return ;
 	}
@@ -552,9 +528,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 		}
 
 		conn.phase = RUNNING_CGI;
-		// Keep watching the client while CGI runs so disconnects are detected and
-		// additional request bytes can be buffered without starting a new
-		// transaction before the current CGI response is complete.
+
 		poller.setEvents(conn.fd, POLLIN);
 		if (conn.txn.request.body.empty())
 			closeManagedFd(conn.txn.cgi.in_fd);
@@ -575,7 +549,6 @@ void Worker::processBufferedRequest(Connection &conn) {
 	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 	applyConnectionPolicy(conn, conn.txn.response);
 	if (content.file_fd >= 0) {
-		// Send the head now; onWritable() streams the file body after it.
 		conn.body_fd = content.file_fd;
 		conn.body_remaining = content.file_size;
 		conn.outbuf = http.buildHead(conn.txn.response, content.file_size);
@@ -587,7 +560,6 @@ void Worker::processBufferedRequest(Connection &conn) {
 	poller.setEvents(conn.fd, POLLOUT);
 }
 
-// A queued response owns the current transaction until its last byte is written.
 void Worker::onReadable(Connection &conn) {
 	char buf[4096];
 	ssize_t n = read(conn.fd, buf, sizeof(buf));
@@ -613,10 +585,6 @@ void Worker::onReadable(Connection &conn) {
 		processBufferedRequest(conn);
 		return ;
 	}
-	// A client may send a pipelined or fragmented next request while CGI is
-	// running. Keep those bytes in the connection buffer, but never replace the
-	// active transaction. The buffered request is processed after the current
-	// response has been fully written.
 }
 
 // write logic
@@ -649,9 +617,6 @@ void Worker::onWritable(Connection &conn) {
 	finishClientResponse(conn);
 }
 
-// Loads the next chunk of a streamed file into outbuf. Regular disk files are
-// exempt from poll() readiness. Returns false if the file ended before the
-// announced Content-Length, which leaves closing as the only valid framing.
 bool Worker::refillFromBodyFile(Connection &conn) {
 	conn.outbuf.clear();
 	conn.sent = 0;
@@ -740,8 +705,6 @@ void Worker::finishCgiResponse(Connection &conn) {
 	closeManagedFd(conn.txn.cgi.out_fd);
 	closeManagedFd(conn.txn.cgi.in_fd);
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
-	// A syntactically valid Status the server cannot serialize is still a bad
-	// upstream response.
 	if (!http.supportsStatus(conn.txn.response.status)) {
 		conn.txn.response = Response();
 		conn.txn.response.status = 502;
