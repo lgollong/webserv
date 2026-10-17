@@ -420,8 +420,9 @@ int main() {
 			"authorized upload stores the complete body and reports its location");
 		expect(sendAll(persistent, uploadRequest("/uploads/lifecycle-upload.txt", uploadBody)),
 			"duplicate upload request is sent");
-		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
-			"duplicate upload target is not overwritten");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 409 Conflict") == 0 &&
+			response.find("<h1>409 Conflict</h1>") != std::string::npos,
+			"duplicate upload target is a 409 conflict with a default error page and is not overwritten");
 		const std::string formBody =
 			"--lifecycleBoundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"lifecycle form.txt\"\r\n"
 			"Content-Type: text/plain\r\n\r\nform upload body\r\n--lifecycleBoundary--\r\n";

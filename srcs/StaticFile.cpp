@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <dirent.h>
 #include <fcntl.h>
@@ -94,11 +95,23 @@ static Content errorContent(int status) {
 	return content;
 }
 
+// Maps the errno left by a failed stat/open/opendir/remove on the local
+// filesystem to an HTTP status. The subject forbids inspecting errno only
+// after socket/pipe read/write, so storeFile() still maps a failed write()
+// to 500 without looking at it.
+static int statusForFilesystemError(int error) {
+	if (error == ENOENT || error == ENOTDIR || error == ENAMETOOLONG)
+		return 404;
+	if (error == EACCES || error == EPERM)
+		return 403;
+	return 500;
+}
+
 static Content readRegularFile(const std::string &path, const struct stat &info,
 	const std::map<std::string, std::string> &mimeTypes) {
 	int fd = open(path.c_str(), O_RDONLY);
 	if (fd < 0)
-		return errorContent(403);
+		return errorContent(statusForFilesystemError(errno));
 
 	Content content;
 	content.status = 200;
@@ -184,7 +197,7 @@ static bool directoryEntryLess(const DirectoryEntry &left, const DirectoryEntry 
 static Content directoryListing(const std::string &path, const std::string &requestPath) {
 	DIR *directory = opendir(path.c_str());
 	if (directory == NULL)
-		return errorContent(403);
+		return errorContent(statusForFilesystemError(errno));
 
 	std::vector<DirectoryEntry> entries;
 	struct dirent *entry = NULL;
@@ -227,7 +240,7 @@ Content StaticFile::serve(const Route &route, const Request &request) {
 
 	struct stat info;
 	if (stat(path.c_str(), &info) != 0)
-		return errorContent(404);
+		return errorContent(statusForFilesystemError(errno));
 	if (S_ISREG(info.st_mode))
 		return readRegularFile(path, info, mime_types);
 	if (!S_ISDIR(info.st_mode))
@@ -253,11 +266,11 @@ Content StaticFile::erase(const Route &route, const Request &request) {
 
 	struct stat info;
 	if (stat(path.c_str(), &info) != 0)
-		return errorContent(404);
+		return errorContent(statusForFilesystemError(errno));
 	if (!S_ISREG(info.st_mode))
 		return errorContent(403);
 	if (std::remove(path.c_str()) != 0)
-		return errorContent(500);
+		return errorContent(statusForFilesystemError(errno));
 
 	Content content;
 	content.status = 204;
@@ -275,11 +288,18 @@ static bool safeUploadName(const std::string &name) {
 	return true;
 }
 
-// Writes data to a new file; never replaces an existing one.
+// Writes data to a new file; never replaces an existing one. An existing
+// target is a 409 conflict; a missing upload_store is a server
+// configuration problem (500), not a missing client resource.
 static int storeFile(const std::string &path, const std::string &data) {
 	int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
-	if (fd < 0)
-		return 403;
+	if (fd < 0) {
+		if (errno == EEXIST)
+			return 409;
+		if (errno == EACCES || errno == EPERM)
+			return 403;
+		return 500;
+	}
 	std::string::size_type written = 0;
 	while (written < data.size()) {
 		ssize_t count = write(fd, data.data() + written, data.size() - written);
