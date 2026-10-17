@@ -3,93 +3,292 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="A browser-served project dashboard for the 42 webserv project.">
-	<title>webserv | project dashboard</title>
+	<meta name="description" content="Evaluation guide for the 42 webserv project: a browser-served project dashboard that runs every evaluation-sheet check.">
+	<title>webserv | evaluation guide</title>
+	<link rel="icon" href="/files/favicon.ico">
 	<link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
-	<a class="skip-link" href="#main">Skip to content</a>
-	<header class="site-header">
-		<a class="wordmark" href="/" aria-label="webserv dashboard home">webserv</a>
-		<nav aria-label="Primary navigation"><a href="#technical">Runtime</a><a href="#demos">Demos</a><a href="#testing">Testing</a></nav>
+	<header class="topbar">
+		<div class="topbar-inner">
+			<a class="wordmark" href="/">webserv</a>
+			<nav aria-label="Evaluation sections">
+				<a href="#config">Config</a><a href="#basics">Basics</a><a href="#cgi">CGI</a><a href="#browser">Browser</a><a href="#ports">Ports</a><a href="#stress">Siege</a><a href="#bonus">Bonus</a><a href="#code">Code</a>
+			</nav>
+			<span id="progress" class="progress" role="status">0 / 0 passed</span>
+		</div>
 	</header>
-	<main id="main">
-		<section class="hero" aria-labelledby="page-title">
-			<div class="hero-content page-width">
-				<p class="eyebrow"><span class="status-mark" aria-hidden="true"></span>browser-served project dashboard</p>
-				<h1 id="page-title">webserv</h1>
-				<p class="hero-copy">A C++98 HTTP server built around one readiness-driven event loop. This page is served by the server it describes.</p>
-				<div class="hero-actions"><a class="button button-primary" href="#technical">Read the runtime contract</a><a class="button button-quiet" href="#testing">Run the suite</a></div>
+
+	<main class="page">
+		<section class="intro">
+			<p class="eyebrow">Evaluation guide &middot; a browser-served project dashboard</p>
+			<h1 id="page-title">webserv</h1>
+			<p class="lead">This page is served by the server it tests. Each section follows the evaluation sheet. <strong>Run</strong> sends the request from your browser and compares the status code; <strong>Open</strong> shows the real page, so you can check it in the Network tab.</p>
+			<div class="commands">
+				<div class="command"><span>Start (from the repository root)</span><code>make &amp;&amp; ./webserv</code></div>
+				<div class="command"><span>Same, explicit config</span><code>./webserv config/default.config</code></div>
 			</div>
-			<div class="hero-foot page-width"><span>Port 8080</span><span>HTTP/1.1</span><span>Parsed configuration active</span></div>
+			<p class="note">Configuration: <code>config/default.config</code>. Website&nbsp;1 is this guide on <code>0.0.0.0:8080</code>; website&nbsp;2 is on <code>127.0.0.1:8081</code>.</p>
 		</section>
-		<section class="section page-width" aria-labelledby="snapshot-title">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Implementation snapshot</p><h2 id="snapshot-title">What is running here</h2><p>The server handles the connections, request parsing, routing, static files, CGI pipes, and response bytes behind this dashboard.</p></div>
-			<div class="stat-grid">
-				<article class="stat-card"><strong>1</strong><span>poll-driven event loop</span></article>
-				<article class="stat-card stat-cyan"><strong>1</strong><span>default configured listener</span></article>
-				<article class="stat-card stat-coral"><strong>2</strong><span>configured CGI mappings</span></article>
-				<article class="stat-card stat-green"><strong>14</strong><span>registered test targets</span></article>
+
+		<section id="config" class="block">
+			<div class="block-head">
+				<h2>Configuration</h2>
+				<button class="run-all" type="button">Run section</button>
 			</div>
+			<p>Every rule below comes from <code>config/default.config</code>. Edit the file and restart to change it.</p>
+			<ul class="checks">
+				<li class="check">
+					<div class="check-text"><strong>Several websites on different interfaces and ports</strong><span>Website 1: <code>0.0.0.0:8080</code> (this page). Website 2: <code>127.0.0.1:8081</code>, with its own root and its own 404 page.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><a class="open" href="http://127.0.0.1:8081/" target="_blank" rel="noopener">Open :8081</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/does-not-exist" data-expect="404">
+					<div class="check-text"><strong>Custom error page</strong><span><code>error_page 404 ./contents/errors/404.html</code>. The file is read on every request: edit it and reload to see your change, no restart needed.</span></div>
+					<span class="expect">404</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/does-not-exist">Open</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/no-index/" data-expect="403">
+					<div class="check-text"><strong>Default error page</strong><span>No custom page is configured for 403, so the server generates its own.</span></div>
+					<span class="expect">403</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/no-index/">Open</a></div>
+				</li>
+				<li class="check check-form">
+					<div class="check-text"><strong>Request body limit</strong><span>Website 2 sets <code>client_max_body_size 32</code>. Up to 32 bytes &rarr; <code>200</code> from the CGI echo; longer &rarr; <code>413</code>. The result opens in a new tab.</span></div>
+					<span class="expect">200 / 413</span>
+					<form class="limit-form" action="http://127.0.0.1:8081/cgi/test.sh" method="post" enctype="text/plain" target="_blank">
+						<textarea name="body" rows="2" aria-label="Request body">short</textarea>
+						<div class="actions">
+							<button class="fill" type="button" data-fill="short">Short body</button>
+							<button class="fill" type="button" data-fill="BODY IS HERE write something shorter or longer than body limit">Long body</button>
+							<button class="run" type="submit">POST to :8081</button>
+						</div>
+					</form>
+					<div class="command"><span>With curl, as in the evaluation sheet (62 bytes &rarr; 413)</span><code>curl -i -X POST -H "Content-Type: plain/text" --data "BODY IS HERE write something shorter or longer than body limit" http://127.0.0.1:8081/cgi/test.sh</code></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/files/sample.txt" data-expect="200">
+					<div class="check-text"><strong>Route to another directory</strong><span><code>location /files { root ./contents/files; }</code>: the prefix is replaced, so <code>/files/sample.txt</code> reads <code>./contents/files/sample.txt</code>.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/files/sample.txt">Open</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/" data-expect="200">
+					<div class="check-text"><strong>Default file for a directory</strong><span><code>index index.html</code> on <code>/</code>: requesting the directory serves this page.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/">Open</a></div>
+				</li>
+				<li class="check" data-method="DELETE" data-path="/files/sample.txt" data-expect="405">
+					<div class="check-text"><strong>DELETE without permission</strong><span><code>/files</code> allows only <code>GET</code>, so this answers 405 with an <code>Allow</code> header. The file is not touched.</span></div>
+					<span class="expect">405</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-action="delete-cycle" data-expect="201 204 404">
+					<div class="check-text"><strong>DELETE with permission</strong><span><code>/uploads</code> allows <code>DELETE</code>: create a file with POST, delete it, then confirm it is gone.</span></div>
+					<span class="expect">201 &rarr; 204 &rarr; 404</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+			</ul>
 		</section>
-		<section class="section section-ink" aria-labelledby="path-title"><div class="page-width">
-			<div class="section-heading section-heading-light"><p class="eyebrow">The working path</p><h2 id="path-title">A request stays in one loop</h2></div>
-			<ol class="route-flow">
-				<li><span>01</span><strong>Browser</strong><small>A request reaches a listener.</small></li>
-				<li><span>02</span><strong>Poller</strong><small>Readiness decides the next I/O step.</small></li>
-				<li><span>03</span><strong>Handler</strong><small>Static, CGI, redirect, upload, or DELETE.</small></li>
-				<li><span>04</span><strong>Response</strong><small>HTTP bytes flush without blocking the loop.</small></li>
-			</ol>
-		</div></section>
-		<section id="technical" class="section technical-section" aria-labelledby="technical-title"><div class="page-width">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Evaluator notes</p><h2 id="technical-title">Runtime contract and current boundaries</h2><p>This is the model implemented by the current code, not a target architecture diagram. The server remains one process; only CGI execution forks a child.</p></div>
-			<div class="technical-layout">
-				<div class="runtime-list" role="list">
-					<div role="listitem"><strong>FD ownership</strong><p><code>Poller</code> owns one <code>poll()</code> set for listening sockets, client sockets, and parent CGI pipe ends. <code>Worker</code> dispatches the resulting readiness events.</p></div>
-					<div role="listitem"><strong>Connection state</strong><p>Each client has a <code>Connection</code> with input/output buffers, write cursor, keep-alive policy, listener-selected server index, and one <code>Transaction</code>.</p></div>
-					<div role="listitem"><strong>I/O rule</strong><p>Socket and pipe descriptors are non-blocking. Reads and writes happen only after readiness, and their return values drive control flow without inspecting <code>errno</code>.</p></div>
-					<div role="listitem"><strong>CGI boundary</strong><p><code>CgiJob</code> owns the child PID and pipe progress. Handler and script target are distinct; the script path is checked beneath the route root before <code>execve</code>.</p></div>
-				</div>
-				<div class="status-ledger"><table><caption>Implementation ledger</caption><thead><tr><th>Area</th><th>Current behavior</th><th>Evidence</th></tr></thead><tbody>
-					<tr><td>HTTP</td><td>HTTP/1.1 parsing, chunked decoding, framing, error responses, and persistence.</td><td><code>http-*-test</code></td></tr>
-					<tr><td>Static routes</td><td>Roots, MIME types, indexes, autoindex, uploads, DELETE, redirects, and error pages.</td><td><code>static-file-test</code></td></tr>
-					<tr><td>CGI</td><td>Non-blocking pipes, request context, timeouts, and parser-configured handlers.</td><td><code>cgi-*-test</code></td></tr>
-					<tr><td>Config</td><td>Parser-backed server and location directives with model and malformed-input coverage.</td><td><code>config-model-test</code>, <code>config-parser-test</code></td></tr>
-					<tr><td>Resilience</td><td>Controlled client cleanup, bounded CGI termination/reap, and listener survival.</td><td><code>resilience-test</code></td></tr>
-				</tbody></table></div>
+
+		<section id="basics" class="block">
+			<div class="block-head">
+				<h2>Basic checks</h2>
+				<button class="run-all" type="button">Run section</button>
 			</div>
-		</div></section>
-		<section id="demos" class="section page-width" aria-labelledby="demos-title">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Live demonstrations</p><h2 id="demos-title">Open a route the server actually handles</h2><p>These routes come from <code>config/default.config</code>, which the server parses at startup.</p></div>
-			<div class="demo-grid">
-				<a class="demo-link" href="/files/index.html"><span>GET</span><strong>Static file</strong><small>/files/index.html</small></a>
-				<a class="demo-link" href="/files"><span>GET</span><strong>Autoindex</strong><small>/files</small></a>
-				<a class="demo-link" href="/old-page"><span>301</span><strong>Redirect</strong><small>/old-page</small></a>
-				<a class="demo-link" href="/cgi/test.sh"><span>CGI</span><strong>Shell script</strong><small>/cgi/test.sh</small></a>
-				<a class="demo-link" href="/cgi/test.py?name=webserv"><span>CGI</span><strong>Python script</strong><small>/cgi/test.py</small></a>
-				<a class="demo-link" href="/upload.html"><span>POST</span><strong>Upload and delete</strong><small>/upload.html</small></a>
-			</div>
+			<p>GET, POST and DELETE work, an unknown method does not crash the server, and every answer has the right status code.</p>
+			<ul class="checks">
+				<li class="check" data-method="GET" data-path="/files/sample.txt" data-expect="200">
+					<div class="check-text"><strong>GET</strong><span>A static file.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="POST" data-path="/cgi/test.py" data-body="message=hello" data-expect="200">
+					<div class="check-text"><strong>POST</strong><span>A body sent to a CGI script, which echoes it back.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="POST" data-path="/" data-body="x" data-expect="405">
+					<div class="check-text"><strong>POST where it is not allowed</strong><span><code>/</code> is GET-only.</span></div>
+					<span class="expect">405</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="FOO" data-path="/" data-expect="501">
+					<div class="check-text"><strong>UNKNOWN method</strong><span><code>FOO /</code>: answered with 501, and the server keeps running.</span></div>
+					<span class="expect">501</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="PUT" data-path="/" data-expect="501">
+					<div class="check-text"><strong>Unimplemented method</strong><span><code>PUT /</code>: only GET, POST and DELETE are implemented.</span></div>
+					<span class="expect">501</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-action="delete-cycle" data-expect="201 204 404">
+					<div class="check-text"><strong>DELETE</strong><span>Creates, deletes and re-checks a file in <code>/uploads</code>.</span></div>
+					<span class="expect">201 &rarr; 204 &rarr; 404</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check">
+					<div class="check-text"><strong>Upload files and retrieve them</strong><span>Upload from the browser, open each stored file, delete it. Files are stored byte-for-byte in <code>./contents/uploads</code>.</span></div>
+					<span class="expect">201</span>
+					<div class="actions"><a class="open" href="/upload.html">Open uploads</a></div>
+				</li>
+			</ul>
+			<div class="command"><span>Telnet / nc: a raw request</span><code>printf 'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n' | nc 127.0.0.1 8080</code></div>
+			<div class="command"><span>curl: upload a file, fetch it back, delete it</span><code>curl -i -F "file=@README.md" http://127.0.0.1:8080/uploads &amp;&amp; curl http://127.0.0.1:8080/uploads/README.md &amp;&amp; curl -i -X DELETE http://127.0.0.1:8080/uploads/README.md</code></div>
 		</section>
-		<section id="inspector" class="section inspector-section" aria-labelledby="inspector-title"><div class="page-width inspector-layout">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Same-origin request inspector</p><h2 id="inspector-title">Ask this server for a response</h2><p>Select an endpoint, then inspect its status, headers, and the first part of its body.</p></div>
-			<div class="inspector-tool">
-				<label for="endpoint">Endpoint</label>
-				<div class="inspector-controls"><select id="endpoint" name="endpoint"><option value="/files/index.html">GET /files/index.html</option><option value="/files">GET /files</option><option value="/old-page">GET /old-page</option><option value="/cgi/test.sh">GET /cgi/test.sh</option><option value="/cgi/test.py?name=webserv">GET /cgi/test.py?name=webserv</option></select><button id="run-request" class="button button-primary" type="button">Inspect response</button><a id="open-endpoint" class="button button-quiet" href="/files/index.html">Open route</a></div>
-				<p id="inspector-status" class="inspector-status" role="status">Ready to send a same-origin GET request.</p>
-				<pre id="inspector-output" class="inspector-output" tabindex="0">Select an endpoint and inspect its response here.</pre>
+
+		<section id="cgi" class="block">
+			<div class="block-head">
+				<h2>CGI</h2>
+				<button class="run-all" type="button">Run section</button>
 			</div>
-		</div></section>
-		<section id="testing" class="section page-width" aria-labelledby="testing-title">
-			<div class="section-heading"><p class="eyebrow eyebrow-dark">Verification status</p><h2 id="testing-title">The focused tests pass; the combined suite needs its parser migration completed.</h2><p>Use the dashboard for visible routes, then consult the testing guide for passing targets and the outstanding configuration-test repairs.</p></div>
-			<div class="command-grid">
-				<div class="command-block"><p>Build and start</p><code>make &amp;&amp; ./webserv config/default.config</code><button class="copy-button" type="button" data-copy="make &amp;&amp; ./webserv config/default.config">Copy</button></div>
-				<div class="command-block"><p>Combined suite</p><code>make test</code><button class="copy-button" type="button" data-copy="make test">Copy</button></div>
-				<div class="command-block"><p>Focused parser route check</p><code>make connection-lifecycle-test</code><button class="copy-button" type="button" data-copy="make connection-lifecycle-test">Copy</button></div>
+			<p><code>.py</code> runs through <code>/usr/bin/python3</code> and <code>.sh</code> through <code>/bin/bash</code>. Scripts live in <code>./contents/cgi</code> and run with that directory as their working directory.</p>
+			<ul class="checks">
+				<li class="check" data-method="GET" data-path="/cgi/test.py?name=evaluator" data-expect="200">
+					<div class="check-text"><strong>GET with a query string</strong><span>The script receives <code>QUERY_STRING</code>.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/cgi/test.py?name=evaluator">Open</a></div>
+				</li>
+				<li class="check" data-method="POST" data-path="/cgi/test.sh" data-body="posted to a shell script" data-expect="200">
+					<div class="check-text"><strong>POST with a body</strong><span>The body arrives on the script's stdin; the script ends at EOF.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="POST" data-path="/cgi/test.py?context" data-body="context check" data-expect="200">
+					<div class="check-text"><strong>Correct directory for relative paths</strong><span>The script opens <code>context.txt</code> by a relative path and prints the environment it received. Look for <code>RELATIVE_FILE=CGI working directory is correct.</code></span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/cgi/crash.py" data-expect="502">
+					<div class="check-text"><strong>Script that crashes</strong><span><code>crash.py</code> raises an exception before printing a header.</span></div>
+					<span class="expect">502</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/cgi/crash.py">Open</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/cgi/test.sh?malformed" data-expect="502">
+					<div class="check-text"><strong>Script with invalid output</strong><span>Output without a CGI header block is rejected.</span></div>
+					<span class="expect">502</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/cgi/loop.py" data-expect="502">
+					<div class="check-text"><strong>Infinite loop</strong><span><code>loop.py</code> never ends. After 15&nbsp;s the server kills it and answers 502. Meanwhile, the rest of this page keeps working: try another check.</span></div>
+					<span class="expect">502 after ~15 s</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/cgi/missing.py" data-expect="502">
+					<div class="check-text"><strong>Missing script</strong><span>A <code>.py</code> path that does not exist.</span></div>
+					<span class="expect">502</span>
+					<div class="actions"><button class="run" type="button">Run</button></div>
+				</li>
+			</ul>
+			<div class="command"><span>Chunked request: the server un-chunks it, and the CGI gets a plain body ending in EOF</span><code>curl -i -H "Transfer-Encoding: chunked" -d "chunked body" "http://127.0.0.1:8080/cgi/test.py?context"</code></div>
+		</section>
+
+		<section id="browser" class="block">
+			<div class="block-head">
+				<h2>Browser</h2>
+				<button class="run-all" type="button">Run section</button>
 			</div>
-			<p class="testing-link"><a href="https://github.com/lgollong/webserv/blob/main/docs/testing.md">Read the full testing and evaluation guide</a></p>
+			<p>Open the developer tools' Network tab, then use the links. Check the request and response headers of each one.</p>
+			<ul class="checks">
+				<li class="check" data-method="GET" data-path="/dashboard.css" data-expect="200">
+					<div class="check-text"><strong>Fully static website</strong><span>This page itself: HTML, CSS, JavaScript and an icon, each with its own <code>Content-Type</code>.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/">Reload</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/this/url/is/wrong" data-expect="404">
+					<div class="check-text"><strong>Incorrect URL</strong><span>The custom 404 page.</span></div>
+					<span class="expect">404</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/this/url/is/wrong">Open</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/files/" data-expect="200">
+					<div class="check-text"><strong>Directory listing</strong><span><code>autoindex on</code> for <code>/files</code>; click into <code>nested/</code>.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/files/">Open</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/old-page" data-expect="redirect">
+					<div class="check-text"><strong>Redirect</strong><span><code>return 301 /</code>. Scripts cannot see a redirect's status, so open the link and look for <code>301</code> with <code>Location: /</code> in the Network tab.</span></div>
+					<span class="expect">301</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/old-page">Open</a></div>
+				</li>
+			</ul>
+		</section>
+
+		<section id="ports" class="block">
+			<h2>Port issues</h2>
+			<p>Different ports serve different websites; the same interface:port twice is an error, because virtual hosts are not implemented.</p>
+			<ul class="checks">
+				<li class="check">
+					<div class="check-text"><strong>Different website per port</strong><span>Compare <code>:8080</code> (this guide) with <code>:8081</code> (website 2).</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><a class="open" href="http://127.0.0.1:8081/" target="_blank" rel="noopener">Open :8081</a></div>
+				</li>
+			</ul>
+			<div class="command"><span>Same interface:port twice in one config: startup fails with <code>bind: Address already in use</code></span><code>./webserv config/conflict.config</code></div>
+			<div class="command"><span>Second instance while this one runs: it exits with the same error and the first keeps serving</span><code>./webserv config/default.config</code></div>
+		</section>
+
+		<section id="stress" class="block">
+			<h2>Siege &amp; stress test</h2>
+			<p>Run these in a terminal. Availability should stay above 99.5%, memory should level off, and no connections should be left open afterwards. <code>/empty.html</code> is an empty page for the siege test.</p>
+			<div class="command"><span>Benchmark mode, 25 clients, 30 seconds</span><code>siege -b -c 25 -t 30S http://127.0.0.1:8080/empty.html</code></div>
+			<div class="command"><span>Memory: run during siege, the value should stop growing</span><code>while sleep 1; do ps -o rss= -p "$(pgrep -n webserv)"; done</code></div>
+			<div class="command"><span>Hanging connections: after siege, only the listeners should be left (Linux / macOS)</span><code>ss -tanp | grep webserv    # or: lsof -nP -iTCP -a -p "$(pgrep -n webserv)"</code></div>
+		</section>
+
+		<section id="bonus" class="block">
+			<div class="block-head">
+				<h2>Bonus</h2>
+				<button class="run-all" type="button">Run section</button>
+			</div>
+			<ul class="checks">
+				<li class="check" data-method="GET" data-path="/session" data-expect="200">
+					<div class="check-text"><strong>Cookies and sessions</strong><span>The first visit sets an <code>HttpOnly</code> cookie, <code>webserv_session</code>; each further request counts up. Delete the cookie in the developer tools (Application/Storage &rarr; Cookies) to start a new session.</span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/session">Open</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/cgi/test.py?name=python" data-expect="200">
+					<div class="check-text"><strong>Multiple CGI: Python</strong><span><code>cgi .py /usr/bin/python3</code></span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/cgi/test.py?name=python">Open</a></div>
+				</li>
+				<li class="check" data-method="GET" data-path="/cgi/test.sh" data-expect="200">
+					<div class="check-text"><strong>Multiple CGI: shell</strong><span><code>cgi .sh /bin/bash</code></span></div>
+					<span class="expect">200</span>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/cgi/test.sh">Open</a></div>
+				</li>
+			</ul>
+		</section>
+
+		<section id="lab" class="block">
+			<h2>Try anything</h2>
+			<p>Send any method to any path on this server and inspect the full response.</p>
+			<form id="lab-form" class="lab">
+				<select id="lab-method" aria-label="Method"><option>GET</option><option>POST</option><option>DELETE</option><option>PUT</option><option>FOO</option></select>
+				<input id="lab-path" type="text" value="/files/" aria-label="Path" spellcheck="false">
+				<button class="run" type="submit">Send</button>
+				<textarea id="lab-body" rows="2" placeholder="Optional request body" aria-label="Request body"></textarea>
+			</form>
+			<pre id="lab-output" class="result">No request sent yet.</pre>
+		</section>
+
+		<section id="code" class="block">
+			<h2>Runtime contract and current boundaries</h2>
+			<p>Where to look when the evaluation sheet asks for the code. Everything below is in <code>srcs/</code>.</p>
+			<table class="code-map">
+				<thead><tr><th>Question</th><th>Answer</th></tr></thead>
+				<tbody>
+					<tr><td>Event mechanism</td><td>One <code>poll()</code> in <code>Worker::run()</code>, through <code>Poller</code>. It watches listeners, clients and CGI pipes, for reading and for writing.</td></tr>
+					<tr><td>From poll() to client I/O</td><td><code>Worker::dispatchEvent()</code> &rarr; <code>acceptNew()</code>, <code>onReadable()</code>, <code>onWritable()</code>, <code>onCgiReadable()</code>, <code>onCgiWritable()</code>. One <code>read</code> or <code>write</code> per readiness event.</td></tr>
+					<tr><td>Return values</td><td><code>&lt;= 0</code> on a client socket closes the client; on a CGI pipe, <code>&lt; 0</code> fails the job and <code>0</code> means EOF. <code>errno</code> is never checked after read/write.</td></tr>
+					<tr><td>Disk files</td><td>Opened in <code>StaticFile</code> and streamed in 64&nbsp;KiB chunks from <code>Worker::refillFromBodyFile()</code>, only when the client socket is writable.</td></tr>
+					<tr><td>fork</td><td>Only in <code>Cgi::start()</code>.</td></tr>
+					<tr><td>Timeouts</td><td>Idle clients: 30&nbsp;s. CGI: 15&nbsp;s, then <code>SIGTERM</code>, then <code>SIGKILL</code>.</td></tr>
+					<tr><td>No relinking</td><td>Run <code>make</code> twice: the second run prints <code>Nothing to be done</code>.</td></tr>
+				</tbody>
+			</table>
 		</section>
 	</main>
-	<footer class="site-footer"><div class="page-width"><span>42 webserv project</span><span>Source of truth: code and docs</span></div></footer>
+
+	<footer class="footer"><span>42 webserv &middot; lgollong, lorbke, sachmull</span><a href="/upload.html">Uploads</a></footer>
 	<script src="/dashboard.js"></script>
 </body>
 </html>
