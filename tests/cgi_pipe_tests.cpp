@@ -284,6 +284,18 @@ int main() {
 		response.find("RELATIVE_FILE=CGI working directory is correct.\n") != std::string::npos,
 		"CGI receives complete request context and runs in its script directory");
 
+	int idleClients[4];
+	for (int i = 0; i < 4; ++i)
+		idleClients[i] = connectToServer();
+	response.clear();
+	expect(request(getRequest("/cgi/test.py?fds"), response) && response.find("HTTP/1.1 200 OK") == 0 &&
+		response.find("FDS=0 1 2\n") != std::string::npos,
+		"CGI child inherits only stdin, stdout, and stderr while other clients are connected");
+	for (int i = 0; i < 4; ++i) {
+		if (idleClients[i] >= 0)
+			close(idleClients[i]);
+	}
+
 	response.clear();
 	expect(request(getRequest("/cgi/test.sh?malformed"), response) &&
 		response.find("HTTP/1.1 502 Bad Gateway") == 0 &&

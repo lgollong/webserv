@@ -4,6 +4,7 @@
 #include <poll.h>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 static int failures = 0;
 
@@ -107,7 +108,7 @@ int main() {
 	script.cgi_handler = "/bin/sh";
 	script.cgi_script_name = "/cgi/test.sh";
 	script.cgi_script_path = "./contents/cgi/test.sh";
-	CgiJob completed = cgi.start(request, script, server, "127.0.0.1");
+	CgiJob completed = cgi.start(request, script, server, "127.0.0.1", std::vector<int>());
 	expect(!completed.failed && completed.pid > 0, "interpreter-backed cgi script starts");
 	if (completed.in_fd >= 0) {
 		close(completed.in_fd);
@@ -131,7 +132,7 @@ int main() {
 	shell.cgi_script_name = "/cgi/test.sh";
 	shell.cgi_script_path = "./contents/cgi/test.sh";
 	request.query = "stall";
-	CgiJob stalled = cgi.start(request, shell, server, "127.0.0.1");
+	CgiJob stalled = cgi.start(request, shell, server, "127.0.0.1", std::vector<int>());
 	expect(!stalled.failed && stalled.pid > 0, "directly executable cgi script starts");
 	expect(!cgi.reap(stalled), "running cgi is not reaped early");
 	cgi.terminate(stalled);

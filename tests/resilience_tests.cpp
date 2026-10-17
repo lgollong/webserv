@@ -263,7 +263,33 @@ int main() {
 	expect(requestHasStatus("GET /static/index.html HTTP/1.1\r\nHost: localhost\r\n\r\n", "HTTP/1.1 200 OK", 3000),
 		"server accepts a request after CGI disconnect");
 
+	// A CGI child must not inherit the listener: once the server dies, its
+	// port has to be bindable again even though the stalled child lives on.
+	unlink(kCgiPidFile);
+	int orphanClient = connectToServer();
+	pid_t orphanPid = -1;
+	if (orphanClient >= 0 &&
+		sendAll(orphanClient, "GET /cgi/test.sh?stall HTTP/1.1\r\nHost: localhost\r\n\r\n", 1000))
+		expect(waitForCgiPid(server, orphanPid), "stalled CGI before server shutdown records its pid");
 	stopServer(server);
+	if (orphanClient >= 0)
+		close(orphanClient);
+	int rebound = socket(AF_INET, SOCK_STREAM, 0);
+	int reuse = 1;
+	sockaddr_in address;
+	std::memset(&address, 0, sizeof(address));
+	address.sin_family = AF_INET;
+	address.sin_port = htons(kPort);
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	expect(rebound >= 0 && setsockopt(rebound, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == 0 &&
+		bind(rebound, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0 && listen(rebound, 1) == 0,
+		"listener port can be rebound while an orphaned CGI child is still running");
+	if (rebound >= 0)
+		close(rebound);
+	if (orphanPid > 0) {
+		kill(orphanPid, SIGKILL);
+		waitpid(orphanPid, NULL, WNOHANG);
+	}
 	unlink(kCgiPidFile);
 	if (failures == 0)
 		std::cout << "resilience integration tests passed" << std::endl;
