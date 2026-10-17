@@ -4,7 +4,7 @@ This walkthrough follows the code that currently runs on `main`, beginning at `m
 
 ## 1. Startup
 
-[`main()`](../srcs/main.cpp) requires one configuration-file argument, constructs `Config`, `Http`, `Cgi`, `StaticFile`, `Logger`, and `Worker`, then calls `Worker::run()`.
+[`main()`](../srcs/main.cpp) takes an optional configuration-file argument (default `config/default.config`; more than one argument prints usage and exits), constructs `Config`, `Http`, `Cgi`, `StaticFile`, `Logger`, and `Worker`, then calls `Worker::run()`.
 
 `Config(configPath)` reads and tokenizes the file before the event loop exists. It accepts comments, quotes, `server` blocks, and nested `location` blocks. Any unreadable file or recognized syntax error throws to `main()`, which logs the error and exits. No fallback configuration is constructed.
 
