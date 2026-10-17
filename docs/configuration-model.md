@@ -29,7 +29,7 @@ Location directives:
 
 | Directive | Meaning |
 | --- | --- |
-| `root <path>;` | Filesystem root for this location. Missing values inherit the containing server root, or `./contents`. |
+| `root <path>;` | Filesystem root for this location; the location prefix is removed from the request path before joining (for static files and CGI scripts alike). Missing values inherit the containing server root, or `./contents`. |
 | `index <file>;` | Safe index file to serve from a directory. |
 | `autoindex on|off;` | Enables or disables generated directory listings. |
 | `allowed_methods <method> ...;` | Permitted request methods. `allow_methods` is accepted as an alias. Missing values default to `GET`. Only `GET`, `POST`, and `DELETE` are implemented; other listed methods are accepted by the parser but answered with `501`. |

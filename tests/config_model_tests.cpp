@@ -230,8 +230,8 @@ int main() {
 	expect(cgi.cgi_handler == "/usr/bin/python3",
 		"Python CGI handler is resolved");
 
-	expect(cgi.root == "./contents",
-		"server 0 CGI route uses the default server root");
+	expect(cgi.root == "./contents/cgi" && cgi.cgi_script_path == "./contents/cgi/test.py",
+		"server 0 CGI route resolves scripts under its own root without repeating /cgi");
 
 	Route redirect = config.route(0, requestFor("/redirect-test"));
 
