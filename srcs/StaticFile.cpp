@@ -1,4 +1,5 @@
 #include "StaticFile.hpp"
+#include "PathPolicy.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -66,7 +67,7 @@ static bool resolvePath(const Route &route, const Request &request, std::string 
 	std::string relative = request.path.substr(route.location.size());
 	while (!relative.empty() && relative[0] == '/')
 		relative.erase(0, 1);
-	if (hasUnsafeSegment(relative))
+	if (hasUnsafeSegment(relative) || pathHasSymlink(base, relative))
 		return false;
 
 	path = base;
@@ -219,7 +220,7 @@ static Content directoryListing(const std::string &path, const std::string &requ
 	struct dirent *entry = NULL;
 	while ((entry = readdir(directory)) != NULL) {
 		std::string name(entry->d_name);
-		if (name == "." || name == "..")
+		if (name == "." || name == ".." || entry->d_type == DT_LNK)
 			continue;
 		struct stat entryInfo;
 		bool isDirectory = stat(joinPath(path, name).c_str(), &entryInfo) == 0 &&
@@ -267,7 +268,8 @@ Content StaticFile::serve(const Route &route, const Request &request) {
 			return errorContent(403);
 		std::string indexPath = joinPath(path, route.index_file);
 		struct stat indexInfo;
-		if (stat(indexPath.c_str(), &indexInfo) == 0 && S_ISREG(indexInfo.st_mode))
+		if (!pathHasSymlink(path, route.index_file) &&
+			stat(indexPath.c_str(), &indexInfo) == 0 && S_ISREG(indexInfo.st_mode))
 			return openRegularFile(indexPath, indexInfo, mime_types);
 	}
 	if (route.autoindex)
