@@ -16,10 +16,10 @@ int main(int argc, char *argv[]){
 	}
 	const char *configPath = (argc == 2) ? argv[1] : kDefaultConfigPath;
 
-	Logger logger(std::cout, std::cerr, DEBUG);
-
+	// Errors that stop the server are always reported, whatever log_level says.
 	try {
 		Config config(configPath);
+		Logger logger(std::cout, std::cerr, config.logLevel());
 		Http http;
 		Cgi cgi;
 		StaticFile files;
@@ -28,7 +28,7 @@ int main(int argc, char *argv[]){
 		worker.run();
 	}
 	catch (const std::exception &e) {
-		logger.error(e.what());
+		std::cerr << "ERROR: " << e.what() << std::endl;
 		return (1);
 	}
 	return (0);

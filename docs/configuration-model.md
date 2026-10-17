@@ -8,6 +8,12 @@ An unreadable configuration and recognized syntax errors throw a startup excepti
 
 The parser accepts comments beginning with `#`, single- or double-quoted tokens, and `server { ... }` blocks containing `location /path { ... }` blocks.
 
+Top-level directives (outside any `server` block):
+
+| Directive | Meaning |
+| --- | --- |
+| `log_level none\|error\|debug;` | Process-wide logging. `none` silences runtime logs, `error` (the default) writes only errors, and `debug` adds per-connection traces including request and response bytes. It may appear once; unknown values are configuration errors. Fatal startup errors, such as a configuration error or a failed `bind`, are always written to stderr. |
+
 Server directives:
 
 | Directive | Meaning |

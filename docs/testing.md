@@ -15,6 +15,7 @@ Targets run sequentially because integration suites bind fixed loopback ports.
 | `make http-request-line-test` | Request line, headers, framing, fixed-length and chunked bodies. | Passing. |
 | `make http-response-test` | Status lines, response headers, content length, empty responses. | Passing. |
 | `make connection-timeout-test` | Timeout predicates. | Passing. |
+| `make logger-test` | `none`/`error`/`debug` level matrix and debug-stream flushing. | Passing. |
 | `make config-model-test` | Parsed `config/req.config` model and routing. | Passing. |
 | `make config-parser-test` | Valid multi-server/multi-location configuration, parser defaults, and unreadable or malformed inputs. | Passing. |
 | `make static-file-test` | Static files, MIME types, index/autoindex, uploads, DELETE, lexical traversal. | Passing. |
