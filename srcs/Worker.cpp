@@ -198,6 +198,9 @@ static const time_t kCgiTerminationGraceSeconds = 2;
 // Bound that deferred input so a client cannot grow one connection's buffer
 // without limit during the CGI timeout window.
 static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
+// Static files are streamed from disk in chunks of this size, refilled each
+// time the client socket has drained the previous chunk.
+static const size_t kFileChunkBytes = 64 * 1024;
 
 void Worker::run() {
 	std::map<int, size_t> listeners;
@@ -232,87 +235,115 @@ void Worker::run() {
 		}
 
 		// Callbacks can remove fds, so iterate a stable snapshot of poll results.
-		std::vector<pollfd> ready_fds = poller.events();
+		// Per-event failures are handled in dispatchReadyEvents(); this guard
+		// keeps the loop alive if the snapshot or the sweep itself fails.
+		try {
+			std::vector<pollfd> ready_fds = poller.events();
 
-		dispatchReadyEvents(ready_fds, listeners, servers);
-		sweepExpiredConnections();
+			dispatchReadyEvents(ready_fds, listeners, servers);
+			sweepExpiredConnections();
+		}
+		catch (const std::exception &e) {
+			try {
+				logger.error(std::string("event loop iteration failed: ") + e.what());
+			}
+			catch (...) {}
+		}
 	}
 }
 
+// One failing event (for example std::bad_alloc while building a response)
+// closes only the connection it belongs to instead of ending the loop.
 void Worker::dispatchReadyEvents(const std::vector<pollfd> &readyFds,
 	std::map<int, size_t> &listeners, const std::vector<ServerConfig> &servers) {
 	for (size_t i = 0; i < readyFds.size(); i++) {
-		if (readyFds[i].revents == 0)
-			continue;
-		std::map<int, size_t>::iterator listener = listeners.find(readyFds[i].fd);
-		if (listener != listeners.end()) {
-			if (readyFds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-				logger.error("listener received a poll error event");
-				int failedFd = listener->first;
-				size_t serverIndex = listener->second;
-				poller.remove(failedFd);
-				close(failedFd);
-				listeners.erase(listener);
-				try {
-					int replacementFd = setupListener(servers[serverIndex]);
-					poller.add(replacementFd, POLLIN);
-					listeners[replacementFd] = serverIndex;
-				}
-				catch (const std::exception &e) {
-					logger.error(e.what());
-					return ;
-				}
-				continue;
+		try {
+			dispatchEvent(readyFds[i], listeners, servers);
+		}
+		catch (const std::exception &e) {
+			try {
+				logger.error(std::string("event handling failed: ") + e.what());
 			}
-			if (readyFds[i].revents & POLLIN)
-				acceptNew(readyFds[i].fd, listener->second);
-			continue;
+			catch (...) {}
+			std::map<int, Connection*>::iterator failed = fdToConnection.find(readyFds[i].fd);
+			if (failed != fdToConnection.end())
+				closeConnection(*failed->second);
+		}
+	}
+}
+
+void Worker::dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners,
+	const std::vector<ServerConfig> &servers) {
+	if (event.revents == 0)
+		return ;
+	std::map<int, size_t>::iterator listener = listeners.find(event.fd);
+	if (listener != listeners.end()) {
+		if (event.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+			logger.error("listener received a poll error event");
+			int failedFd = listener->first;
+			size_t serverIndex = listener->second;
+			poller.remove(failedFd);
+			close(failedFd);
+			listeners.erase(listener);
+			try {
+				int replacementFd = setupListener(servers[serverIndex]);
+				poller.add(replacementFd, POLLIN);
+				listeners[replacementFd] = serverIndex;
+			}
+			catch (const std::exception &e) {
+				logger.error(e.what());
+				return ;
+			}
+			return ;
+		}
+		if (event.revents & POLLIN)
+			acceptNew(event.fd, listener->second);
+		return ;
+	}
+
+	std::map<int, Connection*>::iterator found = fdToConnection.find(event.fd);
+	if (found == fdToConnection.end()) {
+		poller.remove(event.fd);
+		return ;
+	}
+	Connection *conn = found->second;
+
+	if (event.fd == conn->txn.cgi.out_fd) {
+		logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi out fd";
+		if (event.revents & (POLLERR | POLLNVAL))
+			failCgiJob(*conn);
+		else if (event.revents & (POLLIN | POLLHUP))
+			onCgiReadable(*conn);
+	}
+	else if (event.fd == conn->txn.cgi.in_fd) {
+		logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi in fd";
+		if (event.revents & (POLLERR | POLLHUP | POLLNVAL))
+			failCgiJob(*conn);
+		else if (event.revents & POLLOUT)
+			onCgiWritable(*conn);
+	}
+	else {
+		if (event.revents & (POLLERR | POLLNVAL)) {
+			closeConnection(*conn);
+			return ;
+		}
+		if (event.revents & POLLIN) {
+			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking reading fd";
+			onReadable(*conn);
+		}
+		else if (event.revents & POLLOUT) {
+			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking writing fd";
+			onWritable(*conn);
 		}
 
-		std::map<int, Connection*>::iterator found = fdToConnection.find(readyFds[i].fd);
-		if (found == fdToConnection.end()) {
-			poller.remove(readyFds[i].fd);
-			continue;
-		}
-		Connection *conn = found->second;
-
-		if (readyFds[i].fd == conn->txn.cgi.out_fd) {
-			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi out fd";
-			if (readyFds[i].revents & (POLLERR | POLLNVAL))
-				failCgiJob(*conn);
-			else if (readyFds[i].revents & (POLLIN | POLLHUP))
-				onCgiReadable(*conn);
-		}
-		else if (readyFds[i].fd == conn->txn.cgi.in_fd) {
-			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi in fd";
-			if (readyFds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
-				failCgiJob(*conn);
-			else if (readyFds[i].revents & POLLOUT)
-				onCgiWritable(*conn);
-		}
-		else {
-			if (readyFds[i].revents & (POLLERR | POLLNVAL)) {
-				closeConnection(*conn);
-				continue;
-			}
-			if (readyFds[i].revents & POLLIN) {
-				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking reading fd";
-				onReadable(*conn);
-			}
-			else if (readyFds[i].revents & POLLOUT) {
-				logger.debug() << "Worker: " << "fd: " << conn->fd << " checking writing fd";
-				onWritable(*conn);
-			}
-
-			// macOS reports a client's half-close (shutdown(SHUT_WR)) as
-			// POLLIN|POLLHUP while the socket stays writable. Keep reading
-			// until EOF instead of closing on POLLHUP, and let a queued
-			// response flush; the write result decides if the peer is gone.
-			if ((readyFds[i].revents & POLLHUP) && !(readyFds[i].revents & POLLIN)) {
-				std::map<int, Connection*>::iterator current = fdToConnection.find(readyFds[i].fd);
-				if (current != fdToConnection.end() && current->second->phase != WRITING)
-					closeConnection(*current->second);
-			}
+		// macOS reports a client's half-close (shutdown(SHUT_WR)) as
+		// POLLIN|POLLHUP while the socket stays writable. Keep reading
+		// until EOF instead of closing on POLLHUP, and let a queued
+		// response flush; the write result decides if the peer is gone.
+		if ((event.revents & POLLHUP) && !(event.revents & POLLIN)) {
+			std::map<int, Connection*>::iterator current = fdToConnection.find(event.fd);
+			if (current != fdToConnection.end() && current->second->phase != WRITING)
+				closeConnection(*current->second);
 		}
 	}
 }
@@ -349,6 +380,11 @@ void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 void Worker::onCgiReadable(Connection &conn) {
 	if (!cgi.collect(conn.txn.cgi))
 		return ;
+	if (conn.txn.cgi.failed) {
+		// Read error or output above Cgi::MAX_OUTPUT_BYTES: stop the child.
+		failCgiJob(conn);
+		return ;
+	}
 
 	if (conn.txn.cgi.sent < conn.txn.request.body.size())
 		conn.txn.cgi.failed = true;
@@ -544,7 +580,14 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.txn.response.headers["Content-Type"] = content.mime_type;
 	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 	applyConnectionPolicy(conn, conn.txn.response);
-	conn.outbuf = http.build(conn.txn.response);
+	if (content.file_fd >= 0) {
+		// Send the head now; onWritable() streams the file body after it.
+		conn.body_fd = content.file_fd;
+		conn.body_remaining = content.file_size;
+		conn.outbuf = http.buildHead(conn.txn.response, content.file_size);
+	}
+	else
+		conn.outbuf = http.build(conn.txn.response);
 	conn.sent = 0;
 	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);
@@ -599,8 +642,40 @@ void Worker::onWritable(Connection &conn) {
 
 	conn.sent += n;
 	conn.last_activity = time(NULL);
-	if (conn.sent == conn.outbuf.size())
-		finishClientResponse(conn);
+	if (conn.sent < conn.outbuf.size())
+		return ;
+	if (conn.body_fd >= 0) {
+		if (!refillFromBodyFile(conn)) {
+			logger.debug() << "Worker: " << "fd: " << conn.fd << " streamed file ended early";
+			closeConnection(conn);
+			return ;
+		}
+		if (!conn.outbuf.empty())
+			return ;
+	}
+	finishClientResponse(conn);
+}
+
+// Loads the next chunk of a streamed file into outbuf. Regular disk files are
+// exempt from poll() readiness. Returns false if the file ended before the
+// announced Content-Length, which leaves closing as the only valid framing.
+bool Worker::refillFromBodyFile(Connection &conn) {
+	conn.outbuf.clear();
+	conn.sent = 0;
+	if (conn.body_remaining > 0) {
+		char chunk[kFileChunkBytes];
+		size_t wanted = conn.body_remaining < sizeof(chunk) ? conn.body_remaining : sizeof(chunk);
+		ssize_t count = read(conn.body_fd, chunk, wanted);
+		if (count <= 0)
+			return false;
+		conn.outbuf.assign(chunk, static_cast<size_t>(count));
+		conn.body_remaining -= static_cast<size_t>(count);
+	}
+	if (conn.body_remaining == 0) {
+		close(conn.body_fd);
+		conn.body_fd = -1;
+	}
+	return true;
 }
 
 void Worker::finishClientResponse(Connection &conn) {
@@ -724,6 +799,10 @@ void Worker::closeManagedFd(int &fd) {
 
 void Worker::closeConnection(Connection &conn) {
 	int client_fd = conn.fd;
+	if (conn.body_fd >= 0) {
+		close(conn.body_fd);
+		conn.body_fd = -1;
+	}
 	releaseCgiJob(conn);
 	closeManagedFd(conn.fd);
 	connections.erase(client_fd);

@@ -114,8 +114,10 @@ struct Content {
 	std::string  body;
 	std::string  mime_type;
 	std::string  location;   // URL of a created resource, sent as Location
+	int          file_fd;    // open regular file streamed as the body; caller closes it
+	size_t       file_size;  // body length when file_fd is set
 
-	Content() : status(0) {}
+	Content() : status(0), file_fd(-1), file_size(0) {}
 };
 
 // One request -> response cycle; reset per request on keep-alive.
@@ -143,9 +145,11 @@ struct Connection {
 	bool         close_after_write;
 	time_t       last_activity;
 	std::string  remote_addr;   // client IPv4 address, exported to CGI
+	int          body_fd;       // regular file still being streamed after outbuf
+	size_t       body_remaining;
 	Transaction  txn;
 
-	Connection() : fd(-1), server_index(0), phase(IDLE), sent(0), keep_alive(false), close_after_write(false), last_activity(0) {}
+	Connection() : fd(-1), server_index(0), phase(IDLE), sent(0), keep_alive(false), close_after_write(false), last_activity(0), body_fd(-1), body_remaining(0) {}
 
 	bool hasClientTimedOut(time_t now, time_t timeout) const {
 		if (phase == RUNNING_CGI || last_activity == 0 || now < last_activity)

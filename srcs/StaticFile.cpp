@@ -134,6 +134,22 @@ static Content readRegularFile(const std::string &path, const struct stat &info,
 	return content;
 }
 
+// Opens a served file for streaming; Worker reads it in chunks while the
+// client is writable, so large files never sit in memory whole.
+static Content openRegularFile(const std::string &path, const struct stat &info,
+	const std::map<std::string, std::string> &mimeTypes) {
+	int fd = open(path.c_str(), O_RDONLY);
+	if (fd < 0)
+		return errorContent(statusForFilesystemError(errno));
+
+	Content content;
+	content.status = 200;
+	content.mime_type = mimeType(mimeTypes, path);
+	content.file_fd = fd;
+	content.file_size = static_cast<size_t>(info.st_size);
+	return content;
+}
+
 static bool safeIndexFile(const std::string &indexFile) {
 	return !indexFile.empty() && indexFile[0] != '/' && !hasUnsafeSegment(indexFile);
 }
@@ -242,7 +258,7 @@ Content StaticFile::serve(const Route &route, const Request &request) {
 	if (stat(path.c_str(), &info) != 0)
 		return errorContent(statusForFilesystemError(errno));
 	if (S_ISREG(info.st_mode))
-		return readRegularFile(path, info, mime_types);
+		return openRegularFile(path, info, mime_types);
 	if (!S_ISDIR(info.st_mode))
 		return errorContent(403);
 
@@ -252,7 +268,7 @@ Content StaticFile::serve(const Route &route, const Request &request) {
 		std::string indexPath = joinPath(path, route.index_file);
 		struct stat indexInfo;
 		if (stat(indexPath.c_str(), &indexInfo) == 0 && S_ISREG(indexInfo.st_mode))
-			return readRegularFile(indexPath, indexInfo, mime_types);
+			return openRegularFile(indexPath, indexInfo, mime_types);
 	}
 	if (route.autoindex)
 		return directoryListing(path, request.path);
