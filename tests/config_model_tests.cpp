@@ -196,26 +196,20 @@ int main() {
 		!allows(upload, "GET"),
 		"server 0 upload route allows POST DELETE only");
 
-	Route cgi = config.route(0, requestFor("/cgi/test.php"));
+	Route cgi = config.route(0, requestFor("/cgi/test.py"));
 
 	expect(cgi.location == "/cgi",
-		"server 0 PHP request selects cgi route");
+		"server 0 Python request selects cgi route");
 
 	expect(cgi.is_cgi,
-		"server 0 PHP request is marked as CGI");
+		"server 0 Python request is marked as CGI");
 
-	expect(cgi.cgi_handlers.size() == 4,
-		"server 0 cgi contains four CGI handlers");
+	expect(cgi.cgi_handlers.size() == 2,
+		"server 0 cgi contains two CGI handlers");
 
-	expect(cgi.cgi_handlers.find(".php") != cgi.cgi_handlers.end() &&
-		cgi.cgi_handlers.find(".py") != cgi.cgi_handlers.end() &&
-		cgi.cgi_handlers.find(".sh") != cgi.cgi_handlers.end() &&
-		cgi.cgi_handlers.find(".txt") != cgi.cgi_handlers.end(),
-		"server 0 contains PHP Python SH and text CGI mappings");
-
-	expect(cgi.cgi_handlers.find(".php")->second ==
-		"/usr/bin/php-cgi",
-		"PHP CGI handler is /usr/bin/php-cgi");
+	expect(cgi.cgi_handlers.find(".py") != cgi.cgi_handlers.end() &&
+		cgi.cgi_handlers.find(".sh") != cgi.cgi_handlers.end(),
+		"server 0 contains Python and SH CGI mappings");
 
 	expect(cgi.cgi_handlers.find(".py")->second ==
 		"/usr/bin/python3",
@@ -225,20 +219,16 @@ int main() {
 		"/bin/bash",
 		"SH CGI handler is /bin/bash");
 
-	expect(cgi.cgi_handlers.find(".txt")->second ==
-		"/bin/cat",
-		"text CGI handler is /bin/cat");
-
 	expect(allows(cgi, "GET") &&
 		allows(cgi, "POST") &&
 		!allows(cgi, "DELETE"),
 		"server 0 cgi allows GET POST only");
 
-	expect(cgi.cgi_script_name == "/cgi/test.php",
-		"PHP CGI script name is resolved");
+	expect(cgi.cgi_script_name == "/cgi/test.py",
+		"Python CGI script name is resolved");
 
-	expect(cgi.cgi_handler == "/usr/bin/php-cgi",
-		"PHP CGI handler is resolved");
+	expect(cgi.cgi_handler == "/usr/bin/python3",
+		"Python CGI handler is resolved");
 
 	expect(cgi.root == "./contents",
 		"server 0 CGI route uses the default server root");
@@ -303,7 +293,7 @@ int main() {
 
 	expect(cgi8003.location == "/cgi" &&
 		cgi8003.is_cgi &&
-		cgi8003.cgi_handlers.size() == 3,
+		cgi8003.cgi_handlers.size() == 2,
 		"server 1 CGI route is parsed");
 
 	expect(cgi8003.cgi_handlers.find(".py") !=
@@ -431,13 +421,13 @@ int main() {
 		adminCgi.cgi_handlers.size() == 2,
 		"server 3 CGI route contains two handlers");
 
-	expect(adminCgi.cgi_handlers.find(".php") !=
+	expect(adminCgi.cgi_handlers.find(".sh") !=
 		adminCgi.cgi_handlers.end(),
-		"server 3 contains PHP CGI mapping");
+		"server 3 contains SH CGI mapping");
 
-	expect(adminCgi.cgi_handlers.find(".php")->second ==
-		"/usr/bin/php-cgi",
-		"server 3 PHP CGI handler is correct");
+	expect(adminCgi.cgi_handlers.find(".sh")->second ==
+		"/bin/bash",
+		"server 3 SH CGI handler is correct");
 
 	expect(adminCgi.cgi_handlers.find(".py") !=
 		adminCgi.cgi_handlers.end(),
@@ -483,14 +473,8 @@ int main() {
 
 	Route phpCgi = config.route(0, requestFor("/cgi/test.php"));
 
-	expect(phpCgi.is_cgi,
-		"PHP request is selected as CGI");
-
-	expect(phpCgi.cgi_script_name == "/cgi/test.php",
-		"PHP script name is correct");
-
-	expect(phpCgi.cgi_handler == "/usr/bin/php-cgi",
-		"PHP extension selects php-cgi");
+	expect(!phpCgi.is_cgi && phpCgi.cgi_handler.empty(),
+		"unmapped PHP extension is not selected as CGI");
 
 	Route pythonCgi = config.route(0, requestFor("/cgi/test.py"));
 

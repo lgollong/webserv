@@ -9,7 +9,8 @@ class Cgi {
 		Cgi();
 		~Cgi();
 
-		CgiJob    start(const Request &request, const Route &route, const ServerConfig &server);
+		CgiJob    start(const Request &request, const Route &route, const ServerConfig &server,
+			const std::string &remoteAddr);
 		bool      collect(CgiJob &cgi);
 		bool      sendBody(CgiJob &job, const std::string &body); // true once fully written (and in_fd closed)
 		void      terminate(CgiJob &job) const;

@@ -139,6 +139,7 @@ struct Connection {
 	bool         keep_alive;
 	bool         close_after_write;
 	time_t       last_activity;
+	std::string  remote_addr;   // client IPv4 address, exported to CGI
 	Transaction  txn;
 
 	Connection() : fd(-1), server_index(0), phase(IDLE), sent(0), keep_alive(false), close_after_write(false), last_activity(0) {}
