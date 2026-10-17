@@ -13,8 +13,6 @@
 
 class WorkerEventLoopTests;
 
-// Runs the loop; owns all connections; dispatches on phase; orchestrates the other services.
-// Every other class is a passive service Worker calls; services never call each other.
 class Worker {
 	public:
 		Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &logger);
