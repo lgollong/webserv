@@ -473,6 +473,8 @@ void Worker::processBufferedRequest(Connection &conn) {
 		conn.txn.response.status = content.status;
 		conn.txn.response.body = content.body;
 		conn.txn.response.headers["Content-Type"] = content.mime_type;
+		if (content.status == 201)
+			conn.txn.response.headers["Location"] = conn.txn.request.path;
 		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 		applyConnectionPolicy(conn, conn.txn.response);
 		conn.outbuf = http.build(conn.txn.response);

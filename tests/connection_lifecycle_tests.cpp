@@ -415,12 +415,18 @@ int main() {
 			"authorized upload request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 201 Created") == 0 &&
 			response.find("Content-Length: 0\r\n") != std::string::npos &&
+			response.find("Location: /uploads/lifecycle-upload.txt\r\n") != std::string::npos &&
 			storedBodyMatches("./contents/uploads/lifecycle-upload.txt", uploadBody),
-			"authorized upload stores the complete body");
+			"authorized upload stores the complete body and reports its location");
 		expect(sendAll(persistent, uploadRequest("/uploads/lifecycle-upload.txt", uploadBody)),
 			"duplicate upload request is sent");
 		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 403 Forbidden") == 0,
 			"duplicate upload target is not overwritten");
+		expect(sendAll(persistent, requestWithMethod("DELETE", "/uploads/lifecycle-upload.txt", "")),
+			"uploaded file DELETE is sent to its upload URL");
+		expect(takeResponse(persistent, pending, response) && response.find("HTTP/1.1 204 No Content") == 0 &&
+			fileDoesNotExist("./contents/uploads/lifecycle-upload.txt"),
+			"uploaded file is deleted from upload_store at its upload URL");
 
 		expect(sendAll(persistent, requestWithMethod("DELETE", "/delete-lifecycle-fixture.txt", "")),
 			"permitted DELETE request is sent");
