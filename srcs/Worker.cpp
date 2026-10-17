@@ -664,6 +664,12 @@ void Worker::finishCgiResponse(Connection &conn) {
 	closeManagedFd(conn.txn.cgi.out_fd);
 	closeManagedFd(conn.txn.cgi.in_fd);
 	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+	// A syntactically valid Status the server cannot serialize is still a bad
+	// upstream response.
+	if (!http.supportsStatus(conn.txn.response.status)) {
+		conn.txn.response = Response();
+		conn.txn.response.status = 502;
+	}
 	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 	applyConnectionPolicy(conn, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);

@@ -1,6 +1,7 @@
 #include "Cgi.hpp"
 #include <cstdlib>
 #include <cctype>
+#include <cstring>
 #include <unistd.h>
 #include <sstream>
 #include <vector>
@@ -36,13 +37,14 @@
 
 //   Request-Data = <CONTENT_LENGTH>OCTET   ; exactly Content-Length bytes, already de-chunked by Http
 
-//   Response (document-response only — no Location/redirects)
+//   Response (document response, or client redirect via Location; see buildResponse)
 
-//   CGI-Response = Content-Type [ Status ] *other-field NL response-body
+//   CGI-Response = 1*CGI-field *other-field NL response-body   ; Content-Type or Location required
 
 //   Content-Type   = "Content-Type:" media-type NL
-//   Status         = "Status:" status-code SP reason-phrase NL
-//   status-code    = 3digit
+//   Location       = "Location:" URI NL                         ; without Status -> 302
+//   Status         = "Status:" status-code [ SP reason-phrase ] NL
+//   status-code    = 3digit                                    ; 200-599, known to Http
 //   other-field    = field-name ":" field-value NL
 //   response-body  = *OCTET
 
@@ -291,87 +293,127 @@ bool Cgi::reap(pid_t &pid) const {
 	return true;
 }
 
-// header-field = CGI-field | other-field
-// generic-field = field-name ":" [ field-value ] NL
-static std::map<std::string, std::string> parseHeaderFields(const std::string &header_block) {
-	std::map<std::string, std::string> fields;
-	size_t line_start = 0;
-
-	while (line_start < header_block.size()) {
-		size_t line_end = header_block.find('\n', line_start);
-
-		std::string line;
-		if (line_end == std::string::npos)
-			line = header_block.substr(line_start);
-		else
-			line = header_block.substr(line_start, line_end - line_start);
-
-		if (!line.empty() && line[line.size() - 1] == '\r')
-			line.erase(line.size() - 1);
-
-		std::string::size_type colon = line.find(':');
-		if (colon != std::string::npos) {
-			std::string field_name = line.substr(0, colon);
-			std::string::size_type value_start = line.find_first_not_of(' ', colon + 1);
-			std::string field_value;
-			if (value_start == std::string::npos)
-				fields[field_name] = "";
-			else
-				fields[field_name] = line.substr(value_start);
-		}
-
-		if (line_end == std::string::npos)
-			break;
-		line_start = line_end + 1;
-	}
-
-	return fields;
+static std::string lowerCase(const std::string &value) {
+	std::string lowered(value);
+	for (std::string::size_type i = 0; i < lowered.size(); ++i)
+		lowered[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(lowered[i])));
+	return lowered;
 }
 
-// CGI-Response = Content-Type [ Status ] *other-field NL response-body
+static bool isTokenChar(char value) {
+	unsigned char c = static_cast<unsigned char>(value);
+	return std::isalnum(c) || (value != '\0' && std::strchr("!#$%&'*+-.^_`|~", value) != NULL);
+}
+
+static bool isFieldName(const std::string &name) {
+	if (name.empty())
+		return false;
+	for (std::string::size_type i = 0; i < name.size(); ++i) {
+		if (!isTokenChar(name[i]))
+			return false;
+	}
+	return true;
+}
+
+static bool isFieldValue(const std::string &value) {
+	for (std::string::size_type i = 0; i < value.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(value[i]);
+		if (c != '\t' && (c < 0x20 || c == 0x7f))
+			return false;
+	}
+	return true;
+}
+
+static std::string trimWhitespace(const std::string &value) {
+	std::string::size_type first = value.find_first_not_of(" \t");
+	if (first == std::string::npos)
+		return "";
+	return value.substr(first, value.find_last_not_of(" \t") - first + 1);
+}
+
+// Status = "Status:" status-code [ SP reason-phrase ]; only final statuses.
+static bool parseStatus(const std::string &value, int &status) {
+	if (value.size() < 3 || (value.size() > 3 && value[3] != ' '))
+		return false;
+	for (int i = 0; i < 3; ++i) {
+		if (!std::isdigit(static_cast<unsigned char>(value[i])))
+			return false;
+	}
+	status = (value[0] - '0') * 100 + (value[1] - '0') * 10 + (value[2] - '0');
+	return status >= 200 && status <= 599;
+}
+
+// The server frames the client response itself, so these never pass through.
+static bool isServerControlledField(const std::string &lowerName) {
+	return lowerName == "content-length" || lowerName == "transfer-encoding" ||
+		lowerName == "connection" || lowerName == "keep-alive" || lowerName == "upgrade" ||
+		lowerName == "proxy-connection" || lowerName == "te" || lowerName == "trailer";
+}
+
+static Response badGateway() {
+	Response response;
+	response.status = 502;
+	return response;
+}
+
+// CGI-Response = *( header-field NL ) NL response-body   (RFC 3875 section 6)
+// Header lines end in LF or CRLF; the first empty line ends the header block.
+// Content-Type, Status, and Location are matched case-insensitively and may
+// appear once. A document response needs Content-Type; a redirect needs
+// Location and defaults to 302. Anything else malformed is a 502.
 Response Cgi::buildResponse(const CgiJob &job) const {
 	const std::string &raw = job.output;
+	if (job.failed || raw.empty())
+		return badGateway();
 
-	// expect non-empty job output
 	Response response;
-	if (job.failed || raw.empty()) {
-		response.status = 502; // empty output is not a valid cgi response
-		return response;
+	bool hasStatus = false;
+	bool hasContentType = false;
+	bool hasLocation = false;
+	std::string::size_type pos = 0;
+	while (true) {
+		std::string::size_type end = raw.find('\n', pos);
+		if (end == std::string::npos)
+			return badGateway(); // no empty line terminates the headers
+		std::string line = raw.substr(pos, end - pos);
+		pos = end + 1;
+		if (!line.empty() && line[line.size() - 1] == '\r')
+			line.erase(line.size() - 1);
+		if (line.empty())
+			break;
+
+		std::string::size_type colon = line.find(':');
+		if (colon == std::string::npos || !isFieldName(line.substr(0, colon)))
+			return badGateway();
+		const std::string name = line.substr(0, colon);
+		const std::string value = trimWhitespace(line.substr(colon + 1));
+		if (!isFieldValue(value))
+			return badGateway();
+
+		const std::string lowerName = lowerCase(name);
+		if (lowerName == "status") {
+			if (hasStatus || !parseStatus(value, response.status))
+				return badGateway();
+			hasStatus = true;
+		} else if (lowerName == "content-type") {
+			if (hasContentType || value.empty())
+				return badGateway();
+			response.headers["Content-Type"] = value;
+			hasContentType = true;
+		} else if (lowerName == "location") {
+			if (hasLocation || value.empty())
+				return badGateway();
+			response.headers["Location"] = value;
+			hasLocation = true;
+		} else if (!isServerControlledField(lowerName)) {
+			response.headers[name] = value;
+		}
 	}
 
-	std::string::size_type sep = raw.find("\r\n\r\n");
-	size_t sep_len = 4;
-	if (sep == std::string::npos) {
-		sep = raw.find("\n\n");
-		sep_len = 2;
-	}
-
-	std::string header_block = (sep == std::string::npos) ? "" : raw.substr(0, sep);
-	std::map<std::string, std::string> fields = parseHeaderFields(header_block);
-
-	// get content type
-	std::map<std::string, std::string>::iterator content_type = fields.find("Content-Type");
-	if (content_type != fields.end()) {
-		response.headers["Content-Type"] = content_type->second;
-		fields.erase(content_type);
-	}
-
-	// get status or create with 200
-	std::map<std::string, std::string>::iterator status = fields.find("Status");
-	if (status != fields.end()) {
-		response.status = std::atoi(status->second.c_str());
-		fields.erase(status);
-	} else {
-		response.status = 200;
-	}
-
-	// get variable amount of other-field
-	for (std::map<std::string, std::string>::const_iterator it = fields.begin(); it != fields.end(); ++it)
-		response.headers[it->first] = it->second;
-
-	// get response body
-	response.body = (sep == std::string::npos) ? raw : raw.substr(sep + sep_len);
-
-	// return response object
+	if (!hasContentType && !hasLocation)
+		return badGateway();
+	if (!hasStatus)
+		response.status = hasLocation ? 302 : 200;
+	response.body = raw.substr(pos);
 	return response;
 }
