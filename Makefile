@@ -11,31 +11,12 @@ OBJ_DIR = objs
 OBJ = $(SRC:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
 NAME = webserv
-RESILIENCE_TEST = /tmp/webserv-resilience-tests
-CONNECTION_LIFECYCLE_TEST = /tmp/webserv-connection-lifecycle-tests
-CGI_PIPE_TEST = /tmp/webserv-cgi-pipe-tests
-CGI_LIFECYCLE_TEST = /tmp/webserv-cgi-lifecycle-tests
-CGI_FIXTURE = contents/cgi/test.cgi
-CONFIG_MODEL_TEST = /tmp/webserv-config-model-tests
-CONFIG_PARSER_TEST = /tmp/webserv-config-parser-tests
-STATIC_FILE_TEST = /tmp/webserv-static-file-tests
-EVENT_LOOP_STRESS_TEST = /tmp/webserv-event-loop-stress-tests
-SESSION_STORE_TEST = /tmp/webserv-session-store-tests
-COOKIE_SESSION_TEST = /tmp/webserv-cookie-session-tests
-HTTP_REQUEST_LINE_TEST = /tmp/webserv-http-request-line-tests
-HTTP_RESPONSE_TEST = /tmp/webserv-http-response-tests
-CONNECTION_TIMEOUT_TEST = /tmp/webserv-connection-timeout-tests
-LOGGER_TEST = /tmp/webserv-logger-tests
-CORE_SRC = $(filter-out $(SRC_DIR)/main.cpp,$(SRC))
 
 all: $(NAME)
 
-$(NAME): $(OBJ) $(CGI_FIXTURE)
+$(NAME): $(OBJ)
 	@$(CXX) $(CXXFLAGS) $(OBJ) -o $(NAME)
 	@echo "\033[1;32m ✅ [webserv created]\033[0m"
-
-$(CGI_FIXTURE): tests/cgi_direct_fixture.cpp
-	@$(CXX) $(CXXFLAGS) $< -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	@$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -48,81 +29,12 @@ clean:
 	@echo "\033[0;31m 🗑️  [objects deleted]\033[0m"
 
 fclean: clean
-	@rm -rf $(NAME) $(CGI_FIXTURE) $(CGI_FIXTURE).dSYM
+	@rm -rf $(NAME)
 	@echo "\033[0;31m 🗑️  [webserv deleted]\033[0m"
 
 re: fclean all
 
-.PHONY: all clean fclean re test resilience-test connection-lifecycle-test cgi-pipe-test cgi-lifecycle-test config-model-test config-parser-test static-file-test event-loop-stress-test session-store-test cookie-session-test http-request-line-test http-response-test connection-timeout-test logger-test
+.PHONY: all clean fclean re test
 
-test:
-	@$(MAKE) http-request-line-test
-	@$(MAKE) http-response-test
-	@$(MAKE) connection-timeout-test
-	@$(MAKE) logger-test
-	@$(MAKE) config-model-test
-	@$(MAKE) config-parser-test
-	@$(MAKE) static-file-test
-	@$(MAKE) session-store-test
-	@$(MAKE) event-loop-stress-test
-	@$(MAKE) cgi-lifecycle-test
-	@$(MAKE) connection-lifecycle-test
-	@$(MAKE) cgi-pipe-test
-	@$(MAKE) cookie-session-test
-	@$(MAKE) resilience-test
-
-http-request-line-test:
-	@$(CXX) $(CXXFLAGS) tests/http_request_line_tests.cpp srcs/Http.cpp -o $(HTTP_REQUEST_LINE_TEST)
-	@$(HTTP_REQUEST_LINE_TEST)
-
-http-response-test:
-	@$(CXX) $(CXXFLAGS) tests/http_response_tests.cpp srcs/Http.cpp -o $(HTTP_RESPONSE_TEST)
-	@$(HTTP_RESPONSE_TEST)
-
-logger-test:
-	@$(CXX) $(CXXFLAGS) tests/logger_tests.cpp srcs/Logger.cpp -o $(LOGGER_TEST)
-	@$(LOGGER_TEST)
-
-connection-timeout-test:
-	@$(CXX) $(CXXFLAGS) tests/connection_timeout_tests.cpp -o $(CONNECTION_TIMEOUT_TEST)
-	@$(CONNECTION_TIMEOUT_TEST)
-
-resilience-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/resilience_tests.cpp -o $(RESILIENCE_TEST)
-	@$(RESILIENCE_TEST)
-
-connection-lifecycle-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/connection_lifecycle_tests.cpp -o $(CONNECTION_LIFECYCLE_TEST)
-	@$(CONNECTION_LIFECYCLE_TEST)
-
-cgi-pipe-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/cgi_pipe_tests.cpp -o $(CGI_PIPE_TEST)
-	@$(CGI_PIPE_TEST)
-
-cgi-lifecycle-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/cgi_lifecycle_tests.cpp srcs/Cgi.cpp srcs/PathPolicy.cpp -o $(CGI_LIFECYCLE_TEST)
-	@$(CGI_LIFECYCLE_TEST)
-
-config-model-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/config_model_tests.cpp srcs/Config.cpp -o $(CONFIG_MODEL_TEST)
-	@$(CONFIG_MODEL_TEST)
-
-config-parser-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/config_parser_tests.cpp srcs/Config.cpp -o $(CONFIG_PARSER_TEST)
-	@$(CONFIG_PARSER_TEST)
-
-static-file-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/static_file_tests.cpp srcs/StaticFile.cpp srcs/PathPolicy.cpp -o $(STATIC_FILE_TEST)
-	@$(STATIC_FILE_TEST)
-
-event-loop-stress-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/event_loop_stress_tests.cpp $(CORE_SRC) -o $(EVENT_LOOP_STRESS_TEST)
-	@$(EVENT_LOOP_STRESS_TEST)
-
-session-store-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/session_store_tests.cpp srcs/Session.cpp -o $(SESSION_STORE_TEST)
-	@$(SESSION_STORE_TEST)
-
-cookie-session-test: $(NAME)
-	@$(CXX) $(CXXFLAGS) tests/cookie_session_tests.cpp -o $(COOKIE_SESSION_TEST)
-	@$(COOKIE_SESSION_TEST)
+test: $(NAME)
+	@python3 tests/webserv_test.py

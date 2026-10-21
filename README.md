@@ -55,10 +55,10 @@ The guide follows the evaluation sheet section by section and runs each check (s
 ### Tests
 
 ```sh
-make test
+make test                          # or: python3 tests/webserv_test.py [--fast]
 ```
 
-The test target is sequential because several suites bind fixed loopback ports. All fourteen targets pass on macOS and on Linux (g++ and clang++). [Testing and Evaluation](docs/testing.md) lists what each target covers, plus browser, curl, and load checks.
+`tests/webserv_test.py` starts `./webserv config/default.config` and walks the evaluation sheet over real sockets: routes, error pages, body limits, uploads, DELETE permissions, CGI (including crashing and endless scripts), sessions, keep-alive, concurrent clients, and the port conflict. `--fast` skips the 15-second CGI timeout check.
 
 ### Cleanup
 
