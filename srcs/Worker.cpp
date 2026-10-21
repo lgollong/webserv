@@ -375,27 +375,14 @@ void Worker::queueParserError(Connection &conn, int status) {
 }
 
 void Worker::queueSessionResponse(Connection &conn) {
-	Session *session = sessions.fromRequest(conn.txn.request, time(NULL));
-	bool created = false;
-	if (session == NULL) {
-		session = sessions.create(time(NULL));
-		created = true;
-	}
-
-	if (session == NULL) {
-		conn.txn.response.status = 500;
-		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-	}
-	else {
-		++session->visits;
-		conn.txn.response.status = 200;
-		conn.txn.response.headers["Content-Type"] = "text/plain";
-		std::ostringstream visits;
-		visits << session->visits;
-		conn.txn.response.body = "Session visits: " + visits.str() + "\n";
-		if (created)
-			conn.txn.response.headers["Set-Cookie"] = SessionStore::setCookie(*session);
-	}
+	std::string cookie;
+	std::ostringstream body;
+	body << "Session visits: " << sessions.visit(conn.txn.request, cookie) << "\n";
+	conn.txn.response.status = 200;
+	conn.txn.response.headers["Content-Type"] = "text/plain";
+	conn.txn.response.body = body.str();
+	if (!cookie.empty())
+		conn.txn.response.headers["Set-Cookie"] = cookie;
 	applyConnectionPolicy(conn, conn.txn.response);
 	conn.outbuf = http.build(conn.txn.response);
 	conn.sent = 0;
@@ -615,7 +602,6 @@ void Worker::finishClientResponse(Connection &conn) {
 
 void Worker::sweepExpiredConnections() {
 	const time_t now = time(NULL);
-	sessions.sweep(now);
 	std::vector<int> expired;
 	for (std::map<int, Connection>::const_iterator it = connections.begin(); it != connections.end(); ++it) {
 		if (it->second.hasClientTimedOut(now, kClientIdleTimeoutSeconds))
