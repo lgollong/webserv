@@ -17,14 +17,6 @@ enum Phase {
 	IDLE
 };
 
-// Ordered by verbosity: a message is written when its level is at most the
-// configured level, so LOG_NONE silences everything.
-enum LogLevel {
-	LOG_NONE,
-	LOG_ERROR,
-	LOG_DEBUG
-};
-
 // Parsed inbound HTTP message. Owned by HTTP.
 struct Request {
 	std::string                        method;

@@ -1,6 +1,5 @@
 #include "../headers/Worker.hpp"
 #include "../headers/StaticFile.hpp"
-#include "../headers/Logger.hpp"
 #include "../headers/Cgi.hpp"
 #include "../headers/Http.hpp"
 #include "../headers/Config.hpp"
@@ -18,8 +17,8 @@
 #include <sstream>
 #include <stdexcept>
 
-Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &logger)
-: config(config), http(http), cgi(cgi), files(files), logger(logger) {}
+Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files)
+: config(config), http(http), cgi(cgi), files(files) {}
 
 Worker::~Worker() {}
 
@@ -200,13 +199,12 @@ void Worker::run() {
 		int listenFd = setupListener(servers[index]);
 		poller.add(listenFd, POLLIN);
 		listeners[listenFd] = index;
-		logger.debug() << "Worker: " << "fd: " << listenFd << " listening on :" << servers[index].port;
 	}
 
 	while (true) {
 		int ready_count = poller.poll(kPollTimeoutMs);
 		if (ready_count < 0) {
-			logger.error("poll failed");
+			std::cerr << "ERROR: poll failed" << std::endl;
 			continue;
 		}
 		if (ready_count == 0) {
@@ -221,10 +219,7 @@ void Worker::run() {
 			sweepExpiredConnections();
 		}
 		catch (const std::exception &e) {
-			try {
-				logger.error(std::string("event loop iteration failed: ") + e.what());
-			}
-			catch (...) {}
+			std::cerr << "ERROR: event loop iteration failed: " << e.what() << std::endl;
 		}
 	}
 }
@@ -236,10 +231,7 @@ void Worker::dispatchReadyEvents(const std::vector<pollfd> &readyFds,
 			dispatchEvent(readyFds[i], listeners, servers);
 		}
 		catch (const std::exception &e) {
-			try {
-				logger.error(std::string("event handling failed: ") + e.what());
-			}
-			catch (...) {}
+			std::cerr << "ERROR: event handling failed: " << e.what() << std::endl;
 			std::map<int, Connection*>::iterator failed = fdToConnection.find(readyFds[i].fd);
 			if (failed != fdToConnection.end())
 				closeConnection(*failed->second);
@@ -254,7 +246,7 @@ void Worker::dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners
 	std::map<int, size_t>::iterator listener = listeners.find(event.fd);
 	if (listener != listeners.end()) {
 		if (event.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-			logger.error("listener received a poll error event");
+			std::cerr << "ERROR: listener received a poll error event" << std::endl;
 			int failedFd = listener->first;
 			size_t serverIndex = listener->second;
 			poller.remove(failedFd);
@@ -266,7 +258,7 @@ void Worker::dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners
 				listeners[replacementFd] = serverIndex;
 			}
 			catch (const std::exception &e) {
-				logger.error(e.what());
+				std::cerr << "ERROR: " << e.what() << std::endl;
 				return ;
 			}
 			return ;
@@ -284,14 +276,12 @@ void Worker::dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners
 	Connection *conn = found->second;
 
 	if (event.fd == conn->txn.cgi.out_fd) {
-		logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi out fd";
 		if (event.revents & (POLLERR | POLLNVAL))
 			failCgiJob(*conn);
 		else if (event.revents & (POLLIN | POLLHUP))
 			onCgiReadable(*conn);
 	}
 	else if (event.fd == conn->txn.cgi.in_fd) {
-		logger.debug() << "Worker: " << "fd: " << conn->fd << " checking cgi in fd";
 		if (event.revents & (POLLERR | POLLHUP | POLLNVAL))
 			failCgiJob(*conn);
 		else if (event.revents & POLLOUT)
@@ -303,11 +293,9 @@ void Worker::dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners
 			return ;
 		}
 		if (event.revents & POLLIN) {
-			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking reading fd";
 			onReadable(*conn);
 		}
 		else if (event.revents & POLLOUT) {
-			logger.debug() << "Worker: " << "fd: " << conn->fd << " checking writing fd";
 			onWritable(*conn);
 		}
 
@@ -325,13 +313,13 @@ void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 
 	int client_fd = accept(listen_fd, reinterpret_cast<sockaddr*>(&client_addr), &len);
 	if (client_fd < 0) {
-		logger.error("accept failed");
+		std::cerr << "ERROR: accept failed" << std::endl;
 		return ;
 	}
 	
 	if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0) {
 		close(client_fd);
-		logger.error("failed to make client socket non-blocking");
+		std::cerr << "ERROR: failed to make client socket non-blocking" << std::endl;
 		return ;
 	}
 	poller.add(client_fd, POLLIN);
@@ -345,7 +333,6 @@ void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 	connections[client_fd] = connection;
 	fdToConnection[client_fd] = &connections[client_fd];
 
-	logger.debug() << "Worker: " << "fd: " << client_fd << " accepted from " << connection.remote_addr;
 }
 
 void Worker::onCgiReadable(Connection &conn) {
@@ -368,7 +355,6 @@ void Worker::onCgiWritable(Connection &conn) {
 	if (!cgi.sendBody(conn.txn.cgi, conn.txn.request.body))
 		return ;
 
-	logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi body fully sent.";
 	closeManagedFd(conn.txn.cgi.in_fd);
 	if (conn.txn.cgi.failed)
 		failCgiJob(conn);
@@ -424,22 +410,18 @@ void Worker::processBufferedRequest(Connection &conn) {
 	int parseStatus = 0;
 	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, config.bodyLimit(conn.server_index), parseStatus);
 	if (req_size < 0) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " parser rejected request with status " << parseStatus;
 		queueParserError(conn, parseStatus);
 		return ;
 	}
 	if (req_size == 0)
 		return ;
 
-	logger.debug() << "Worker: " << "fd: " << conn.fd << " complete request found";
 	conn.inbuf.erase(0, static_cast<size_t>(req_size));
 	conn.close_after_write = requestWantsClose(conn.txn.request);
 	conn.keep_alive = !conn.close_after_write;
 	conn.txn.route = config.route(conn.server_index, conn.txn.request);
 
 	if (!isImplementedMethod(conn.txn.request.method)) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " method not implemented "
-			<< conn.txn.request.method;
 		conn.txn.response.status = 501;
 		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 		applyConnectionPolicy(conn, conn.txn.response);
@@ -451,8 +433,6 @@ void Worker::processBufferedRequest(Connection &conn) {
 	}
 
 	if (!routeAcceptsMethod(conn.txn.route, conn.txn.request.method)) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " rejected method "
-			<< conn.txn.request.method;
 		conn.txn.response.status = 405;
 		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
 		conn.txn.response.headers["Allow"] = allowedMethodsValue(conn.txn.route);
@@ -465,7 +445,6 @@ void Worker::processBufferedRequest(Connection &conn) {
 	}
 
 	if (conn.txn.request.method == "DELETE") {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " deleting a static file";
 		Content content = files.erase(conn.txn.route, conn.txn.request);
 		conn.txn.response.status = content.status;
 		conn.txn.response.body = content.body;
@@ -495,15 +474,12 @@ void Worker::processBufferedRequest(Connection &conn) {
 		return ;
 	}
 	if (conn.txn.route.session_demo) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " handling session demonstration";
 		queueSessionResponse(conn);
 		return ;
 	}
 
 	if (conn.txn.route.redirect_status >= 300 && conn.txn.route.redirect_status < 400 &&
 		!conn.txn.route.redirect_target.empty()) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " redirecting to "
-			<< conn.txn.route.redirect_target;
 		conn.txn.response.status = conn.txn.route.redirect_status;
 		conn.txn.response.headers["Location"] = conn.txn.route.redirect_target;
 		applyConnectionPolicy(conn, conn.txn.response);
@@ -515,7 +491,6 @@ void Worker::processBufferedRequest(Connection &conn) {
 	}
 
 	if (conn.txn.route.is_cgi == true) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a cgi request";
 		std::vector<int> serverFds;
 		const std::vector<pollfd> &managed = poller.events();
 		for (std::vector<pollfd>::const_iterator it = managed.begin(); it != managed.end(); ++it)
@@ -541,7 +516,6 @@ void Worker::processBufferedRequest(Connection &conn) {
 		return ;
 	}
 
-	logger.debug() << "Worker: " << "fd: " << conn.fd << " this is a standard request";
 	Content content = files.serve(conn.txn.route, conn.txn.request);
 	conn.txn.response.status = content.status;
 	conn.txn.response.body = content.body;
@@ -565,19 +539,13 @@ void Worker::onReadable(Connection &conn) {
 	ssize_t n = read(conn.fd, buf, sizeof(buf));
 
 	if (n <= 0) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " closing after read result " << n;
 		closeConnection(conn);
 		return ;
 	}
-	if (logger.enabled(LOG_DEBUG))
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " read " << n << " bytes:\n"
-			<< std::string(buf, static_cast<size_t>(n));
 
 	conn.inbuf.append(buf, n);
 	conn.last_activity = time(NULL);
 	if (conn.phase == RUNNING_CGI && conn.inbuf.size() > kMaxDeferredClientBytes) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd
-			<< " closing after deferred CGI input exceeded its limit";
 		closeConnection(conn);
 		return ;
 	}
@@ -593,13 +561,9 @@ void Worker::onReadable(Connection &conn) {
 void Worker::onWritable(Connection &conn) {
 	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
 	if (n <= 0) {
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " closing after write result " << n;
 		closeConnection(conn);
 		return ;
 	}
-	if (logger.enabled(LOG_DEBUG))
-		logger.debug() << "Worker: " << "fd: " << conn.fd << " wrote " << n << " bytes:\n"
-			<< std::string(conn.outbuf.data() + conn.sent, static_cast<size_t>(n));
 
 	conn.sent += n;
 	conn.last_activity = time(NULL);
@@ -607,7 +571,6 @@ void Worker::onWritable(Connection &conn) {
 		return ;
 	if (conn.body_fd >= 0) {
 		if (!refillFromBodyFile(conn)) {
-			logger.debug() << "Worker: " << "fd: " << conn.fd << " streamed file ended early";
 			closeConnection(conn);
 			return ;
 		}
@@ -662,7 +625,6 @@ void Worker::sweepExpiredConnections() {
 		std::map<int, Connection>::iterator found = connections.find(*it);
 		if (found == connections.end())
 			continue;
-		logger.debug() << "Worker: " << "fd: " << found->second.fd << " client inactivity timeout";
 		closeConnection(found->second);
 	}
 	sweepCgiJobs(now);
@@ -677,7 +639,6 @@ void Worker::sweepCgiJobs(time_t now) {
 
 		CgiJob &job = conn.txn.cgi;
 		if (job.hasTimedOut(now, kCgiTimeoutSeconds) && !job.termination_requested) {
-			logger.debug() << "Worker: " << "fd: " << conn.fd << " cgi timeout";
 			failCgiJob(conn);
 			continue;
 		}

@@ -8,14 +8,13 @@
 #include "Http.hpp"
 #include "Cgi.hpp"
 #include "StaticFile.hpp"
-#include "Logger.hpp"
 #include "Session.hpp"
 
 class WorkerEventLoopTests;
 
 class Worker {
 	public:
-		Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files, Logger &logger);
+		Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files);
 		~Worker();
 
 		void run();
@@ -31,7 +30,6 @@ class Worker {
 		Http                       &http;
 		Cgi                        &cgi;
 		StaticFile                 &files;
-		Logger                     &logger;
 		SessionStore               sessions;
 
 		void acceptNew(int listen_fd, size_t serverIndex);

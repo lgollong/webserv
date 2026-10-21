@@ -70,7 +70,6 @@ Dependency arrows point one way: `Worker → services`.
 | **Config** | Parses the startup file and resolves a request to its listener-selected location. | `ServerConfig`, `Route` | `servers`, `route`, `bodyLimit`, `errorPage` |
 | **Cgi** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `sendBody`, `collect`, `reap` |
 | **StaticFile** | Reads a file from disk, resolves its MIME type, autoindex/upload/delete. | `Content` | `serve`, `upload`, `erase` |
-| **Logger** | Error and diagnostic logging. Access logging is currently a stub. | — | `debug`, `error` |
 
 ### State objects (the nesting)
 

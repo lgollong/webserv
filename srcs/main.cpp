@@ -2,7 +2,6 @@
 #include <iostream>
 #include "../headers/types.hpp"
 #include "../headers/StaticFile.hpp"
-#include "../headers/Logger.hpp"
 #include "../headers/Cgi.hpp"
 #include "../headers/Http.hpp"
 #include "../headers/Config.hpp"
@@ -15,17 +14,18 @@ int main(int argc, char *argv[]){
 		std::cerr << "Usage: " << argv[0] << " [configuration file]" << std::endl;
 		return (1);
 	}
-	const char *configPath = (argc == 2) ? argv[1] : kDefaultConfigPath;
+	const char *configPath = kDefaultConfigPath;
+	if (argc == 2)
+		configPath = argv[1];
 
 	signal(SIGPIPE, SIG_IGN);
 
 	try {
 		Config config(configPath);
-		Logger logger(std::cout, std::cerr, config.logLevel());
 		Http http;
 		Cgi cgi;
 		StaticFile files;
-		Worker worker(config, http, cgi, files, logger);
+		Worker worker(config, http, cgi, files);
 
 		worker.run();
 	}

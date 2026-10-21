@@ -40,8 +40,6 @@ The executable takes an optional configuration-file argument. Without one it loa
 ./webserv config/default.config
 ```
 
-Logging is set by the top-level `log_level none|error|debug;` line in the configuration file (default `error`). Use `debug` to trace every connection, request, and response; `none` silences runtime logs. Errors that stop the server are always printed.
-
 Open the evaluation guide at:
 
 ```sh
