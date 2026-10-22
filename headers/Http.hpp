@@ -5,32 +5,17 @@
 #include <sys/types.h>
 #include "types.hpp"
 
-// Byte stream <-> structured message, both directions; renders status codes (incl. errors).
 class Http {
 	public:
-		enum {
-			MAX_HEADER_BYTES = 16384,
-			MAX_HEADER_FIELDS = 100,
-			MAX_CHUNK_LINE_BYTES = 1024,
-			DEFAULT_MAX_BODY_BYTES = 10000000
-		};
+		enum { MAX_HEADER_BYTES = 16384 };
 
 		Http();
 		~Http();
 
-		// > 0: bytes consumed, a complete request was parsed into `request`.
-		//   0: `inbuf` doesn't contain a complete request yet -- wait for more data.
-		//  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
-		// Never mutates `inbuf`; the caller (Worker) owns trimming consumed bytes.
-		ssize_t      parse(const std::string &inbuf, Request &request);
-		ssize_t      parse(const std::string &inbuf, Request &request, size_t maxBodyBytes);
-		ssize_t      parse(const std::string &inbuf, Request &request, int &errorStatus);
 		ssize_t      parse(const std::string &inbuf, Request &request, size_t maxBodyBytes, int &errorStatus);
 		Response     defaultErrorResponse(int status) const;
 		bool         supportsStatus(int status) const;
 		std::string  build(const Response &response);
-		// Status line and headers only, for a body of bodyLength bytes that the
-		// caller sends separately (streamed files).
 		std::string  buildHead(const Response &response, size_t bodyLength);
 };
 

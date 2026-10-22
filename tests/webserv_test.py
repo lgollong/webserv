@@ -131,6 +131,9 @@ def test_parser():
     status, _, body = parse(raw(b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\nConnection: close\r\n"
                                 b"Transfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n"))
     check("chunked body is de-chunked for CGI", status == 200 and b"You sent: hello world" in body)
+    status, _, body = parse(raw(b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\nConnection: close\r\n"
+                                b"Transfer-Encoding: chunked\r\n\r\n3;ext=1\r\nabc\r\n0\r\nX-Trailer: y\r\n\r\n"))
+    check("chunk extensions and trailers are skipped", status == 200 and b"You sent: abc" in body)
 
 
 def test_body_limit():

@@ -1,432 +1,162 @@
 #include "Http.hpp"
 #include <sstream>
 #include <cctype>
-#include <cstddef>
-#include <limits>
+#include <cstdlib>
 
 Http::Http() {}
 
 Http::~Http() {}
 
-static const int kBadRequest = 400;
-static const int kPayloadTooLarge = 413;
-static const int kRequestHeaderFieldsTooLarge = 431;
-static const int kHttpVersionNotSupported = 505;
-
-// request-line = method SP request-target SP HTTP-version CRLF
-// request-target = path [ "?" query ]
-static bool isTokenChar(char value) {
-	unsigned char c = static_cast<unsigned char>(value);
-	if (std::isalnum(c))
-		return true;
-	return value == '!' || value == '#' || value == '$' || value == '%' ||
-		value == '&' || value == '\'' || value == '*' || value == '+' ||
-		value == '-' || value == '.' || value == '^' || value == '_' ||
-		value == '`' || value == '|' || value == '~';
-}
-
-static bool isMethodToken(const std::string &method) {
-	if (method.empty())
-		return false;
-	for (std::string::size_type i = 0; i < method.size(); ++i) {
-		if (!isTokenChar(method[i]))
-			return false;
-	}
-	return true;
-}
-
-static bool isOriginFormTarget(const std::string &target) {
-	if (target.empty() || target[0] != '/')
-		return false;
-	for (std::string::size_type i = 0; i < target.size(); ++i) {
-		unsigned char c = static_cast<unsigned char>(target[i]);
-		if (c <= 0x20 || c >= 0x7f || target[i] == '#')
-			return false;
-	}
-	return true;
-}
-
-// HTTP-version = "HTTP" "/" DIGIT "." DIGIT
-static bool isHttpVersion(const std::string &version) {
-	return version.size() == 8 && version.compare(0, 5, "HTTP/") == 0 &&
-		std::isdigit(static_cast<unsigned char>(version[5])) && version[6] == '.' &&
-		std::isdigit(static_cast<unsigned char>(version[7]));
-}
-
-// Returns 0 on success, otherwise the HTTP status for the rejected line.
-// Any HTTP/1.x minor version is accepted (RFC 9110 section 2.5); other
-// major versions are well-formed but unsupported.
-static int parseRequestLine(const std::string &line, Request &request) {
-	std::string::size_type sp1 = line.find(' ');
-	if (sp1 == std::string::npos || sp1 == 0)
-		return kBadRequest;
-	std::string::size_type sp2 = line.find(' ', sp1 + 1);
-	if (sp2 == std::string::npos || sp2 == sp1 + 1)
-		return kBadRequest;
-	if (line.find(' ', sp2 + 1) != std::string::npos)
-		return kBadRequest;
-
-	std::string method = line.substr(0, sp1);
-	std::string target  = line.substr(sp1 + 1, sp2 - sp1 - 1);
-	std::string version = line.substr(sp2 + 1);
-	if (!isMethodToken(method) || !isOriginFormTarget(target) || !isHttpVersion(version))
-		return kBadRequest;
-	if (version[5] != '1')
-		return kHttpVersionNotSupported;
-
-	request.method = method;
-	request.version = version;
-
-	std::string::size_type qpos = target.find('?');
-	if (qpos == std::string::npos) {
-		request.path = target;
-		request.query = "";
-	} else {
-		request.path = target.substr(0, qpos);
-		request.query = target.substr(qpos + 1);
-	}
-
-	return 0;
-}
-
 static std::string lowerCase(const std::string &value) {
-	std::string result;
-	result.reserve(value.size());
-	for (std::string::size_type i = 0; i < value.size(); ++i)
-		result += static_cast<char>(std::tolower(static_cast<unsigned char>(value[i])));
+	std::string result(value);
+	for (std::string::size_type i = 0; i < result.size(); ++i)
+		result[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[i])));
 	return result;
 }
 
-static bool isHeaderValue(const std::string &value) {
-	for (std::string::size_type i = 0; i < value.size(); ++i) {
-		unsigned char c = static_cast<unsigned char>(value[i]);
-		if (c == '\t' || (c >= 0x20 && c != 0x7f))
-			continue;
-		return false;
-	}
-	return true;
+static std::string trim(const std::string &value) {
+	std::string::size_type first = value.find_first_not_of(" \t");
+	if (first == std::string::npos)
+		return "";
+	return value.substr(first, value.find_last_not_of(" \t") - first + 1);
 }
 
-static std::string trimOptionalWhitespace(const std::string &value) {
-	std::string::size_type first = 0;
-	while (first < value.size() && (value[first] == ' ' || value[first] == '\t'))
-		++first;
+static int parseRequestLine(const std::string &line, Request &request) {
+	std::string::size_type sp1 = line.find(' ');
+	std::string::size_type sp2 = std::string::npos;
+	if (sp1 != std::string::npos)
+		sp2 = line.find(' ', sp1 + 1);
+	if (sp2 == std::string::npos || sp1 == 0 || line.find(' ', sp2 + 1) != std::string::npos)
+		return 400;
 
-	std::string::size_type last = value.size();
-	while (last > first && (value[last - 1] == ' ' || value[last - 1] == '\t'))
-		--last;
-	return value.substr(first, last - first);
+	std::string target = line.substr(sp1 + 1, sp2 - sp1 - 1);
+	request.method = line.substr(0, sp1);
+	request.version = line.substr(sp2 + 1);
+	if (target.empty() || target[0] != '/' || request.version.compare(0, 5, "HTTP/") != 0)
+		return 400;
+	if (request.version != "HTTP/1.0" && request.version != "HTTP/1.1")
+		return 505;
+
+	std::string::size_type qpos = target.find('?');
+	request.path = target.substr(0, qpos);
+	request.query.clear();
+	if (qpos != std::string::npos)
+		request.query = target.substr(qpos + 1);
+	return 0;
 }
 
-// header-field = field-name ":" OWS field-value OWS CRLF
-static bool parseHeaderFields(const std::string &headerBlock, std::string::size_type start,
-		std::map<std::string, std::string> &headers, bool &isChunked, int &errorStatus) {
-	std::string::size_type pos = start;
-	size_t fieldCount = 0;
-	bool hasContentLength = false;
-	bool hasTransferEncoding = false;
-
-	while (pos < headerBlock.size()) {
-		std::string::size_type lineEnd = headerBlock.find("\r\n", pos);
-		bool isLastLine = lineEnd == std::string::npos;
-		std::string line = isLastLine
-			? headerBlock.substr(pos)
-			: headerBlock.substr(pos, lineEnd - pos);
-
+static bool parseHeaders(const std::string &block, Request &request) {
+	std::string::size_type pos = 0;
+	while (pos < block.size()) {
+		std::string::size_type end = block.find("\r\n", pos);
+		if (end == std::string::npos)
+			end = block.size();
+		std::string line = block.substr(pos, end - pos);
 		std::string::size_type colon = line.find(':');
 		if (colon == std::string::npos || colon == 0)
 			return false;
-
-		std::string key = line.substr(0, colon);
-		for (std::string::size_type i = 0; i < key.size(); ++i) {
-			if (!isTokenChar(key[i]))
-				return false;
-		}
-
-		std::string value = line.substr(colon + 1);
-		if (!isHeaderValue(value))
-			return false;
-
-		key = lowerCase(key);
-		if (++fieldCount > Http::MAX_HEADER_FIELDS) {
-			errorStatus = kRequestHeaderFieldsTooLarge;
-			return false;
-		}
-		if (key == "content-length") {
-			if (hasContentLength || hasTransferEncoding)
-				return false;
-			hasContentLength = true;
-		}
-		if (key == "transfer-encoding") {
-			if (hasTransferEncoding || hasContentLength)
-				return false;
-			hasTransferEncoding = true;
-			if (lowerCase(trimOptionalWhitespace(value)) != "chunked")
-				return false;
-			isChunked = true;
-		}
-
-		headers[key] = trimOptionalWhitespace(value);
-
-		if (isLastLine)
-			break;
-		pos = lineEnd + 2;
+		request.headers[lowerCase(line.substr(0, colon))] = trim(line.substr(colon + 1));
+		pos = end + 2;
 	}
 	return true;
 }
 
-static bool parseContentLength(const std::string &value, size_t &contentLength) {
-	if (value.empty())
-		return false;
-
-	contentLength = 0;
-	const size_t maxSize = std::numeric_limits<size_t>::max();
-	for (std::string::size_type i = 0; i < value.size(); ++i) {
-		if (value[i] < '0' || value[i] > '9')
-			return false;
-		size_t digit = static_cast<size_t>(value[i] - '0');
-		if (contentLength > (maxSize - digit) / 10)
-			return false;
-		contentLength = contentLength * 10 + digit;
-	}
-	return true;
-}
-
-static bool parseChunkSize(const std::string &line, size_t &chunkSize) {
-	std::string::size_type extension = line.find(';');
-	std::string sizeText = line.substr(0, extension);
-	if (sizeText.empty())
-		return false;
-	if (extension != std::string::npos) {
-		if (extension + 1 == line.size())
-			return false;
-		for (std::string::size_type i = extension + 1; i < line.size(); ++i) {
-			unsigned char c = static_cast<unsigned char>(line[i]);
-			if (c < 0x20 || c == 0x7f)
-				return false;
-		}
-	}
-
-	chunkSize = 0;
-	const size_t maxSize = std::numeric_limits<size_t>::max();
-	for (std::string::size_type i = 0; i < sizeText.size(); ++i) {
-		unsigned char c = static_cast<unsigned char>(sizeText[i]);
-		size_t digit = 0;
-		if (c >= '0' && c <= '9')
-			digit = c - '0';
-		else if (c >= 'a' && c <= 'f')
-			digit = c - 'a' + 10;
-		else if (c >= 'A' && c <= 'F')
-			digit = c - 'A' + 10;
-		else
-			return false;
-		if (chunkSize > (maxSize - digit) / 16)
-			return false;
-		chunkSize = chunkSize * 16 + digit;
-	}
-	return true;
-}
-
-static ssize_t parseChunkedBody(const std::string &inbuf, size_t bodyStart, size_t maxBodyBytes,
+static ssize_t parseChunkedBody(const std::string &inbuf, size_t pos, size_t maxBodyBytes,
 		std::string &body, int &errorStatus) {
-	size_t pos = bodyStart;
-	std::string decoded;
-	const size_t maxSize = std::numeric_limits<size_t>::max();
-
+	body.clear();
 	while (true) {
 		std::string::size_type lineEnd = inbuf.find("\r\n", pos);
-		if (lineEnd == std::string::npos) {
-			if (inbuf.size() - pos > Http::MAX_CHUNK_LINE_BYTES) {
-				errorStatus = kRequestHeaderFieldsTooLarge;
-				return -1;
-			}
+		if (lineEnd == std::string::npos)
 			return 0;
-		}
-		if (lineEnd - pos > Http::MAX_CHUNK_LINE_BYTES) {
-			errorStatus = kRequestHeaderFieldsTooLarge;
-			return -1;
-		}
-
-		size_t chunkSize = 0;
-		if (!parseChunkSize(inbuf.substr(pos, lineEnd - pos), chunkSize)) {
-			errorStatus = kBadRequest;
+		std::string line = inbuf.substr(pos, lineEnd - pos);
+		std::string sizeText = trim(line.substr(0, line.find(';')));
+		char *end = NULL;
+		size_t size = std::strtoul(sizeText.c_str(), &end, 16);
+		if (sizeText.empty() || sizeText.size() > 8 || *end != '\0') {
+			errorStatus = 400;
 			return -1;
 		}
 		pos = lineEnd + 2;
 
-		if (chunkSize == 0) {
-			if (pos > maxSize - 2) {
-				errorStatus = kBadRequest;
-				return -1;
-			}
-			if (inbuf.size() >= pos + 2 && inbuf.compare(pos, 2, "\r\n") == 0) {
-				pos += 2;
-				if (pos > static_cast<size_t>(std::numeric_limits<ssize_t>::max())) {
-					errorStatus = kBadRequest;
-					return -1;
-				}
-				body = decoded;
-				return static_cast<ssize_t>(pos);
-			}
-
-			std::string::size_type trailerEnd = inbuf.find("\r\n\r\n", pos);
-			if (trailerEnd == std::string::npos) {
-				if (inbuf.size() - pos > Http::MAX_HEADER_BYTES) {
-					errorStatus = kRequestHeaderFieldsTooLarge;
-					return -1;
-				}
+		if (size == 0) {
+			std::string::size_type bodyEnd = inbuf.find("\r\n\r\n", pos - 2);
+			if (bodyEnd == std::string::npos)
 				return 0;
-			}
-			if (trailerEnd > maxSize - 4) {
-				errorStatus = kBadRequest;
-				return -1;
-			}
-			if (trailerEnd + 4 - pos > Http::MAX_HEADER_BYTES) {
-				errorStatus = kRequestHeaderFieldsTooLarge;
-				return -1;
-			}
-
-			std::map<std::string, std::string> trailers;
-			bool trailerChunked = false;
-			if (!parseHeaderFields(inbuf.substr(pos, trailerEnd - pos), 0, trailers, trailerChunked, errorStatus) ||
-				trailers.find("content-length") != trailers.end() || trailers.find("transfer-encoding") != trailers.end()) {
-				if (errorStatus == 0)
-					errorStatus = kBadRequest;
-				return -1;
-			}
-			pos = trailerEnd + 4;
-			if (pos > static_cast<size_t>(std::numeric_limits<ssize_t>::max())) {
-				errorStatus = kBadRequest;
-				return -1;
-			}
-			body = decoded;
-			return static_cast<ssize_t>(pos);
+			return static_cast<ssize_t>(bodyEnd + 4);
 		}
-
-		if (chunkSize > maxBodyBytes || decoded.size() > maxBodyBytes - chunkSize) {
-			errorStatus = kPayloadTooLarge;
+		if (size > maxBodyBytes - body.size()) {
+			errorStatus = 413;
 			return -1;
 		}
-		if (pos > maxSize - chunkSize || maxSize - pos - chunkSize < 2) {
-			errorStatus = kBadRequest;
-			return -1;
-		}
-		size_t chunkEnd = pos + chunkSize;
-		if (inbuf.size() < chunkEnd + 2)
+		if (inbuf.size() < pos + size + 2)
 			return 0;
-		if (inbuf.compare(chunkEnd, 2, "\r\n") != 0) {
-			errorStatus = kBadRequest;
+		if (inbuf.compare(pos + size, 2, "\r\n") != 0) {
+			errorStatus = 400;
 			return -1;
 		}
-
-		decoded.append(inbuf, pos, chunkSize);
-		pos = chunkEnd + 2;
+		body.append(inbuf, pos, size);
+		pos += size + 2;
 	}
-}
-
-// > 0: bytes consumed, a complete request was parsed into `request`.
-//   0: `inbuf` doesn't contain a complete request yet -- wait for more data.
-//  -1: `inbuf` contains a malformed request -- a parse error, not a wait.
-ssize_t Http::parse(const std::string &inbuf, Request &request) {
-	int ignoredStatus = 0;
-	return parse(inbuf, request, DEFAULT_MAX_BODY_BYTES, ignoredStatus);
-}
-
-ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBytes) {
-	int ignoredStatus = 0;
-	return parse(inbuf, request, maxBodyBytes, ignoredStatus);
-}
-
-ssize_t Http::parse(const std::string &inbuf, Request &request, int &errorStatus) {
-	return parse(inbuf, request, DEFAULT_MAX_BODY_BYTES, errorStatus);
 }
 
 ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBytes, int &errorStatus) {
 	errorStatus = 0;
 	std::string::size_type headerEnd = inbuf.find("\r\n\r\n");
-	if (headerEnd == std::string::npos) {
-		if (inbuf.size() > MAX_HEADER_BYTES) {
-			errorStatus = kRequestHeaderFieldsTooLarge;
-			return -1;
-		}
-		return 0; // headers not fully buffered yet
-	}
-	if (headerEnd + 4 > MAX_HEADER_BYTES) {
-		errorStatus = kRequestHeaderFieldsTooLarge;
+	if (headerEnd == std::string::npos || headerEnd + 4 > MAX_HEADER_BYTES) {
+		if (headerEnd == std::string::npos && inbuf.size() <= MAX_HEADER_BYTES)
+			return 0;
+		errorStatus = 431;
 		return -1;
 	}
 
-	std::string headerBlock = inbuf.substr(0, headerEnd);
-	std::string::size_type bodyStart = headerEnd + 4;
-
-	std::string::size_type lineEnd = headerBlock.find("\r\n");
-	std::string requestLine = (lineEnd == std::string::npos) ? headerBlock : headerBlock.substr(0, lineEnd);
-
 	Request parsed;
-	int requestLineStatus = parseRequestLine(requestLine, parsed);
-	if (requestLineStatus != 0) {
-		errorStatus = requestLineStatus;
-		return -1; // malformed or unsupported request-line
-	}
+	std::string::size_type lineEnd = inbuf.find("\r\n");
+	errorStatus = parseRequestLine(inbuf.substr(0, lineEnd), parsed);
+	if (errorStatus == 0 && lineEnd < headerEnd &&
+		!parseHeaders(inbuf.substr(lineEnd + 2, headerEnd - lineEnd - 2), parsed))
+		errorStatus = 400;
+	if (errorStatus != 0)
+		return -1;
 
-	std::string::size_type headersStart = (lineEnd == std::string::npos) ? headerBlock.size() : lineEnd + 2;
-	bool isChunked = false;
-	if (!parseHeaderFields(headerBlock, headersStart, parsed.headers, isChunked, errorStatus)) {
-		if (errorStatus == 0)
-			errorStatus = kBadRequest;
-		return -1; // malformed or unsupported headers
-	}
-	if (isChunked) {
-		std::string decodedBody;
-		ssize_t requestSize = parseChunkedBody(inbuf, bodyStart, maxBodyBytes, decodedBody, errorStatus);
-		if (requestSize <= 0)
-			return requestSize;
-		parsed.body = decodedBody;
-		request = parsed;
+	size_t bodyStart = headerEnd + 4;
+	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("transfer-encoding");
+	if (it != parsed.headers.end() && lowerCase(it->second) == "chunked") {
+		ssize_t requestSize = parseChunkedBody(inbuf, bodyStart, maxBodyBytes, parsed.body, errorStatus);
+		if (requestSize > 0)
+			request = parsed;
 		return requestSize;
 	}
 
 	size_t contentLength = 0;
-	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("content-length");
-	if (it != parsed.headers.end() && !parseContentLength(it->second, contentLength)) {
-		errorStatus = kBadRequest;
-		return -1; // invalid Content-Length
+	it = parsed.headers.find("content-length");
+	if (it != parsed.headers.end()) {
+		if (it->second.empty() || it->second.size() > 18 ||
+			it->second.find_first_not_of("0123456789") != std::string::npos) {
+			errorStatus = 400;
+			return -1;
+		}
+		contentLength = std::strtoul(it->second.c_str(), NULL, 10);
 	}
 	if (contentLength > maxBodyBytes) {
-		errorStatus = kPayloadTooLarge;
-		return -1; // request body is larger than the configured limit
+		errorStatus = 413;
+		return -1;
 	}
-
-	const size_t maxSize = std::numeric_limits<size_t>::max();
-	if (contentLength > maxSize - bodyStart) {
-		errorStatus = kBadRequest;
-		return -1; // full request length cannot be represented
-	}
-	const size_t requestSize = bodyStart + contentLength;
-	if (requestSize > static_cast<size_t>(std::numeric_limits<ssize_t>::max())) {
-		errorStatus = kBadRequest;
-		return -1; // parser contract cannot return this consumed count
-	}
-
-	if (inbuf.size() < requestSize)
-		return 0; // body not fully buffered yet
+	if (inbuf.size() < bodyStart + contentLength)
+		return 0;
 
 	parsed.body = inbuf.substr(bodyStart, contentLength);
 	request = parsed;
-
-	return static_cast<ssize_t>(requestSize);
+	return static_cast<ssize_t>(bodyStart + contentLength);
 }
 
 static const char *reasonPhrase(int status) {
 	switch (status) {
 		case 200: return "OK";
 		case 201: return "Created";
-		case 202: return "Accepted";
 		case 204: return "No Content";
 		case 301: return "Moved Permanently";
 		case 302: return "Found";
 		case 303: return "See Other";
-		case 304: return "Not Modified";
 		case 307: return "Temporary Redirect";
 		case 308: return "Permanent Redirect";
 		case 400: return "Bad Request";
@@ -435,9 +165,7 @@ static const char *reasonPhrase(int status) {
 		case 404: return "Not Found";
 		case 405: return "Method Not Allowed";
 		case 409: return "Conflict";
-		case 411: return "Length Required";
 		case 413: return "Payload Too Large";
-		case 415: return "Unsupported Media Type";
 		case 431: return "Request Header Fields Too Large";
 		case 500: return "Internal Server Error";
 		case 501: return "Not Implemented";
@@ -453,16 +181,13 @@ bool Http::supportsStatus(int status) const {
 }
 
 Response Http::defaultErrorResponse(int status) const {
-	const char *reason = reasonPhrase(status);
-	if (status < 400 || reason == NULL) {
+	if (status < 400 || !supportsStatus(status))
 		status = 500;
-		reason = reasonPhrase(status);
-	}
 
 	std::ostringstream out;
 	out << "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
-		<< status << " " << reason << "</title></head><body><h1>"
-		<< status << " " << reason << "</h1></body></html>";
+		<< status << " " << reasonPhrase(status) << "</title></head><body><h1>"
+		<< status << " " << reasonPhrase(status) << "</h1></body></html>";
 
 	Response response;
 	response.status = status;
@@ -471,63 +196,30 @@ Response Http::defaultErrorResponse(int status) const {
 	return response;
 }
 
-static bool hasResponseHeader(const std::map<std::string, std::string> &headers,
-		const std::string &wanted, std::string &value) {
-	for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it) {
-		if (lowerCase(it->first) != wanted || !isHeaderValue(it->second))
-			continue;
-		value = it->second;
-		return true;
-	}
-	return false;
-}
-
-static bool isResponseHeader(const std::string &name, const std::string &value) {
-	if (name.empty() || !isHeaderValue(value))
-		return false;
-	for (std::string::size_type i = 0; i < name.size(); ++i) {
-		if (!isTokenChar(name[i]))
-			return false;
-	}
-	return true;
-}
-
-static int serializedStatus(const Response &response) {
-	int status = response.status ? response.status : 200;
-	return reasonPhrase(status) == NULL ? 500 : status;
-}
-
 std::string Http::build(const Response &response) {
-	int status = serializedStatus(response);
-	if (status == 204 || status == 304)
-		return buildHead(response, 0);
-	return buildHead(response, response.body.size()) + response.body;
+	std::string head = buildHead(response, response.body.size());
+	if (response.status == 204)
+		return head;
+	return head + response.body;
 }
 
 std::string Http::buildHead(const Response &response, size_t bodyLength) {
-	int status = serializedStatus(response);
-	const char *reason = reasonPhrase(status);
-	if (status == 204 || status == 304)
+	int status = response.status;
+	if (!supportsStatus(status))
+		status = 500;
+	if (status == 204)
 		bodyLength = 0;
 
-	std::string contentType;
-	if (!hasResponseHeader(response.headers, "content-type", contentType))
-		contentType = "text/html";
-
-	std::ostringstream len;
-	len << bodyLength;
-
 	std::ostringstream out;
-	out << "HTTP/1.1 " << status << " " << reason << "\r\n";
-	out << "Content-Type: " << contentType << "\r\n";
-	out << "Content-Length: " << len.str() << "\r\n";
+	out << "HTTP/1.1 " << status << " " << reasonPhrase(status) << "\r\n";
+	out << "Content-Length: " << bodyLength << "\r\n";
+	std::map<std::string, std::string>::const_iterator type = response.headers.find("Content-Type");
+	if (type == response.headers.end() || type->second.empty())
+		out << "Content-Type: text/html\r\n";
 	for (std::map<std::string, std::string>::const_iterator it = response.headers.begin(); it != response.headers.end(); ++it) {
-		std::string name = lowerCase(it->first);
-		if (name == "content-type" || name == "content-length" || !isResponseHeader(it->first, it->second))
-			continue;
-		out << it->first << ": " << it->second << "\r\n";
+		if (!it->second.empty())
+			out << it->first << ": " << it->second << "\r\n";
 	}
 	out << "\r\n";
-
 	return out.str();
 }
