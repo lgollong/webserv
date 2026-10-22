@@ -50,8 +50,8 @@ content branch.
 - `poll()` watches read **and** write interest; POLLOUT is set only when output is queued.
 - React on **return values only** — never inspect `errno` after a read/write.
 - Regular disk files are exempt (may be read/written blocking).
-- `fork` is used for **CGI only**; never block on `waitpid` inside the loop (poll the child /
-  reap with `WNOHANG`).
+- `fork` is used for **CGI only**; a child is reaped with `WNOHANG` once its output ends, and only
+  waited for after `SIGKILL` (timeout, disconnect), which returns immediately.
 - Every connection has a timeout so no request hangs indefinitely.
 
 ---
@@ -68,7 +68,7 @@ Dependency arrows point one way: `Worker → services`.
 | **Poller** | Thin `poll()` wrapper; maintains the fd set and per-fd interest. | `vector<pollfd>` | `add`, `remove`, `setEvents`, `poll` |
 | **Http** | Byte stream ↔ structured message, both directions; renders status codes (incl. errors). | `Request`, `Response` | `parse`, `build` |
 | **Config** | Parses the startup file and resolves a request to its listener-selected location. | `ServerConfig`, `Route` | `servers`, `route`, `bodyLimit`, `errorPage` |
-| **Cgi** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `sendBody`, `collect`, `reap` |
+| **Cgi** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `sendBody`, `collect`, `stop` |
 | **StaticFile** | Reads a file from disk, resolves its MIME type, autoindex/upload/delete. | `Content` | `serve`, `upload`, `erase` |
 
 ### State objects (the nesting)
@@ -137,8 +137,8 @@ next step would block.
 4. `Config::route` → `Route` with `is_cgi=true`, optional `cgi_handler`, URL `cgi_script_name`, and route-root `cgi_script_path` set.
 5. `Cgi::start(request, route, server)` → `CgiJob{pid, in_fd, out_fd}`; register the pipe fds in the Poller,
    set `phase = RUNNING_CGI`, and return to the loop without blocking in `waitpid`.
-6. On pipe events, `Cgi::sendBody()` forwards POST data and `Cgi::collect()` accumulates output; on child exit, parse the
-   script's `Status:` / `Content-Type:` header block into `txn.response`.
+6. On pipe events, `Cgi::sendBody()` forwards POST data and `Cgi::collect()` accumulates output; on end of output, `Cgi::stop()` reaps the child and the
+   script's `Status:` / `Content-Type:` header block is parsed into `txn.response`.
 7. `Http::build` → bytes; then `WRITING` and partial writes as above.
 
 **Errors ride the same path:** handlers return a non-OK status (400/403/404/502); `Worker` first

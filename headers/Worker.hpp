@@ -24,7 +24,6 @@ class Worker {
 
 		std::map<int, Connection>  connections;
 		std::map<int, Connection*> fdToConnection;
-		std::map<pid_t, time_t>    pendingCgiReaps;
 		Poller                     poller;
 		Config                     &config;
 		Http                       &http;
@@ -48,10 +47,7 @@ class Worker {
 		void finishClientResponse(Connection &conn);
 		void sweepExpiredConnections();
 		void sweepCgiJobs(time_t now);
-		void reapDetachedCgiJobs(time_t now);
 		void finishCgiResponse(Connection &conn);
-		void failCgiJob(Connection &conn);
-		void releaseCgiJob(Connection &conn);
 		void closeManagedFd(int &fd);
 		void closeConnection(Connection &conn);
 
