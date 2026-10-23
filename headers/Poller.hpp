@@ -4,7 +4,6 @@
 #include <vector>
 #include <poll.h>
 
-// Thin poll() wrapper; maintains the fd set and per-fd interest.
 class Poller {
 	public:
 		Poller();
