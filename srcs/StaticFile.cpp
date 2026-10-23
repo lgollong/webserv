@@ -167,6 +167,8 @@ Content StaticFile::serve(const Route &route, const Request &request) {
 	}
 	if (route.autoindex)
 		return directoryListing(path, request.path);
+	if (!route.index_file.empty())
+		return errorContent(404); // configured index file is missing
 	return errorContent(403);
 }
 
