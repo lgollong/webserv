@@ -21,7 +21,7 @@ static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
 static const size_t kFileChunkBytes = 64 * 1024;
 
 Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files)
-: config(config), http(http), cgi(cgi), files(files), debug(config.debugLogs()) {}
+: config(config), http(http), cgi(cgi), files(files), debug(config.logLevel() == LOG_DEBUG) {}
 
 Worker::~Worker() {}
 

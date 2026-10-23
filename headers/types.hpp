@@ -14,6 +14,12 @@ enum Phase {
 	WRITING
 };
 
+enum LogLevel {
+	LOG_NONE,
+	LOG_ERROR,
+	LOG_DEBUG
+};
+
 struct Request {
 	std::string                        method;
 	std::string                        path;
