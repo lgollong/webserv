@@ -186,10 +186,18 @@ static ServerConfig parseServer(const Tokens &tokens, size_t &i) {
 	return server;
 }
 
-Config::Config(const std::string &configPath) {
+Config::Config(const std::string &configPath) : debug_logs(false) {
 	Tokens tokens = tokenize(configPath);
 	size_t i = 0;
 	while (i < tokens.size()) {
+		if (tokens[i] == "log_level") {
+			++i;
+			Tokens args = arguments(tokens, i, "log_level");
+			if (args.size() != 1 || (args[0] != "error" && args[0] != "debug"))
+				fail("log_level expects error or debug");
+			debug_logs = (args[0] == "debug");
+			continue;
+		}
 		if (tokens[i++] != "server")
 			fail("unexpected token '" + tokens[i - 1] + "'");
 		server_configs.push_back(parseServer(tokens, i));
@@ -210,6 +218,10 @@ std::string Config::errorPage(size_t serverIndex, int status) const {
 	if (it == pages.end())
 		return "";
 	return it->second;
+}
+
+bool Config::debugLogs() const {
+	return debug_logs;
 }
 
 size_t Config::bodyLimit(size_t serverIndex) const {

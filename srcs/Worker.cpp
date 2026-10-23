@@ -21,7 +21,7 @@ static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
 static const size_t kFileChunkBytes = 64 * 1024;
 
 Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files)
-: config(config), http(http), cgi(cgi), files(files) {}
+: config(config), http(http), cgi(cgi), files(files), debug(config.debugLogs()) {}
 
 Worker::~Worker() {}
 
@@ -156,6 +156,8 @@ void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 	conn.last_activity = time(NULL);
 	conn.remote_addr = ipv4ToString(client_addr.sin_addr);
 	fdToConnection[client_fd] = &conn;
+	if (debug)
+		std::cerr << "DEBUG: fd " << client_fd << " accepted from " << conn.remote_addr << std::endl;
 }
 
 void Worker::onReadable(Connection &conn) {
@@ -233,6 +235,9 @@ void Worker::processBufferedRequest(Connection &conn) {
 	conn.inbuf.erase(0, static_cast<size_t>(size));
 	conn.close_after_write = requestWantsClose(conn.txn.request);
 	conn.txn.route = config.route(conn.server_index, conn.txn.request);
+	if (debug)
+		std::cerr << "DEBUG: fd " << conn.fd << " request: " << conn.txn.request.method << " "
+			<< conn.txn.request.path << " " << conn.txn.request.version << std::endl;
 	handleRequest(conn);
 }
 
@@ -283,6 +288,9 @@ void Worker::startCgi(Connection &conn) {
 	}
 
 	conn.phase = RUNNING_CGI;
+	if (debug)
+		std::cerr << "DEBUG: fd " << conn.fd << " started CGI " << conn.txn.route.cgi_script_path
+			<< " (pid " << conn.txn.cgi.pid << ")" << std::endl;
 	if (conn.txn.request.body.empty())
 		closeManagedFd(conn.txn.cgi.in_fd);
 	else {
@@ -335,6 +343,8 @@ void Worker::queueResponse(Connection &conn) {
 	conn.sent = 0;
 	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);
+	if (debug)
+		std::cerr << "DEBUG: fd " << conn.fd << " response: " << response.status << std::endl;
 }
 
 void Worker::queueSessionResponse(Connection &conn) {
@@ -399,6 +409,8 @@ void Worker::closeManagedFd(int &fd) {
 
 void Worker::closeConnection(Connection &conn) {
 	int client_fd = conn.fd;
+	if (debug)
+		std::cerr << "DEBUG: fd " << client_fd << " closed" << std::endl;
 	if (conn.body_fd >= 0)
 		close(conn.body_fd);
 	closeManagedFd(conn.txn.cgi.in_fd);

@@ -27,6 +27,7 @@ class Worker {
 		Cgi                        &cgi;
 		StaticFile                 &files;
 		SessionStore               sessions;
+		bool                       debug;
 
 		void dispatchEvent(const pollfd &event);
 		void acceptNew(int listen_fd, size_t serverIndex);
