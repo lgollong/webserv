@@ -6,14 +6,15 @@
 
 `webserv` is a dependency-free HTTP server written in C++98 for the 42 curriculum. It runs one non-blocking, `poll()`-driven event loop which owns listener sockets, client sockets, and CGI pipes.
 
-The implementation parses nginx-style `server` and `location` blocks from the configuration file passed on the command line. It currently supports static files, directory indexes and autoindex, uploads, `DELETE`, redirects, custom error pages, request-body limits, CGI handler mappings (Python and shell demos), HTTP/1.0 and HTTP/1.1 requests with persistent connections, a cookie/session demonstration, and focused loopback tests. The parser and several handlers still have known limitations; [Architecture](docs/architecture.md) records the current source-backed status.
+The implementation parses nginx-style `server` and `location` blocks from the configuration file passed on the command line. It currently supports static files, directory indexes and autoindex, uploads, `DELETE`, redirects, custom error pages, request-body limits, CGI handler mappings (Python and shell demos), HTTP/1.0 and HTTP/1.1 requests with persistent connections, chunked request bodies, and a cookie/session demonstration. It deliberately implements the subset of HTTP the subject asks for rather than the full RFCs.
 
 ## Instructions
 
 ### Prerequisites
 
 - A C++ compiler that supports C++98.
-- A POSIX-like environment with `poll()`, sockets, and standard build tools. The project is developed on macOS; `make` and `make test` are also verified on Linux with g++ and clang++.
+- A POSIX-like environment with `poll()`, sockets, and standard build tools. The project is developed on macOS.
+- Python 3 for `make test` and the CGI demos; `/bin/bash` for the shell CGI demo.
 
 ### Build
 
@@ -50,7 +51,31 @@ open http://127.0.0.1:8080/
 
 The guide follows the evaluation sheet section by section and runs each check (status codes, uploads, DELETE permissions, CGI errors and timeouts, redirects, sessions) from the browser. Terminal-only checks, such as the port conflict and siege, are listed as commands.
 
-`config/conflict.config` puts two servers on the same interface and port; `./webserv config/conflict.config` must stop with `bind: Address already in use`. `config/req.config` is a multi-server integration fixture. It listens on `127.0.0.1:8002`, `:8003`, `:8008`, and `:8001`; it is not the configuration for the guide. See [Runtime Configuration Model](docs/configuration-model.md) for supported directives and their current semantics.
+`config/conflict.config` puts two servers on the same interface and port; `./webserv config/conflict.config` must stop with `bind: Address already in use`. `config/req.config` is an additional multi-server example listening on `127.0.0.1:8002`, `:8003`, `:8008`, and `:8001`; it is not the configuration for the guide.
+
+### Configuration
+
+The file uses nginx-style blocks; `#` starts a comment. Supported directives:
+
+| Scope | Directive | Example |
+|---|---|---|
+| top level | `log_level error\|debug` | `log_level debug;` |
+| `server` | `listen <port>` | `listen 8080;` |
+| | `host <IPv4>` | `host 127.0.0.1;` |
+| | `server_name <name>` (passed to CGI) | `server_name localhost;` |
+| | `root <dir>` (default for locations) | `root ./contents;` |
+| | `client_max_body_size <bytes>[k\|m]` | `client_max_body_size 10M;` |
+| | `error_page <code> <file>` | `error_page 404 ./contents/errors/404.html;` |
+| `location <prefix>` | `root <dir>` | `root ./contents/files;` |
+| | `index <file>` | `index index.html;` |
+| | `autoindex on\|off` | `autoindex on;` |
+| | `allowed_methods <methods...>` (default `GET`) | `allowed_methods GET POST DELETE;` |
+| | `return [3xx] <target>` | `return 301 /;` |
+| | `upload on\|off` + `upload_store <dir>` | `upload on; upload_store ./contents/uploads;` |
+| | `cgi <extension> <absolute interpreter path>` | `cgi .py /usr/bin/python3;` |
+| | `session_demo on\|off` | `session_demo on;` |
+
+The longest matching location prefix wins. A URL below a location maps into its root: with `location /files { root ./contents/files; }`, `/files/a/b.txt` serves `./contents/files/a/b.txt`.
 
 ### Tests
 
@@ -68,14 +93,15 @@ make fclean
 make re
 ```
 
-## Project Documentation
+## Project Structure
 
-- [Project subject](docs/subject/en.subject.md)
-- [Architecture and implementation status](docs/architecture.md)
-- [Runtime configuration model](docs/configuration-model.md)
-- [Code walkthrough](docs/code-walkthrough.md)
-- [Testing and evaluation](docs/testing.md)
-- [Contribution workflow for coding agents](AGENTS.md)
+| Path | Contents |
+|---|---|
+| `srcs/`, `headers/` | The server. `Worker` runs the `poll()` loop and owns every connection; `Http` parses requests and builds responses; `Config` parses the configuration and picks the location for a request; `StaticFile` serves files, autoindex, uploads, and `DELETE`; `Cgi` runs scripts through pipes; `Session` backs the cookie demo; `Poller` wraps `poll()`; `types.hpp` holds the shared structs; `utils` holds small string helpers. |
+| `config/` | `default.config` (evaluation guide), `conflict.config`, `req.config`. |
+| `contents/` | Served files: the evaluation guide, error pages, CGI demo scripts (`cgi/`), and the upload directory (`uploads/`). |
+| `tests/webserv_test.py` | Integration test (see [Tests](#tests)). |
+| [`DEV_DOC.md`](DEV_DOC.md) | Architecture: the nginx model it borrows from, class responsibilities, connection state, and the request flow. |
 
 ## Resources
 
@@ -87,4 +113,4 @@ make re
 
 ### AI Use
 
-AI assistance, including OpenAI Codex, has been used for project planning, issue refinement, code and test drafting, documentation drafting, and code-review support. Contributors review generated changes, run the repository's verification commands, and retain responsibility for the resulting implementation. AI is not a runtime or build dependency of `webserv`.
+AI assistance, including OpenAI Codex and Anthropic Claude, has been used for project planning, issue refinement, code and test drafting, refactoring and simplification of the codebase, documentation drafting, and code-review support. Contributors review generated changes, run the repository's verification commands, and retain responsibility for the resulting implementation. AI is not a runtime or build dependency of `webserv`.
