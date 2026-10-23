@@ -34,7 +34,10 @@ static std::vector<std::string> buildEnv(const Request &request, const Route &ro
 	env.push_back("REQUEST_URI=" + uri);
 	env.push_back("SCRIPT_NAME=" + route.cgi_script_name);
 	env.push_back("SCRIPT_FILENAME=" + scriptFile);
-	env.push_back("PATH_INFO=" + request.path.substr(route.cgi_script_name.size()));
+	std::string pathInfo = request.path.substr(route.cgi_script_name.size());
+	if (pathInfo.empty())
+		pathInfo = request.path; // cgi_tester refuses an empty PATH_INFO
+	env.push_back("PATH_INFO=" + pathInfo);
 	env.push_back("QUERY_STRING=" + request.query);
 	env.push_back("REMOTE_ADDR=" + remoteAddr);
 	env.push_back("REDIRECT_STATUS=200");
