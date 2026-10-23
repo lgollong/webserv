@@ -126,6 +126,9 @@ def test_parser():
     check("HTTP/2.0 is 505", parse(raw(b"GET / HTTP/2.0\r\nHost: x\r\n\r\n"))[0] == 505)
     check("HTTP/1.0 is answered", parse(raw(b"GET / HTTP/1.0\r\n\r\n"))[0] == 200)
     check("bad Content-Length is 400", parse(raw(b"POST /cgi/test.sh HTTP/1.1\r\nContent-Length: abc\r\n\r\n"))[0] == 400)
+    duplicate_length = (b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\n"
+                        b"Content-Length: 2\r\nContent-Length: 0\r\n\r\nab")
+    check("duplicate Content-Length is 400", parse(raw(duplicate_length))[0] == 400)
     huge = b"GET / HTTP/1.1\r\nX-Big: " + b"a" * 20000 + b"\r\n\r\n"
     check("oversized headers are rejected", parse(raw(huge))[0] == 431)
     status, _, body = parse(raw(b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\nConnection: close\r\n"

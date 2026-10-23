@@ -42,7 +42,10 @@ static bool parseHeaders(const std::string &block, Request &request) {
 		std::string::size_type colon = line.find(':');
 		if (colon == std::string::npos || colon == 0)
 			return false;
-		request.headers[lowerCase(line.substr(0, colon))] = trim(line.substr(colon + 1));
+		std::string name = lowerCase(line.substr(0, colon));
+		if (name == "content-length" && request.headers.find(name) != request.headers.end())
+			return false;
+		request.headers[name] = trim(line.substr(colon + 1));
 		pos = end + 2;
 	}
 	return true;
