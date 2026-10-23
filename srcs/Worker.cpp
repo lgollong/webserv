@@ -202,7 +202,7 @@ void Worker::handleRequest(Connection &conn) {
 	const Request &request = conn.txn.request;
 	const Route &route = conn.txn.route;
 
-	if (request.method != "GET" && request.method != "POST" && request.method != "DELETE")
+	if (request.method != "GET" && request.method != "POST" && request.method != "DELETE" && request.method != "HEAD")
 		respond(conn, 501);
 	else if (route.allowed_methods.count(request.method) == 0) { // reject req if method isnt member of chosen route
 		std::string allow;
