@@ -1,4 +1,5 @@
 #include "../headers/Worker.hpp"
+#include "utils.hpp"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -69,12 +70,6 @@ static std::string ipv4ToString(const in_addr &address) {
 	out << ((value >> 24) & 0xFF) << '.' << ((value >> 16) & 0xFF) << '.'
 		<< ((value >> 8) & 0xFF) << '.' << (value & 0xFF);
 	return out.str();
-}
-
-static std::string lowerCase(std::string value) {
-	for (std::string::size_type i = 0; i < value.size(); ++i)
-		value[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(value[i])));
-	return value;
 }
 
 static bool requestWantsClose(const Request &request) {

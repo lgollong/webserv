@@ -1,4 +1,5 @@
 #include "Config.hpp"
+#include "utils.hpp"
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
@@ -213,17 +214,6 @@ std::string Config::errorPage(size_t serverIndex, int status) const {
 
 size_t Config::bodyLimit(size_t serverIndex) const {
 	return server_configs[serverIndex].client_max_body_size;
-}
-
-static bool matchesLocation(const std::string &path, const std::string &location) {
-	if (path.compare(0, location.size(), location) != 0)
-		return false;
-	return path.size() == location.size() || location[location.size() - 1] == '/' || path[location.size()] == '/';
-}
-
-static bool hasDotSegment(const std::string &path) {
-	const std::string wrapped = "/" + path + "/";
-	return wrapped.find("/./") != std::string::npos || wrapped.find("/../") != std::string::npos;
 }
 
 static void resolveCgi(const std::string &path, Route &route) {

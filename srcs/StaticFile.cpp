@@ -1,4 +1,5 @@
 #include "StaticFile.hpp"
+#include "utils.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -25,17 +26,6 @@ StaticFile::StaticFile() {
 }
 
 StaticFile::~StaticFile() {}
-
-static bool matchesLocation(const std::string &path, const std::string &location) {
-	if (path.compare(0, location.size(), location) != 0)
-		return false;
-	return path.size() == location.size() || location[location.size() - 1] == '/' || path[location.size()] == '/';
-}
-
-static bool hasDotSegment(const std::string &path) {
-	const std::string wrapped = "/" + path + "/";
-	return wrapped.find("/./") != std::string::npos || wrapped.find("/../") != std::string::npos;
-}
 
 static std::string joinPath(const std::string &directory, const std::string &name) {
 	if (directory[directory.size() - 1] == '/')

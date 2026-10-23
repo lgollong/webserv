@@ -1,4 +1,5 @@
 #include "Cgi.hpp"
+#include "utils.hpp"
 #include <cctype>
 #include <csignal>
 #include <cstdlib>
@@ -150,20 +151,6 @@ void Cgi::stop(CgiJob &job) const {
 		waitpid(job.pid, NULL, 0);
 	}
 	job.pid = -1;
-}
-
-static std::string lowerCase(const std::string &value) {
-	std::string result(value);
-	for (std::string::size_type i = 0; i < result.size(); ++i)
-		result[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[i])));
-	return result;
-}
-
-static std::string trim(const std::string &value) {
-	std::string::size_type first = value.find_first_not_of(" \t");
-	if (first == std::string::npos)
-		return "";
-	return value.substr(first, value.find_last_not_of(" \t") - first + 1);
 }
 
 Response Cgi::buildResponse(const CgiJob &job) const {
