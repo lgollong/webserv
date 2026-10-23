@@ -1,8 +1,4 @@
 #include "../headers/Worker.hpp"
-#include "../headers/StaticFile.hpp"
-#include "../headers/Cgi.hpp"
-#include "../headers/Http.hpp"
-#include "../headers/Config.hpp"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -16,6 +12,12 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+
+static const int kPollTimeoutMs = 1000;
+static const time_t kClientIdleTimeoutSeconds = 30;
+static const time_t kCgiTimeoutSeconds = 15;
+static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
+static const size_t kFileChunkBytes = 64 * 1024;
 
 Worker::Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files)
 : config(config), http(http), cgi(cgi), files(files) {}
@@ -69,131 +71,22 @@ static std::string ipv4ToString(const in_addr &address) {
 	return out.str();
 }
 
-static void addErrorBody(Config &config, StaticFile &files, Http &http, size_t serverIndex,
-	Response &response) {
-	if (response.status < 400 || !response.body.empty())
-		return ;
-
-	std::string path = config.errorPage(serverIndex, response.status);
-	if (!path.empty()) {
-		Content content = files.readErrorPage(path);
-		if (content.status == 200) {
-			response.body = content.body;
-			response.headers["Content-Type"] = content.mime_type;
-			return ;
-		}
-	}
-	response = http.defaultErrorResponse(response.status);
-}
-
-static bool isImplementedMethod(const std::string &method) {
-	return method == "GET" || method == "POST" || method == "DELETE";
-}
-
-static bool routeAllowsMethod(const Route &route, const std::string &method) {
-	return route.allowed_methods.empty() || route.allowed_methods.find(method) != route.allowed_methods.end();
-}
-
-// Whether the resolved route has a handler for an implemented method.
-// Redirects and the session demo answer any method; otherwise GET and
-// DELETE use the static handlers and POST needs an upload store or CGI.
-static bool routeHandlesMethod(const Route &route, const std::string &method) {
-	if (route.redirect_status != 0 || route.session_demo)
-		return true;
-	if (method == "POST")
-		return route.is_cgi || (route.upload_enabled && !route.upload_store.empty());
-	return method == "GET" || method == "DELETE";
-}
-
-static bool routeAcceptsMethod(const Route &route, const std::string &method) {
-	return routeAllowsMethod(route, method) && routeHandlesMethod(route, method);
-}
-
-static std::string allowedMethodsValue(const Route &route) {
-	static const char *const methods[] = {"DELETE", "GET", "POST"};
-	std::string value;
-	for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); ++i) {
-		if (!routeAcceptsMethod(route, methods[i]))
-			continue;
-		if (!value.empty())
-			value += ", ";
-		value += methods[i];
-	}
+static std::string lowerCase(std::string value) {
+	for (std::string::size_type i = 0; i < value.size(); ++i)
+		value[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(value[i])));
 	return value;
 }
 
-static bool equalsIgnoreCase(const std::string &value, const char *expected) {
-	if (value.size() != std::strlen(expected))
-		return false;
-	for (std::string::size_type i = 0; i < value.size(); ++i) {
-		if (std::tolower(static_cast<unsigned char>(value[i])) !=
-			std::tolower(static_cast<unsigned char>(expected[i])))
-			return false;
-	}
-	return true;
-}
-
-static bool hasConnectionOption(const Request &request, const char *option) {
-	std::map<std::string, std::string>::const_iterator header = request.headers.find("connection");
-	if (header == request.headers.end())
-		return false;
-
-	const std::string &value = header->second;
-	std::string::size_type start = 0;
-	while (start < value.size()) {
-		std::string::size_type end = value.find(',', start);
-		if (end == std::string::npos)
-			end = value.size();
-		std::string::size_type first = start;
-		while (first < end && (value[first] == ' ' || value[first] == '\t'))
-			++first;
-		std::string::size_type last = end;
-		while (last > first && (value[last - 1] == ' ' || value[last - 1] == '\t'))
-			--last;
-		if (equalsIgnoreCase(value.substr(first, last - first), option))
-			return true;
-		if (end == value.size())
-			break;
-		start = end + 1;
-	}
-	return false;
-}
-
-static bool isHttp10(const Request &request) {
-	return request.version == "HTTP/1.0";
-}
-
-// HTTP/1.1 connections persist unless the client sends "close"; HTTP/1.0
-// connections close unless the client asks for "keep-alive".
 static bool requestWantsClose(const Request &request) {
-	if (hasConnectionOption(request, "close"))
-		return true;
-	return isHttp10(request) && !hasConnectionOption(request, "keep-alive");
+	std::map<std::string, std::string>::const_iterator header = request.headers.find("connection");
+	std::string option;
+	if (header != request.headers.end())
+		option = lowerCase(header->second);
+	return option == "close" || (request.version == "HTTP/1.0" && option != "keep-alive");
 }
-
-static void applyConnectionPolicy(const Connection &conn, Response &response) {
-	for (std::map<std::string, std::string>::iterator it = response.headers.begin(); it != response.headers.end(); ) {
-		std::map<std::string, std::string>::iterator current = it++;
-		if (equalsIgnoreCase(current->first, "connection"))
-			response.headers.erase(current);
-	}
-	if (conn.close_after_write)
-		response.headers["Connection"] = "close";
-	else if (isHttp10(conn.txn.request))
-		response.headers["Connection"] = "keep-alive";
-}
-
-static const int kPollTimeoutMs = 1000;
-static const time_t kClientIdleTimeoutSeconds = 30;
-static const time_t kCgiTimeoutSeconds = 15;
-static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
-static const size_t kFileChunkBytes = 64 * 1024;
 
 void Worker::run() {
-	std::map<int, size_t> listeners;
 	const std::vector<ServerConfig> &servers = config.servers();
-	if (servers.empty())
-		throw std::runtime_error("configuration has no servers");
 	for (size_t index = 0; index < servers.size(); ++index) {
 		int listenFd = setupListener(servers[index]);
 		poller.add(listenFd, POLLIN);
@@ -201,133 +94,121 @@ void Worker::run() {
 	}
 
 	while (true) {
-		int ready_count = poller.poll(kPollTimeoutMs);
-		if (ready_count < 0) {
-			std::cerr << "ERROR: poll failed" << std::endl;
-			continue;
+		if (poller.poll(kPollTimeoutMs) > 0) {
+			std::vector<pollfd> events = poller.events();
+			for (size_t i = 0; i < events.size(); ++i) {
+				if (events[i].revents == 0)
+					continue;
+				try {
+					dispatchEvent(events[i]);
+				}
+				catch (const std::exception &e) {
+					std::cerr << "ERROR: " << e.what() << std::endl;
+					std::map<int, Connection*>::iterator failed = fdToConnection.find(events[i].fd);
+					if (failed != fdToConnection.end())
+						closeConnection(*failed->second);
+				}
+			}
 		}
-		if (ready_count == 0) {
-			sweepExpiredConnections();
-			continue;
-		}
-
-		try {
-			std::vector<pollfd> ready_fds = poller.events();
-
-			dispatchReadyEvents(ready_fds, listeners, servers);
-			sweepExpiredConnections();
-		}
-		catch (const std::exception &e) {
-			std::cerr << "ERROR: event loop iteration failed: " << e.what() << std::endl;
-		}
+		sweepExpiredConnections();
 	}
 }
 
-void Worker::dispatchReadyEvents(const std::vector<pollfd> &readyFds,
-	std::map<int, size_t> &listeners, const std::vector<ServerConfig> &servers) {
-	for (size_t i = 0; i < readyFds.size(); i++) {
-		try {
-			dispatchEvent(readyFds[i], listeners, servers);
-		}
-		catch (const std::exception &e) {
-			std::cerr << "ERROR: event handling failed: " << e.what() << std::endl;
-			std::map<int, Connection*>::iterator failed = fdToConnection.find(readyFds[i].fd);
-			if (failed != fdToConnection.end())
-				closeConnection(*failed->second);
-		}
-	}
-}
-
-void Worker::dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners,
-	const std::vector<ServerConfig> &servers) {
-	if (event.revents == 0)
-		return ;
+void Worker::dispatchEvent(const pollfd &event) {
 	std::map<int, size_t>::iterator listener = listeners.find(event.fd);
 	if (listener != listeners.end()) {
-		if (event.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-			std::cerr << "ERROR: listener received a poll error event" << std::endl;
-			int failedFd = listener->first;
-			size_t serverIndex = listener->second;
-			poller.remove(failedFd);
-			close(failedFd);
-			listeners.erase(listener);
-			try {
-				int replacementFd = setupListener(servers[serverIndex]);
-				poller.add(replacementFd, POLLIN);
-				listeners[replacementFd] = serverIndex;
-			}
-			catch (const std::exception &e) {
-				std::cerr << "ERROR: " << e.what() << std::endl;
-				return ;
-			}
-			return ;
-		}
-		if (event.revents & POLLIN)
-			acceptNew(event.fd, listener->second);
+		acceptNew(event.fd, listener->second);
 		return ;
 	}
-
 	std::map<int, Connection*>::iterator found = fdToConnection.find(event.fd);
-	if (found == fdToConnection.end()) {
-		poller.remove(event.fd);
+	if (found == fdToConnection.end())
 		return ;
-	}
-	Connection *conn = found->second;
+	Connection &conn = *found->second;
 
-	if (event.fd == conn->txn.cgi.out_fd)
-		onCgiReadable(*conn);
-	else if (event.fd == conn->txn.cgi.in_fd) {
+	if (event.fd == conn.txn.cgi.out_fd)
+		onCgiReadable(conn);
+	else if (event.fd == conn.txn.cgi.in_fd) {
 		if (event.revents & POLLOUT)
-			onCgiWritable(*conn);
+			onCgiWritable(conn);
 		else
-			closeManagedFd(conn->txn.cgi.in_fd);
+			closeManagedFd(conn.txn.cgi.in_fd);
 	}
-	else {
-		if (event.revents & (POLLERR | POLLNVAL)) {
-			closeConnection(*conn);
-			return ;
-		}
-		if (event.revents & POLLIN) {
-			onReadable(*conn);
-		}
-		else if (event.revents & POLLOUT) {
-			onWritable(*conn);
-		}
-
-		if ((event.revents & POLLHUP) && !(event.revents & POLLIN)) {
-			std::map<int, Connection*>::iterator current = fdToConnection.find(event.fd);
-			if (current != fdToConnection.end() && current->second->phase != WRITING)
-				closeConnection(*current->second);
-		}
-	}
+	else if (event.revents & (POLLERR | POLLNVAL))
+		closeConnection(conn);
+	else if (event.revents & POLLIN)
+		onReadable(conn);
+	else if (event.revents & POLLOUT)
+		onWritable(conn);
+	else if (event.revents & POLLHUP)
+		closeConnection(conn);
 }
 
 void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 	sockaddr_in client_addr;
 	socklen_t len = sizeof(client_addr);
-
 	int client_fd = accept(listen_fd, reinterpret_cast<sockaddr*>(&client_addr), &len);
-	if (client_fd < 0) {
-		std::cerr << "ERROR: accept failed" << std::endl;
+	if (client_fd < 0)
 		return ;
-	}
-	
 	if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0) {
 		close(client_fd);
-		std::cerr << "ERROR: failed to make client socket non-blocking" << std::endl;
 		return ;
 	}
 	poller.add(client_fd, POLLIN);
 
-	Connection connection;
-	connection.fd = client_fd;
-	connection.server_index = serverIndex;
-	connection.phase = READING;
-	connection.last_activity = time(NULL);
-	connection.remote_addr = ipv4ToString(client_addr.sin_addr);
-	connections[client_fd] = connection;
-	fdToConnection[client_fd] = &connections[client_fd];
+	Connection &conn = connections[client_fd];
+	conn.fd = client_fd;
+	conn.server_index = serverIndex;
+	conn.last_activity = time(NULL);
+	conn.remote_addr = ipv4ToString(client_addr.sin_addr);
+	fdToConnection[client_fd] = &conn;
+}
 
+void Worker::onReadable(Connection &conn) {
+	char buf[4096];
+	ssize_t n = read(conn.fd, buf, sizeof(buf));
+	if (n <= 0) {
+		closeConnection(conn);
+		return ;
+	}
+	conn.inbuf.append(buf, n);
+	conn.last_activity = time(NULL);
+	if (conn.phase == RUNNING_CGI && conn.inbuf.size() > kMaxDeferredClientBytes)
+		closeConnection(conn);
+	else
+		processBufferedRequest(conn);
+}
+
+void Worker::onWritable(Connection &conn) {
+	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
+	if (n <= 0) {
+		closeConnection(conn);
+		return ;
+	}
+	conn.sent += n;
+	conn.last_activity = time(NULL);
+	if (conn.sent < conn.outbuf.size())
+		return ;
+
+	if (conn.body_fd >= 0) {
+		char chunk[kFileChunkBytes];
+		size_t wanted = sizeof(chunk);
+		if (conn.body_remaining < wanted)
+			wanted = conn.body_remaining;
+		ssize_t count = read(conn.body_fd, chunk, wanted);
+		if (count <= 0) {
+			closeConnection(conn);
+			return ;
+		}
+		conn.outbuf.assign(chunk, static_cast<size_t>(count));
+		conn.sent = 0;
+		conn.body_remaining -= static_cast<size_t>(count);
+		if (conn.body_remaining == 0) {
+			close(conn.body_fd);
+			conn.body_fd = -1;
+		}
+		return ;
+	}
+	finishClientResponse(conn);
 }
 
 void Worker::onCgiReadable(Connection &conn) {
@@ -340,15 +221,122 @@ void Worker::onCgiWritable(Connection &conn) {
 		closeManagedFd(conn.txn.cgi.in_fd);
 }
 
-void Worker::queueParserError(Connection &conn, int status) {
-	conn.inbuf.clear();
-	conn.txn = Transaction();
+void Worker::processBufferedRequest(Connection &conn) {
+	if (conn.phase != READING)
+		return ;
+
+	int errorStatus = 0;
+	ssize_t size = http.parse(conn.inbuf, conn.txn.request, config.bodyLimit(conn.server_index), errorStatus);
+	if (size == 0)
+		return ;
+	if (size < 0) {
+		conn.inbuf.clear();
+		conn.close_after_write = true;
+		respond(conn, errorStatus);
+		return ;
+	}
+	conn.inbuf.erase(0, static_cast<size_t>(size));
+	conn.close_after_write = requestWantsClose(conn.txn.request);
+	conn.txn.route = config.route(conn.server_index, conn.txn.request);
+	handleRequest(conn);
+}
+
+void Worker::handleRequest(Connection &conn) {
+	const Request &request = conn.txn.request;
+	const Route &route = conn.txn.route;
+
+	if (request.method != "GET" && request.method != "POST" && request.method != "DELETE")
+		respond(conn, 501);
+	else if (route.allowed_methods.count(request.method) == 0) {
+		std::string allow;
+		for (std::set<std::string>::const_iterator it = route.allowed_methods.begin(); it != route.allowed_methods.end(); ++it) {
+			if (!allow.empty())
+				allow += ", ";
+			allow += *it;
+		}
+		conn.txn.response.headers["Allow"] = allow;
+		respond(conn, 405);
+	}
+	else if (route.redirect_status != 0) {
+		conn.txn.response.headers["Location"] = route.redirect_target;
+		respond(conn, route.redirect_status);
+	}
+	else if (route.session_demo)
+		queueSessionResponse(conn);
+	else if (route.is_cgi)
+		startCgi(conn);
+	else if (request.method == "POST" && route.upload_enabled)
+		respondWith(conn, files.upload(route, request));
+	else if (request.method == "DELETE")
+		respondWith(conn, files.erase(route, request));
+	else if (request.method == "GET")
+		respondWith(conn, files.serve(route, request));
+	else
+		respond(conn, 405);
+}
+
+void Worker::startCgi(Connection &conn) {
+	std::vector<int> serverFds;
+	const std::vector<pollfd> &managed = poller.events();
+	for (std::vector<pollfd>::const_iterator it = managed.begin(); it != managed.end(); ++it)
+		serverFds.push_back(it->fd);
+	conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route,
+		config.servers()[conn.server_index], conn.remote_addr, serverFds);
+	if (conn.txn.cgi.failed) {
+		finishCgiResponse(conn);
+		return ;
+	}
+
+	conn.phase = RUNNING_CGI;
+	if (conn.txn.request.body.empty())
+		closeManagedFd(conn.txn.cgi.in_fd);
+	else {
+		poller.add(conn.txn.cgi.in_fd, POLLOUT);
+		fdToConnection[conn.txn.cgi.in_fd] = &conn;
+	}
+	poller.add(conn.txn.cgi.out_fd, POLLIN);
+	fdToConnection[conn.txn.cgi.out_fd] = &conn;
+}
+
+void Worker::respond(Connection &conn, int status) {
 	conn.txn.response.status = status;
-	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-	conn.keep_alive = false;
-	conn.close_after_write = true;
-	applyConnectionPolicy(conn, conn.txn.response);
-	conn.outbuf = http.build(conn.txn.response);
+	queueResponse(conn);
+}
+
+void Worker::respondWith(Connection &conn, const Content &content) {
+	conn.txn.response.status = content.status;
+	conn.txn.response.body = content.body;
+	conn.txn.response.headers["Content-Type"] = content.mime_type;
+	if (!content.location.empty())
+		conn.txn.response.headers["Location"] = content.location;
+	conn.body_fd = content.file_fd;
+	conn.body_remaining = content.file_size;
+	queueResponse(conn);
+}
+
+void Worker::queueResponse(Connection &conn) {
+	Response &response = conn.txn.response;
+	if (response.status >= 400 && response.body.empty()) {
+		std::string page = config.errorPage(conn.server_index, response.status);
+		Content content;
+		if (!page.empty())
+			content = files.readErrorPage(page);
+		if (content.status == 200) {
+			response.body = content.body;
+			response.headers["Content-Type"] = content.mime_type;
+		}
+		else
+			response.body = http.defaultErrorResponse(response.status).body;
+	}
+	if (conn.close_after_write)
+		response.headers["Connection"] = "close";
+	else if (conn.txn.request.version == "HTTP/1.0")
+		response.headers["Connection"] = "keep-alive";
+
+	if (conn.body_fd >= 0)
+		conn.outbuf = http.buildHead(response, conn.body_remaining);
+	else
+		conn.outbuf = http.build(response);
 	conn.sent = 0;
 	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);
@@ -358,222 +346,32 @@ void Worker::queueSessionResponse(Connection &conn) {
 	std::string cookie;
 	std::ostringstream body;
 	body << "Session visits: " << sessions.visit(conn.txn.request, cookie) << "\n";
-	conn.txn.response.status = 200;
 	conn.txn.response.headers["Content-Type"] = "text/plain";
 	conn.txn.response.body = body.str();
 	if (!cookie.empty())
 		conn.txn.response.headers["Set-Cookie"] = cookie;
-	applyConnectionPolicy(conn, conn.txn.response);
-	conn.outbuf = http.build(conn.txn.response);
-	conn.sent = 0;
-	conn.phase = WRITING;
-	poller.setEvents(conn.fd, POLLOUT);
+	respond(conn, 200);
 }
 
-void Worker::processBufferedRequest(Connection &conn) {
-	if (conn.phase != READING)
-		return ;
-
-	int parseStatus = 0;
-	ssize_t req_size = http.parse(conn.inbuf, conn.txn.request, config.bodyLimit(conn.server_index), parseStatus);
-	if (req_size < 0) {
-		queueParserError(conn, parseStatus);
-		return ;
-	}
-	if (req_size == 0)
-		return ;
-
-	conn.inbuf.erase(0, static_cast<size_t>(req_size));
-	conn.close_after_write = requestWantsClose(conn.txn.request);
-	conn.keep_alive = !conn.close_after_write;
-	conn.txn.route = config.route(conn.server_index, conn.txn.request);
-
-	if (!isImplementedMethod(conn.txn.request.method)) {
-		conn.txn.response.status = 501;
-		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-		applyConnectionPolicy(conn, conn.txn.response);
-		conn.outbuf = http.build(conn.txn.response);
-		conn.sent = 0;
-		conn.phase = WRITING;
-		poller.setEvents(conn.fd, POLLOUT);
-		return ;
-	}
-
-	if (!routeAcceptsMethod(conn.txn.route, conn.txn.request.method)) {
-		conn.txn.response.status = 405;
-		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-		conn.txn.response.headers["Allow"] = allowedMethodsValue(conn.txn.route);
-		applyConnectionPolicy(conn, conn.txn.response);
-		conn.outbuf = http.build(conn.txn.response);
-		conn.sent = 0;
-		conn.phase = WRITING;
-		poller.setEvents(conn.fd, POLLOUT);
-		return ;
-	}
-
-	if (conn.txn.request.method == "DELETE") {
-		Content content = files.erase(conn.txn.route, conn.txn.request);
-		conn.txn.response.status = content.status;
-		conn.txn.response.body = content.body;
-		conn.txn.response.headers["Content-Type"] = content.mime_type;
-		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-		applyConnectionPolicy(conn, conn.txn.response);
-		conn.outbuf = http.build(conn.txn.response);
-		conn.sent = 0;
-		conn.phase = WRITING;
-		poller.setEvents(conn.fd, POLLOUT);
-		return ;
-	}
-	if (conn.txn.request.method == "POST" && conn.txn.route.upload_enabled &&
-		!conn.txn.route.upload_store.empty()) {
-		Content content = files.upload(conn.txn.route, conn.txn.request);
-		conn.txn.response.status = content.status;
-		conn.txn.response.body = content.body;
-		conn.txn.response.headers["Content-Type"] = content.mime_type;
-		if (!content.location.empty())
-			conn.txn.response.headers["Location"] = content.location;
-		addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-		applyConnectionPolicy(conn, conn.txn.response);
-		conn.outbuf = http.build(conn.txn.response);
-		conn.sent = 0;
-		conn.phase = WRITING;
-		poller.setEvents(conn.fd, POLLOUT);
-		return ;
-	}
-	if (conn.txn.route.session_demo) {
-		queueSessionResponse(conn);
-		return ;
-	}
-
-	if (conn.txn.route.redirect_status >= 300 && conn.txn.route.redirect_status < 400 &&
-		!conn.txn.route.redirect_target.empty()) {
-		conn.txn.response.status = conn.txn.route.redirect_status;
-		conn.txn.response.headers["Location"] = conn.txn.route.redirect_target;
-		applyConnectionPolicy(conn, conn.txn.response);
-		conn.outbuf = http.build(conn.txn.response);
-		conn.sent = 0;
-		conn.phase = WRITING;
-		poller.setEvents(conn.fd, POLLOUT);
-		return ;
-	}
-
-	if (conn.txn.route.is_cgi == true) {
-		std::vector<int> serverFds;
-		const std::vector<pollfd> &managed = poller.events();
-		for (std::vector<pollfd>::const_iterator it = managed.begin(); it != managed.end(); ++it)
-			serverFds.push_back(it->fd);
-		conn.txn.cgi = cgi.start(conn.txn.request, conn.txn.route,
-			config.servers()[conn.server_index], conn.remote_addr, serverFds);
-		if (conn.txn.cgi.failed) {
-			finishCgiResponse(conn);
-			return ;
-		}
-
-		conn.phase = RUNNING_CGI;
-
-		poller.setEvents(conn.fd, POLLIN);
-		if (conn.txn.request.body.empty())
-			closeManagedFd(conn.txn.cgi.in_fd);
-		else {
-			poller.add(conn.txn.cgi.in_fd, POLLOUT);
-			fdToConnection[conn.txn.cgi.in_fd] = &conn;
-		}
-		poller.add(conn.txn.cgi.out_fd, POLLIN);
-		fdToConnection[conn.txn.cgi.out_fd] = &conn;
-		return ;
-	}
-
-	Content content = files.serve(conn.txn.route, conn.txn.request);
-	conn.txn.response.status = content.status;
-	conn.txn.response.body = content.body;
-	conn.txn.response.headers["Content-Type"] = content.mime_type;
-	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-	applyConnectionPolicy(conn, conn.txn.response);
-	if (content.file_fd >= 0) {
-		conn.body_fd = content.file_fd;
-		conn.body_remaining = content.file_size;
-		conn.outbuf = http.buildHead(conn.txn.response, content.file_size);
-	}
-	else
-		conn.outbuf = http.build(conn.txn.response);
-	conn.sent = 0;
-	conn.phase = WRITING;
-	poller.setEvents(conn.fd, POLLOUT);
-}
-
-void Worker::onReadable(Connection &conn) {
-	char buf[4096];
-	ssize_t n = read(conn.fd, buf, sizeof(buf));
-
-	if (n <= 0) {
-		closeConnection(conn);
-		return ;
-	}
-
-	conn.inbuf.append(buf, n);
-	conn.last_activity = time(NULL);
-	if (conn.phase == RUNNING_CGI && conn.inbuf.size() > kMaxDeferredClientBytes) {
-		closeConnection(conn);
-		return ;
-	}
-	if (conn.phase == READING) {
-		processBufferedRequest(conn);
-		return ;
-	}
-}
-
-// write logic
-	// write() outbuff into fd
-	// keep track of what has been written and what remains
-void Worker::onWritable(Connection &conn) {
-	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
-	if (n <= 0) {
-		closeConnection(conn);
-		return ;
-	}
-
-	conn.sent += n;
-	conn.last_activity = time(NULL);
-	if (conn.sent < conn.outbuf.size())
-		return ;
-	if (conn.body_fd >= 0) {
-		if (!refillFromBodyFile(conn)) {
-			closeConnection(conn);
-			return ;
-		}
-		if (!conn.outbuf.empty())
-			return ;
-	}
-	finishClientResponse(conn);
-}
-
-bool Worker::refillFromBodyFile(Connection &conn) {
-	conn.outbuf.clear();
-	conn.sent = 0;
-	if (conn.body_remaining > 0) {
-		char chunk[kFileChunkBytes];
-		size_t wanted = conn.body_remaining < sizeof(chunk) ? conn.body_remaining : sizeof(chunk);
-		ssize_t count = read(conn.body_fd, chunk, wanted);
-		if (count <= 0)
-			return false;
-		conn.outbuf.assign(chunk, static_cast<size_t>(count));
-		conn.body_remaining -= static_cast<size_t>(count);
-	}
-	if (conn.body_remaining == 0) {
-		close(conn.body_fd);
-		conn.body_fd = -1;
-	}
-	return true;
+void Worker::finishCgiResponse(Connection &conn) {
+	closeManagedFd(conn.txn.cgi.out_fd);
+	closeManagedFd(conn.txn.cgi.in_fd);
+	cgi.stop(conn.txn.cgi);
+	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+	if (!http.supportsStatus(conn.txn.response.status))
+		conn.txn.response = Response();
+	if (conn.txn.response.status == 0)
+		conn.txn.response.status = 502;
+	queueResponse(conn);
 }
 
 void Worker::finishClientResponse(Connection &conn) {
-	conn.outbuf.clear();
-	conn.sent = 0;
 	if (conn.close_after_write) {
 		closeConnection(conn);
 		return ;
 	}
-
+	conn.outbuf.clear();
+	conn.sent = 0;
 	conn.txn = Transaction();
 	conn.phase = READING;
 	poller.setEvents(conn.fd, POLLIN);
@@ -582,45 +380,17 @@ void Worker::finishClientResponse(Connection &conn) {
 
 void Worker::sweepExpiredConnections() {
 	const time_t now = time(NULL);
-	std::vector<int> expired;
-	for (std::map<int, Connection>::const_iterator it = connections.begin(); it != connections.end(); ++it) {
-		if (it->second.hasClientTimedOut(now, kClientIdleTimeoutSeconds))
-			expired.push_back(it->first);
-	}
-	for (std::vector<int>::const_iterator it = expired.begin(); it != expired.end(); ++it) {
-		std::map<int, Connection>::iterator found = connections.find(*it);
-		if (found == connections.end())
-			continue;
-		closeConnection(found->second);
-	}
-	sweepCgiJobs(now);
-}
-
-// A CGI that runs too long is killed and answered with 502.
-void Worker::sweepCgiJobs(time_t now) {
-	for (std::map<int, Connection>::iterator it = connections.begin(); it != connections.end(); ++it) {
-		Connection &conn = it->second;
-		if (conn.phase == RUNNING_CGI && now - conn.txn.cgi.started_at >= kCgiTimeoutSeconds) {
-			conn.txn.cgi.failed = true;
-			finishCgiResponse(conn);
+	for (std::map<int, Connection>::iterator it = connections.begin(); it != connections.end(); ) {
+		Connection &conn = (it++)->second;
+		if (conn.phase == RUNNING_CGI) {
+			if (now - conn.txn.cgi.started_at >= kCgiTimeoutSeconds) {
+				conn.txn.cgi.failed = true;
+				finishCgiResponse(conn);
+			}
 		}
+		else if (now - conn.last_activity >= kClientIdleTimeoutSeconds)
+			closeConnection(conn);
 	}
-}
-
-void Worker::finishCgiResponse(Connection &conn) {
-	closeManagedFd(conn.txn.cgi.out_fd);
-	closeManagedFd(conn.txn.cgi.in_fd);
-	cgi.stop(conn.txn.cgi);
-	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
-	if (!http.supportsStatus(conn.txn.response.status)) {
-		conn.txn.response = Response();
-		conn.txn.response.status = 502;
-	}
-	addErrorBody(config, files, http, conn.server_index, conn.txn.response);
-	applyConnectionPolicy(conn, conn.txn.response);
-	conn.outbuf = http.build(conn.txn.response);
-	conn.phase = WRITING;
-	poller.setEvents(conn.fd, POLLOUT);
 }
 
 void Worker::closeManagedFd(int &fd) {
@@ -634,10 +404,8 @@ void Worker::closeManagedFd(int &fd) {
 
 void Worker::closeConnection(Connection &conn) {
 	int client_fd = conn.fd;
-	if (conn.body_fd >= 0) {
+	if (conn.body_fd >= 0)
 		close(conn.body_fd);
-		conn.body_fd = -1;
-	}
 	closeManagedFd(conn.txn.cgi.in_fd);
 	closeManagedFd(conn.txn.cgi.out_fd);
 	cgi.stop(conn.txn.cgi);

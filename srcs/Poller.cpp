@@ -7,7 +7,10 @@ Poller::Poller() {}
 Poller::~Poller() {}
 
 int Poller::poll(int timeoutMs) {
-	return ::poll(fds.empty() ? NULL : &fds[0], fds.size(), timeoutMs);
+	pollfd *first = NULL;
+	if (!fds.empty())
+		first = &fds[0];
+	return ::poll(first, fds.size(), timeoutMs);
 }
 
 const std::vector<pollfd>& Poller::events() const {
@@ -17,8 +20,8 @@ const std::vector<pollfd>& Poller::events() const {
 void Poller::add(int fd, short events) {
 	pollfd pfd;
 	pfd.fd = fd;
-	pfd.events = events;   // events to look for
-	pfd.revents = 0;       // events returned
+	pfd.events = events;
+	pfd.revents = 0;
 	fds.push_back(pfd);
 }
 

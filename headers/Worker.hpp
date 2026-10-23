@@ -10,8 +10,6 @@
 #include "StaticFile.hpp"
 #include "Session.hpp"
 
-class WorkerEventLoopTests;
-
 class Worker {
 	public:
 		Worker(Config &config, Http &http, Cgi &cgi, StaticFile &files);
@@ -20,8 +18,7 @@ class Worker {
 		void run();
 
 	private:
-		friend class WorkerEventLoopTests;
-
+		std::map<int, size_t>      listeners;
 		std::map<int, Connection>  connections;
 		std::map<int, Connection*> fdToConnection;
 		Poller                     poller;
@@ -31,23 +28,22 @@ class Worker {
 		StaticFile                 &files;
 		SessionStore               sessions;
 
+		void dispatchEvent(const pollfd &event);
 		void acceptNew(int listen_fd, size_t serverIndex);
-		void dispatchReadyEvents(const std::vector<pollfd> &readyFds, std::map<int, size_t> &listeners,
-			const std::vector<ServerConfig> &servers);
-		void dispatchEvent(const pollfd &event, std::map<int, size_t> &listeners,
-			const std::vector<ServerConfig> &servers);
-		bool refillFromBodyFile(Connection &conn);
 		void onReadable(Connection &conn);
 		void onWritable(Connection &conn);
 		void onCgiReadable(Connection &conn);
 		void onCgiWritable(Connection &conn);
 		void processBufferedRequest(Connection &conn);
-		void queueParserError(Connection &conn, int status);
+		void handleRequest(Connection &conn);
+		void startCgi(Connection &conn);
+		void respond(Connection &conn, int status);
+		void respondWith(Connection &conn, const Content &content);
+		void queueResponse(Connection &conn);
 		void queueSessionResponse(Connection &conn);
+		void finishCgiResponse(Connection &conn);
 		void finishClientResponse(Connection &conn);
 		void sweepExpiredConnections();
-		void sweepCgiJobs(time_t now);
-		void finishCgiResponse(Connection &conn);
 		void closeManagedFd(int &fd);
 		void closeConnection(Connection &conn);
 

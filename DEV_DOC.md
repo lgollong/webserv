@@ -80,11 +80,10 @@ belongs to one request → `Transaction`.**
 struct Connection {           // per socket; outlives individual requests
     int          fd;
     size_t       server_index;
-    Phase        phase;       // READING, RUNNING_CGI, WRITING, IDLE
+    Phase        phase;       // READING, RUNNING_CGI, WRITING
     std::string  inbuf;       // unconsumed bytes (may straddle keep-alive requests)
     std::string  outbuf;
     size_t       sent;        // partial-write cursor
-    bool         keep_alive;
     bool         close_after_write;
     time_t       last_activity;
     Transaction  txn;         // current request cycle; reset per request
@@ -95,9 +94,6 @@ struct Transaction {          // one request → response cycle
     Response  response;       // outbound message being assembled
     Route     route;          // resolved location
     CgiJob    cgi;            // meaningful only in RUNNING_CGI
-    bool      headers_done;   // parse progress
-    size_t    content_length;
-    int       status;         // working status code
 };
 ```
 
