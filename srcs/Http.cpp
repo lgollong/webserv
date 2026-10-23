@@ -51,10 +51,25 @@ static bool parseHeaders(const std::string &block, Request &request) {
 static ssize_t parseChunkedBody(const std::string &inbuf, size_t pos, size_t maxBodyBytes,
 		std::string &body, int &errorStatus) {
 	body.clear();
+	size_t metadataBytes = 0;
 	while (true) {
 		std::string::size_type lineEnd = inbuf.find("\r\n", pos);
-		if (lineEnd == std::string::npos)
+		if (lineEnd == std::string::npos) {
+			size_t pending = inbuf.size() - pos;
+			if (pending > Http::MAX_CHUNK_LINE_BYTES ||
+				pending > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
+				errorStatus = 413;
+				return -1;
+			}
 			return 0;
+		}
+		size_t lineBytes = lineEnd - pos + 2;
+		if (lineEnd - pos > Http::MAX_CHUNK_LINE_BYTES ||
+			lineBytes > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
+			errorStatus = 413;
+			return -1;
+		}
+		metadataBytes += lineBytes;
 		std::string line = inbuf.substr(pos, lineEnd - pos);
 		std::string sizeText = trim(line.substr(0, line.find(';')));
 		char *end = NULL;
@@ -67,8 +82,21 @@ static ssize_t parseChunkedBody(const std::string &inbuf, size_t pos, size_t max
 
 		if (size == 0) {
 			std::string::size_type bodyEnd = inbuf.find("\r\n\r\n", pos - 2);
-			if (bodyEnd == std::string::npos)
+			if (bodyEnd == std::string::npos) {
+				size_t pending = inbuf.size() - pos;
+				if (pending > Http::MAX_CHUNK_TRAILER_BYTES ||
+					pending > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
+					errorStatus = 413;
+					return -1;
+				}
 				return 0;
+			}
+			size_t trailerBytes = bodyEnd + 4 - pos;
+			if (trailerBytes > Http::MAX_CHUNK_TRAILER_BYTES ||
+				trailerBytes > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
+				errorStatus = 413;
+				return -1;
+			}
 			return static_cast<ssize_t>(bodyEnd + 4);
 		}
 		if (size > maxBodyBytes - body.size()) {

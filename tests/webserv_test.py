@@ -134,6 +134,11 @@ def test_parser():
     status, _, body = parse(raw(b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\nConnection: close\r\n"
                                 b"Transfer-Encoding: chunked\r\n\r\n3;ext=1\r\nabc\r\n0\r\nX-Trailer: y\r\n\r\n"))
     check("chunk extensions and trailers are skipped", status == 200 and b"You sent: abc" in body)
+    chunked_head = b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n"
+    check("unfinished oversized chunk line is 413",
+          parse(raw(chunked_head + b"1;" + b"x" * 1100))[0] == 413)
+    check("unfinished oversized chunk trailer is 413",
+          parse(raw(chunked_head + b"0\r\nX-Meta: " + b"x" * 17000))[0] == 413)
 
 
 def test_body_limit():
