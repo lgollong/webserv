@@ -175,49 +175,6 @@ void Worker::onReadable(Connection &conn) {
 		processBufferedRequest(conn);
 }
 
-void Worker::onWritable(Connection &conn) {
-	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
-	if (n <= 0) {
-		closeConnection(conn);
-		return ;
-	}
-	conn.sent += n;
-	conn.last_activity = time(NULL);
-	if (conn.sent < conn.outbuf.size())
-		return ;
-
-	if (conn.body_fd >= 0) {
-		char chunk[kFileChunkBytes];
-		size_t wanted = sizeof(chunk);
-		if (conn.body_remaining < wanted)
-			wanted = conn.body_remaining;
-		ssize_t count = read(conn.body_fd, chunk, wanted);
-		if (count <= 0) {
-			closeConnection(conn);
-			return ;
-		}
-		conn.outbuf.assign(chunk, static_cast<size_t>(count));
-		conn.sent = 0;
-		conn.body_remaining -= static_cast<size_t>(count);
-		if (conn.body_remaining == 0) {
-			close(conn.body_fd);
-			conn.body_fd = -1;
-		}
-		return ;
-	}
-	finishClientResponse(conn);
-}
-
-void Worker::onCgiReadable(Connection &conn) {
-	if (cgi.collect(conn.txn.cgi))
-		finishCgiResponse(conn);
-}
-
-void Worker::onCgiWritable(Connection &conn) {
-	if (cgi.sendBody(conn.txn.cgi, conn.txn.request.body))
-		closeManagedFd(conn.txn.cgi.in_fd);
-}
-
 void Worker::processBufferedRequest(Connection &conn) {
 	if (conn.phase != READING)
 		return ;
@@ -247,9 +204,9 @@ void Worker::handleRequest(Connection &conn) {
 
 	if (request.method != "GET" && request.method != "POST" && request.method != "DELETE")
 		respond(conn, 501);
-	else if (route.allowed_methods.count(request.method) == 0) {
+	else if (route.allowed_methods.count(request.method) == 0) { // reject req if method isnt member of chosen route
 		std::string allow;
-		for (std::set<std::string>::const_iterator it = route.allowed_methods.begin(); it != route.allowed_methods.end(); ++it) {
+		for (std::set<std::string>::const_iterator it = route.allowed_methods.begin(); it != route.allowed_methods.end(); ++it) { // build list of methods that are allowed to tell client
 			if (!allow.empty())
 				allow += ", ";
 			allow += *it;
@@ -273,6 +230,17 @@ void Worker::handleRequest(Connection &conn) {
 		respondWith(conn, files.serve(route, request));
 	else
 		respond(conn, 405);
+}
+
+void Worker::queueSessionResponse(Connection &conn) {
+	std::string cookie;
+	std::ostringstream body;
+	body << "Session visits: " << sessions.visit(conn.txn.request, cookie) << "\n";
+	conn.txn.response.headers["Content-Type"] = "text/plain";
+	conn.txn.response.body = body.str();
+	if (!cookie.empty())
+		conn.txn.response.headers["Set-Cookie"] = cookie;
+	respond(conn, 200);
 }
 
 void Worker::startCgi(Connection &conn) {
@@ -301,6 +269,28 @@ void Worker::startCgi(Connection &conn) {
 	fdToConnection[conn.txn.cgi.out_fd] = &conn;
 }
 
+void Worker::onCgiWritable(Connection &conn) {
+	if (cgi.sendBody(conn.txn.cgi, conn.txn.request.body))
+		closeManagedFd(conn.txn.cgi.in_fd);
+}
+
+void Worker::onCgiReadable(Connection &conn) {
+	if (cgi.collect(conn.txn.cgi))
+		finishCgiResponse(conn);
+}
+
+void Worker::finishCgiResponse(Connection &conn) {
+	closeManagedFd(conn.txn.cgi.out_fd);
+	closeManagedFd(conn.txn.cgi.in_fd);
+	cgi.stop(conn.txn.cgi);
+	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+	if (!http.supportsStatus(conn.txn.response.status))
+		conn.txn.response = Response();
+	if (conn.txn.response.status == 0)
+		conn.txn.response.status = 502;
+	queueResponse(conn);
+}
+
 void Worker::respond(Connection &conn, int status) {
 	conn.txn.response.status = status;
 	queueResponse(conn);
@@ -320,7 +310,7 @@ void Worker::respondWith(Connection &conn, const Content &content) {
 void Worker::queueResponse(Connection &conn) {
 	Response &response = conn.txn.response;
 	if (response.status >= 400 && response.body.empty()) {
-		std::string page = config.errorPage(conn.server_index, response.status);
+		std::string page = config.errorPage(conn.server_index, response.status); // gets error page path from config
 		Content content;
 		if (!page.empty())
 			content = files.readErrorPage(page);
@@ -329,9 +319,9 @@ void Worker::queueResponse(Connection &conn) {
 			response.headers["Content-Type"] = content.mime_type;
 		}
 		else
-			response.body = http.defaultErrorResponse(response.status).body;
+			response.body = http.defaultErrorResponse(response.status).body; // no error page configured -> use default one
 	}
-	if (conn.close_after_write)
+	if (conn.close_after_write) // true if client sent incomplete req or wants conn closed
 		response.headers["Connection"] = "close";
 	else if (conn.txn.request.version == "HTTP/1.0")
 		response.headers["Connection"] = "keep-alive";
@@ -347,27 +337,41 @@ void Worker::queueResponse(Connection &conn) {
 		std::cerr << "DEBUG: fd " << conn.fd << " response: " << response.status << std::endl;
 }
 
-void Worker::queueSessionResponse(Connection &conn) {
-	std::string cookie;
-	std::ostringstream body;
-	body << "Session visits: " << sessions.visit(conn.txn.request, cookie) << "\n";
-	conn.txn.response.headers["Content-Type"] = "text/plain";
-	conn.txn.response.body = body.str();
-	if (!cookie.empty())
-		conn.txn.response.headers["Set-Cookie"] = cookie;
-	respond(conn, 200);
-}
+void Worker::onWritable(Connection &conn) {
+	ssize_t n = write(conn.fd, conn.outbuf.data() + conn.sent, conn.outbuf.size() - conn.sent);
+	if (n <= 0) {
+		closeConnection(conn);
+		return ;
+	}
+	conn.sent += n;
+	conn.last_activity = time(NULL);
+	if (conn.sent < conn.outbuf.size())
+		return ;
 
-void Worker::finishCgiResponse(Connection &conn) {
-	closeManagedFd(conn.txn.cgi.out_fd);
-	closeManagedFd(conn.txn.cgi.in_fd);
-	cgi.stop(conn.txn.cgi);
-	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
-	if (!http.supportsStatus(conn.txn.response.status))
-		conn.txn.response = Response();
-	if (conn.txn.response.status == 0)
-		conn.txn.response.status = 502;
-	queueResponse(conn);
+	if (conn.body_fd >= 0 && conn.body_remaining == 0) { // empty file: nothing to read, read() of 0 bytes would look like EOF
+		close(conn.body_fd);
+		conn.body_fd = -1;
+	}
+	if (conn.body_fd >= 0) { // outbuf has been sent completely; check if filedata is still waiting
+		char chunk[kFileChunkBytes];
+		size_t wanted = sizeof(chunk);
+		if (conn.body_remaining < wanted)
+			wanted = conn.body_remaining;
+		ssize_t count = read(conn.body_fd, chunk, wanted);
+		if (count <= 0) {
+			closeConnection(conn);
+			return ;
+		}
+		conn.outbuf.assign(chunk, static_cast<size_t>(count));
+		conn.sent = 0;
+		conn.body_remaining -= static_cast<size_t>(count);
+		if (conn.body_remaining == 0) {
+			close(conn.body_fd);
+			conn.body_fd = -1;
+		}
+		return ;
+	}
+	finishClientResponse(conn);
 }
 
 void Worker::finishClientResponse(Connection &conn) {
