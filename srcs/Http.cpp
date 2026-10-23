@@ -43,7 +43,8 @@ static bool parseHeaders(const std::string &block, Request &request) {
 		if (colon == std::string::npos || colon == 0)
 			return false;
 		std::string name = lowerCase(line.substr(0, colon));
-		if (name == "content-length" && request.headers.find(name) != request.headers.end())
+		if ((name == "content-length" || name == "transfer-encoding") &&
+			request.headers.find(name) != request.headers.end())
 			return false;
 		request.headers[name] = trim(line.substr(colon + 1));
 		pos = end + 2;
@@ -110,7 +111,12 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 
 	size_t bodyStart = headerEnd + 4;
 	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("transfer-encoding");
-	if (it != parsed.headers.end() && lowerCase(it->second) == "chunked") {
+	if (it != parsed.headers.end()) {
+		if (parsed.version != "HTTP/1.1" || lowerCase(it->second) != "chunked" ||
+			parsed.headers.find("content-length") != parsed.headers.end()) {
+			errorStatus = 400;
+			return -1;
+		}
 		ssize_t requestSize = parseChunkedBody(inbuf, bodyStart, maxBodyBytes, parsed.body, errorStatus);
 		if (requestSize > 0)
 			request = parsed;

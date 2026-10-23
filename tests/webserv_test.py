@@ -129,6 +129,15 @@ def test_parser():
     duplicate_length = (b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\n"
                         b"Content-Length: 2\r\nContent-Length: 0\r\n\r\nab")
     check("duplicate Content-Length is 400", parse(raw(duplicate_length))[0] == 400)
+    unsupported_encoding = (b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\n"
+                            b"Transfer-Encoding: gzip\r\n\r\nabc")
+    check("unsupported Transfer-Encoding is 400", parse(raw(unsupported_encoding))[0] == 400)
+    conflicting_framing = (b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\n"
+                           b"Transfer-Encoding: chunked\r\nContent-Length: 0\r\n\r\n0\r\n\r\n")
+    check("Transfer-Encoding with Content-Length is 400", parse(raw(conflicting_framing))[0] == 400)
+    repeated_encoding = (b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\n"
+                         b"Transfer-Encoding: chunked\r\nTransfer-Encoding: gzip\r\n\r\n0\r\n\r\n")
+    check("duplicate Transfer-Encoding is 400", parse(raw(repeated_encoding))[0] == 400)
     huge = b"GET / HTTP/1.1\r\nX-Big: " + b"a" * 20000 + b"\r\n\r\n"
     check("oversized headers are rejected", parse(raw(huge))[0] == 431)
     status, _, body = parse(raw(b"POST /cgi/test.sh HTTP/1.1\r\nHost: x\r\nConnection: close\r\n"
