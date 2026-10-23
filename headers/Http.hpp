@@ -7,7 +7,14 @@
 
 class Http {
 	public:
-		enum { MAX_HEADER_BYTES = 16384 };
+		// Transfer framing has its own limits because the decoded body limit
+		// does not count chunk extensions or trailers.
+		enum {
+			MAX_HEADER_BYTES = 16384,
+			MAX_CHUNK_LINE_BYTES = 1024,
+			MAX_CHUNK_TRAILER_BYTES = 16384,
+			MAX_CHUNK_METADATA_BYTES = 1024 * 1024
+		};
 
 		Http();
 		~Http();

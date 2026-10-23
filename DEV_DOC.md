@@ -71,6 +71,13 @@ Dependency arrows point one way: `Worker → services`.
 | **Cgi** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `sendBody`, `collect`, `stop` |
 | **StaticFile** | Reads a file from disk, resolves its MIME type, autoindex/upload/delete. | `Content` | `serve`, `upload`, `erase` |
 
+`Http::parse` rejects repeated `Content-Length` or `Transfer-Encoding` fields,
+unsupported transfer codings, and requests combining `Transfer-Encoding` with
+`Content-Length`. It decodes supported chunked bodies before CGI or upload
+dispatch. Chunk-size lines are limited to 1 KiB, trailers to 16 KiB, and all
+chunk metadata combined to 1 MiB; the configured body limit applies to the
+decoded content.
+
 ### State objects (the nesting)
 
 Mirrors nginx's `connection → request` nesting. Split rule: **survives keep-alive → `Connection`;
