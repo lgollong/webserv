@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Integration test for webserv: starts ./webserv with config/default.config and
-walks the evaluation sheet over real sockets. Run from the repository root:
+checks every requirement over real sockets. Run from the repository root:
 
     python3 tests/webserv_test.py          # every check, including the 15 s CGI timeout
     python3 tests/webserv_test.py --fast   # skip the CGI timeout check
@@ -192,8 +192,8 @@ def test_uploads():
 
 
 def test_cgi(fast):
-    status, _, body = request("GET", "/cgi/test.py?name=evaluator")
-    check("python CGI GET", status == 200 and b"Hello from Python CGI" in body and b"name=evaluator" in body)
+    status, _, body = request("GET", "/cgi/test.py?name=tester")
+    check("python CGI GET", status == 200 and b"Hello from Python CGI" in body and b"name=tester" in body)
     status, _, body = request("POST", "/cgi/test.sh", b"posted to a shell script")
     check("shell CGI POST receives the body", status == 200 and b"You sent: posted to a shell script" in body)
     status, _, body = request("POST", "/cgi/test.py/extra/path?context", b"context check", headers={"Content-Type": "text/plain"})

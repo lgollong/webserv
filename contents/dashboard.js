@@ -1,5 +1,5 @@
-// Evaluation guide: runs each check as a same-origin request and compares the
-// status code with the one the evaluation expects.
+// Tester: runs each check as a same-origin request and compares the
+// status code with the expected one.
 (function () {
 	"use strict";
 
@@ -75,9 +75,9 @@
 
 	// POST a file into /uploads, DELETE it, then confirm the GET is a 404.
 	function deleteCycle() {
-		var path = "/uploads/eval-delete-" + Date.now() + ".txt";
+		var path = "/uploads/test-delete-" + Date.now() + ".txt";
 		var results = [];
-		return send("POST", path, "created by the evaluation guide").then(function (created) {
+		return send("POST", path, "created by the tester").then(function (created) {
 			results.push(created);
 			return send("DELETE", path);
 		}).then(function (deleted) {

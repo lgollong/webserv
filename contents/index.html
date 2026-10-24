@@ -3,8 +3,8 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="Evaluation guide for the 42 webserv project: a browser-served project dashboard that runs every evaluation-sheet check.">
-	<title>webserv | evaluation guide</title>
+	<meta name="description" content="Tester for the 42 webserv project: a browser-served dashboard that checks the running server.">
+	<title>webserv | tester</title>
 	<link rel="icon" href="/files/favicon.ico">
 	<link rel="stylesheet" href="/dashboard.css">
 </head>
@@ -12,8 +12,8 @@
 	<header class="topbar">
 		<div class="topbar-inner">
 			<a class="wordmark" href="/">webserv</a>
-			<nav aria-label="Evaluation sections">
-				<a href="#config">Config</a><a href="#basics">Basics</a><a href="#cgi">CGI</a><a href="#browser">Browser</a><a href="#ports">Ports</a><a href="#stress">Siege</a><a href="#bonus">Bonus</a><a href="#code">Code</a>
+			<nav aria-label="Test sections">
+				<a href="#config">Config</a><a href="#basics">Basics</a><a href="#cgi">CGI</a><a href="#browser">Browser</a><a href="#ports">Ports</a><a href="#bonus">Bonus</a>
 			</nav>
 			<span id="progress" class="progress" role="status">0 / 0 passed</span>
 		</div>
@@ -21,14 +21,14 @@
 
 	<main class="page">
 		<section class="intro">
-			<p class="eyebrow">Evaluation guide &middot; a browser-served project dashboard</p>
+			<p class="eyebrow">Tester &middot; a browser-served project dashboard</p>
 			<h1 id="page-title">webserv</h1>
-			<p class="lead">This page is served by the server it tests. Each section follows the evaluation sheet. <strong>Run</strong> sends the request from your browser and compares the status code; <strong>Open</strong> shows the real page, so you can check it in the Network tab.</p>
+			<p class="lead">This page is served by the server it tests. <strong>Run</strong> sends the request from your browser and compares the status code; <strong>Open</strong> shows the real page, so you can check it in the Network tab.</p>
 			<div class="commands">
 				<div class="command"><span>Start (from the repository root)</span><code>make &amp;&amp; ./webserv</code></div>
 				<div class="command"><span>Same, explicit config</span><code>./webserv config/default.config</code></div>
 			</div>
-			<p class="note">Configuration: <code>config/default.config</code>. Website&nbsp;1 is this guide on <code>0.0.0.0:8080</code>; website&nbsp;2 is on <code>127.0.0.1:8081</code>.</p>
+			<p class="note">Configuration: <code>config/default.config</code>. Website&nbsp;1 is this tester on <code>0.0.0.0:8080</code>; website&nbsp;2 is on <code>127.0.0.1:8081</code>.</p>
 		</section>
 
 		<section id="config" class="block">
@@ -64,7 +64,7 @@
 							<button class="run" type="submit">POST to :8081</button>
 						</div>
 					</form>
-					<div class="command"><span>With curl, as in the evaluation sheet (62 bytes &rarr; 413)</span><code>curl -i -X POST -H "Content-Type: plain/text" --data "BODY IS HERE write something shorter or longer than body limit" http://127.0.0.1:8081/cgi/test.sh</code></div>
+					<div class="command"><span>With curl (62 bytes &rarr; 413)</span><code>curl -i -X POST -H "Content-Type: plain/text" --data "BODY IS HERE write something shorter or longer than body limit" http://127.0.0.1:8081/cgi/test.sh</code></div>
 				</li>
 				<li class="check" data-method="GET" data-path="/files/sample.txt" data-expect="200">
 					<div class="check-text"><strong>Route to another directory</strong><span><code>location /files { root ./contents/files; }</code>: the prefix is replaced, so <code>/files/sample.txt</code> reads <code>./contents/files/sample.txt</code>.</span></div>
@@ -143,10 +143,10 @@
 			</div>
 			<p><code>.py</code> runs through <code>/usr/bin/python3</code> and <code>.sh</code> through <code>/bin/bash</code>. Scripts live in <code>./contents/cgi</code> and run with that directory as their working directory.</p>
 			<ul class="checks">
-				<li class="check" data-method="GET" data-path="/cgi/test.py?name=evaluator" data-expect="200">
+				<li class="check" data-method="GET" data-path="/cgi/test.py?name=tester" data-expect="200">
 					<div class="check-text"><strong>GET with a query string</strong><span>The script receives <code>QUERY_STRING</code>.</span></div>
 					<span class="expect">200</span>
-					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/cgi/test.py?name=evaluator">Open</a></div>
+					<div class="actions"><button class="run" type="button">Run</button><a class="open" href="/cgi/test.py?name=tester">Open</a></div>
 				</li>
 				<li class="check" data-method="POST" data-path="/cgi/test.sh" data-body="posted to a shell script" data-expect="200">
 					<div class="check-text"><strong>POST with a body</strong><span>The body arrives on the script's stdin; the script ends at EOF.</span></div>
@@ -217,21 +217,13 @@
 			<p>Different ports serve different websites; the same interface:port twice is an error, because virtual hosts are not implemented.</p>
 			<ul class="checks">
 				<li class="check">
-					<div class="check-text"><strong>Different website per port</strong><span>Compare <code>:8080</code> (this guide) with <code>:8081</code> (website 2).</span></div>
+					<div class="check-text"><strong>Different website per port</strong><span>Compare <code>:8080</code> (this tester) with <code>:8081</code> (website 2).</span></div>
 					<span class="expect">200</span>
 					<div class="actions"><a class="open" href="http://127.0.0.1:8081/" target="_blank" rel="noopener">Open :8081</a></div>
 				</li>
 			</ul>
 			<div class="command"><span>Same interface:port twice in one config: startup fails with <code>bind: Address already in use</code></span><code>./webserv config/conflict.config</code></div>
 			<div class="command"><span>Second instance while this one runs: it exits with the same error and the first keeps serving</span><code>./webserv config/default.config</code></div>
-		</section>
-
-		<section id="stress" class="block">
-			<h2>Siege &amp; stress test</h2>
-			<p>Run these in a terminal. Availability should stay above 99.5%, memory should level off, and no connections should be left open afterwards. <code>/empty.html</code> is an empty page for the siege test.</p>
-			<div class="command"><span>Benchmark mode, 25 clients, 30 seconds</span><code>siege -b -c 25 -t 30S http://127.0.0.1:8080/empty.html</code></div>
-			<div class="command"><span>Memory: run during siege, the value should stop growing</span><code>while sleep 1; do ps -o rss= -p "$(pgrep -n webserv)"; done</code></div>
-			<div class="command"><span>Hanging connections: after siege, only the listeners should be left (Linux / macOS)</span><code>ss -tanp | grep webserv    # or: lsof -nP -iTCP -a -p "$(pgrep -n webserv)"</code></div>
 		</section>
 
 		<section id="bonus" class="block">
