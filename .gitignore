@@ -11,3 +11,4 @@ contents/cgi/test.cgi
 contents/cgi/test.cgi.dSYM/
 .DS_Store
 tmp
+tests/__pycache__
