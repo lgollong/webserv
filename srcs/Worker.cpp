@@ -354,7 +354,7 @@ void Worker::queueResponse(Connection &conn) {
 		conn.outbuf = http.buildHead(response, conn.body_remaining);
 	else {
 		conn.outbuf = http.buildHead(response, response.body.size());
-		if (response.status != 204)
+		if (response.status != 204 && conn.txn.request.method != "HEAD")
 			conn.outbuf += response.body;
 		std::string().swap(response.body);
 	}
