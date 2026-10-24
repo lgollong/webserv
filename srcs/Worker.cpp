@@ -16,7 +16,8 @@
 
 static const int kPollTimeoutMs = 1000;
 static const time_t kClientIdleTimeoutSeconds = 30;
-static const time_t kCgiTimeoutSeconds = 15;
+static const time_t kCgiTimeoutSeconds = 15;      // without pipe I/O
+static const time_t kCgiMaxRuntimeSeconds = 120;
 static const size_t kMaxDeferredClientBytes = 16 * 1024 * 1024;
 static const size_t kFileChunkBytes = 64 * 1024;
 
@@ -413,7 +414,8 @@ void Worker::sweepExpiredConnections() {
 	for (std::map<int, Connection>::iterator it = connections.begin(); it != connections.end(); ) {
 		Connection &conn = (it++)->second;
 		if (conn.phase == RUNNING_CGI) {
-			if (now - conn.txn.cgi.started_at >= kCgiTimeoutSeconds) {
+			if (now - conn.txn.cgi.last_io >= kCgiTimeoutSeconds ||
+				now - conn.txn.cgi.started_at >= kCgiMaxRuntimeSeconds) {
 				conn.txn.cgi.failed = true;
 				finishCgiResponse(conn);
 			}

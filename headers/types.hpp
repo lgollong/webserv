@@ -73,8 +73,9 @@ struct CgiJob {
 	std::string  output;
 	bool         failed;
 	time_t       started_at;
+	time_t       last_io;
 
-	CgiJob() : pid(-1), in_fd(-1), out_fd(-1), sent(0), failed(false), started_at(0) {}
+	CgiJob() : pid(-1), in_fd(-1), out_fd(-1), sent(0), failed(false), started_at(0), last_io(0) {}
 };
 
 struct Content {

@@ -119,6 +119,7 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 	job.failed = false;
 	job.pid = pid;
 	job.started_at = time(NULL);
+	job.last_io = job.started_at;
 	job.in_fd = inPipe[1];
 	job.out_fd = outPipe[0];
 	return job;
@@ -129,6 +130,7 @@ bool Cgi::collect(CgiJob &job) {
 	ssize_t n = read(job.out_fd, buf, sizeof(buf));
 	if (n > 0 && job.output.size() + static_cast<size_t>(n) <= MAX_OUTPUT_BYTES) {
 		job.output.append(buf, static_cast<size_t>(n));
+		job.last_io = time(NULL);
 		return false;
 	}
 	if (n != 0)
@@ -143,6 +145,7 @@ bool Cgi::sendBody(CgiJob &job, const std::string &body) {
 	if (n <= 0)
 		return true;
 	job.sent += static_cast<size_t>(n);
+	job.last_io = time(NULL);
 	return job.sent == body.size();
 }
 

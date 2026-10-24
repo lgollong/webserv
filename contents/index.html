@@ -281,7 +281,7 @@
 					<tr><td>Return values</td><td><code>&lt;= 0</code> on a client socket closes the client; on a CGI pipe, <code>&lt; 0</code> fails the job and <code>0</code> means EOF. <code>errno</code> is never checked after read/write.</td></tr>
 					<tr><td>Disk files</td><td>Opened in <code>StaticFile</code> and streamed in 64&nbsp;KiB chunks from <code>Worker::refillFromBodyFile()</code>, only when the client socket is writable.</td></tr>
 					<tr><td>fork</td><td>Only in <code>Cgi::start()</code>.</td></tr>
-					<tr><td>Timeouts</td><td>Idle clients: 30&nbsp;s. CGI: 15&nbsp;s, then <code>SIGTERM</code>, then <code>SIGKILL</code>.</td></tr>
+					<tr><td>Timeouts</td><td>Idle clients: 30&nbsp;s. CGI: 15&nbsp;s without pipe I/O (120&nbsp;s at most), then <code>SIGTERM</code>, then <code>SIGKILL</code>.</td></tr>
 					<tr><td>No relinking</td><td>Run <code>make</code> twice: the second run prints <code>Nothing to be done</code>.</td></tr>
 				</tbody>
 			</table>
