@@ -113,4 +113,4 @@ make re
 
 ### AI Use
 
-AI assistance, including OpenAI Codex and Anthropic Claude, has been used for project planning, issue refinement, code and test drafting, refactoring and simplification of the codebase, documentation drafting, and code-review support. Contributors review generated changes, run the repository's verification commands, and retain responsibility for the resulting implementation. AI is not a runtime or build dependency of `webserv`.
+AI assistance, including OpenAI Codex and Anthropic Claude, has been used for feedbacking the project architecture, answering questions about how various details of nginx and other webservers work, documentation drafting, and code-review support and generation of the contents and test suite. Some parsing functions were generated with AI assistance. The code has been reviewed and edited by the team to ensure it meets the project requirements and adheres to the coding standards of the 42 curriculum.
