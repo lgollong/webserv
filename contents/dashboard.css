@@ -250,12 +250,6 @@ textarea, input[type="text"], select {
 .lab select { width: auto; }
 .lab textarea { grid-column: 1 / -1; }
 
-/* Code map */
-.code-map { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-.code-map th, .code-map td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-top: 1px solid var(--line); }
-.code-map th { color: var(--muted); font-weight: 600; }
-.code-map td:first-child { white-space: nowrap; font-weight: 600; }
-
 /* Upload page */
 .upload-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
@@ -291,7 +285,6 @@ textarea, input[type="text"], select {
 	.topbar-inner { justify-content: space-between; }
 	.check { grid-template-columns: 1fr auto; }
 	.check .actions { grid-column: 1 / -1; }
-	.code-map td:first-child { white-space: normal; }
 	.lab { grid-template-columns: 1fr auto; }
 	.lab select { grid-column: 1 / -1; width: 100%; }
 }

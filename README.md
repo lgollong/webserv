@@ -34,7 +34,7 @@ make SANITIZE=address re
 
 ### Run
 
-The executable takes an optional configuration-file argument. Without one it loads `config/default.config`, relative to the working directory, so run it from the repository root. The default configuration serves the evaluation guide on `0.0.0.0:8080` and a second website on `127.0.0.1:8081`:
+The executable takes an optional configuration-file argument. Without one it loads `config/default.config`, relative to the working directory, so run it from the repository root. The default configuration serves the tester on `0.0.0.0:8080` and a second website on `127.0.0.1:8081`:
 
 ```sh
 ./webserv                         # same as ./webserv config/default.config
@@ -43,15 +43,15 @@ The executable takes an optional configuration-file argument. Without one it loa
 
 Logging is set by the top-level `log_level error|debug;` line in the configuration file (default `error`). Use `debug` to print a line for every connection, request, response, and CGI start.
 
-Open the evaluation guide at:
+Open the tester at:
 
 ```sh
 open http://127.0.0.1:8080/
 ```
 
-The guide follows the evaluation sheet section by section and runs each check (status codes, uploads, DELETE permissions, CGI errors and timeouts, redirects, sessions) from the browser. Terminal-only checks, such as the port conflict and siege, are listed as commands.
+The tester runs each check (status codes, uploads, DELETE permissions, CGI errors and timeouts, redirects, sessions) from the browser. Terminal-only checks, such as the port conflict, are listed as commands.
 
-`config/conflict.config` puts two servers on the same interface and port; `./webserv config/conflict.config` must stop with `bind: Address already in use`. `config/req.config` is an additional multi-server example listening on `127.0.0.1:8002`, `:8003`, `:8008`, and `:8001`; it is not the configuration for the guide.
+`config/conflict.config` puts two servers on the same interface and port; `./webserv config/conflict.config` must stop with `bind: Address already in use`. `config/req.config` is an additional multi-server example listening on `127.0.0.1:8002`, `:8003`, `:8008`, and `:8001`; it is not the configuration for the tester.
 
 ### Configuration
 
@@ -83,7 +83,7 @@ The longest matching location prefix wins. A URL below a location maps into its 
 make test                          # or: python3 tests/webserv_test.py [--fast]
 ```
 
-`tests/webserv_test.py` starts `./webserv config/default.config` and walks the evaluation sheet over real sockets: routes, error pages, body limits, uploads, DELETE permissions, CGI (including crashing and endless scripts), sessions, keep-alive, concurrent clients, and the port conflict. `--fast` skips the 15-second CGI timeout check.
+`tests/webserv_test.py` starts `./webserv config/default.config` and checks every requirement over real sockets: routes, error pages, body limits, uploads, DELETE permissions, CGI (including crashing and endless scripts), sessions, keep-alive, concurrent clients, and the port conflict. `--fast` skips the 15-second CGI timeout check.
 
 ### Cleanup
 
@@ -98,8 +98,8 @@ make re
 | Path | Contents |
 |---|---|
 | `srcs/`, `headers/` | The server. `Worker` runs the `poll()` loop and owns every connection; `Http` parses requests and builds responses; `Config` parses the configuration and picks the location for a request; `StaticFile` serves files, autoindex, uploads, and `DELETE`; `Cgi` runs scripts through pipes; `Session` backs the cookie demo; `Poller` wraps `poll()`; `types.hpp` holds the shared structs; `utils` holds small string helpers. |
-| `config/` | `default.config` (evaluation guide), `conflict.config`, `req.config`. |
-| `contents/` | Served files: the evaluation guide, error pages, CGI demo scripts (`cgi/`), and the upload directory (`uploads/`). |
+| `config/` | `default.config` (tester), `conflict.config`, `req.config`. |
+| `contents/` | Served files: the tester, error pages, CGI demo scripts (`cgi/`), and the upload directory (`uploads/`). |
 | `tests/webserv_test.py` | Integration test (see [Tests](#tests)). |
 | [`DEV_DOC.md`](DEV_DOC.md) | Architecture: the nginx model it borrows from, class responsibilities, connection state, and the request flow. |
 
