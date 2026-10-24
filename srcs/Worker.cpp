@@ -92,7 +92,8 @@ void Worker::run() {
 		if (poller.poll(kPollTimeoutMs) > 0) {
 			std::vector<pollfd> events = poller.events();
 			for (size_t i = 0; i < events.size(); ++i) {
-				if (events[i].revents == 0)
+				// A handler may close an fd which is then reused before this snapshot is exhausted.
+				if (!poller.isCurrent(events[i]))
 					continue;
 				try {
 					dispatchEvent(events[i]);
@@ -112,7 +113,13 @@ void Worker::run() {
 void Worker::dispatchEvent(const pollfd &event) {
 	std::map<int, size_t>::iterator listener = listeners.find(event.fd);
 	if (listener != listeners.end()) {
-		acceptNew(event.fd, listener->second);
+		if (event.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+			poller.remove(event.fd);
+			listeners.erase(listener);
+			close(event.fd);
+		}
+		else if (event.revents & POLLIN)
+			acceptNew(event.fd, listener->second);
 		return ;
 	}
 	std::map<int, Connection*>::iterator found = fdToConnection.find(event.fd);
@@ -120,8 +127,16 @@ void Worker::dispatchEvent(const pollfd &event) {
 		return ;
 	Connection &conn = *found->second;
 
-	if (event.fd == conn.txn.cgi.out_fd)
-		onCgiReadable(conn);
+	if (event.fd == conn.txn.cgi.out_fd) {
+		if (event.revents & (POLLERR | POLLNVAL)) {
+			conn.txn.cgi.failed = true;
+			finishCgiResponse(conn);
+		}
+		else if (event.revents & POLLIN)
+			onCgiReadable(conn);
+		else if (event.revents & POLLHUP)
+			finishCgiResponse(conn);
+	}
 	else if (event.fd == conn.txn.cgi.in_fd) {
 		if (event.revents & POLLOUT)
 			onCgiWritable(conn);
