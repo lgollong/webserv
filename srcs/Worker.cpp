@@ -234,12 +234,23 @@ void Worker::handleRequest(Connection &conn) {
 		startCgi(conn);
 	else if (request.method == "POST" && route.upload_enabled)
 		respondWith(conn, files.upload(route, request));
+	else if (request.method == "POST")
+		acknowledgeBody(conn);
 	else if (request.method == "DELETE")
 		respondWith(conn, files.erase(route, request));
 	else if (request.method == "GET")
 		respondWith(conn, files.serve(route, request));
 	else
 		respond(conn, 405);
+}
+
+// POST on a route without upload or CGI: the body is accepted and discarded.
+void Worker::acknowledgeBody(Connection &conn) {
+	std::ostringstream body;
+	body << conn.txn.request.body.size() << " bytes received\n";
+	conn.txn.response.headers["Content-Type"] = "text/plain";
+	conn.txn.response.body = body.str();
+	respond(conn, 200);
 }
 
 void Worker::queueSessionResponse(Connection &conn) {

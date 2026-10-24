@@ -35,6 +35,7 @@ class Worker {
 		void processBufferedRequest(Connection &conn);
 		void handleRequest(Connection &conn);
 		void queueSessionResponse(Connection &conn);
+		void acknowledgeBody(Connection &conn);
 		void startCgi(Connection &conn);
 		void onCgiWritable(Connection &conn);
 		void onCgiReadable(Connection &conn);
