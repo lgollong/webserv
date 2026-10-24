@@ -103,7 +103,6 @@ make re
 | `config/` | `default.config` (tester), `conflict.config`, `req.config`. |
 | `contents/` | Served files: the tester, error pages, CGI demo scripts (`cgi/`), and the upload directory (`uploads/`). |
 | `tests/webserv_test.py` | Integration test (see [Tests](#tests)). |
-| [`DEV_DOC.md`](DEV_DOC.md) | Architecture: the nginx model it borrows from, class responsibilities, connection state, and the request flow. |
 
 ## Resources
 
