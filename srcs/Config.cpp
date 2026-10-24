@@ -126,6 +126,8 @@ static void parseLocation(ServerConfig &server, const Tokens &tokens, size_t &i)
 				route.redirect_status = static_cast<int>(parseNumber(args[0], 300, 399));
 			route.redirect_target = args.back();
 		}
+		else if (directive == "client_max_body_size" && args.size() == 1)
+			route.client_max_body_size = parseBodySize(args[0]);
 		else if (directive == "cgi" && args.size() == 2 && args[1][0] == '/')
 			route.cgi_handlers[args[0]] = args[1];
 		else
@@ -182,6 +184,8 @@ static ServerConfig parseServer(const Tokens &tokens, size_t &i) {
 	for (std::vector<Route>::iterator it = server.locations.begin(); it != server.locations.end(); ++it) {
 		if (it->root.empty())
 			it->root = server.root;
+		if (it->client_max_body_size == 0)
+			it->client_max_body_size = server.client_max_body_size;
 	}
 	return server;
 }
@@ -224,10 +228,6 @@ bool Config::debugLogs() const {
 	return debug_logs;
 }
 
-size_t Config::bodyLimit(size_t serverIndex) const {
-	return server_configs[serverIndex].client_max_body_size;
-}
-
 static void resolveCgi(const std::string &path, Route &route) {
 	for (std::string::size_type end = path.find('/', 1); ; end = path.find('/', end + 1)) {
 		const std::string script = path.substr(0, end);
@@ -266,6 +266,7 @@ Route Config::route(size_t serverIndex, const Request &request) const {
 	if (best == NULL) {
 		result.location = "/";
 		result.root = server_configs[serverIndex].root;
+		result.client_max_body_size = server_configs[serverIndex].client_max_body_size;
 		result.allowed_methods.insert("GET");
 		return result;
 	}

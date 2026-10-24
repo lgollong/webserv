@@ -64,7 +64,7 @@ The file uses nginx-style blocks; `#` starts a comment. Supported directives:
 | | `host <IPv4>` | `host 127.0.0.1;` |
 | | `server_name <name>` (passed to CGI) | `server_name localhost;` |
 | | `root <dir>` (default for locations) | `root ./contents;` |
-| | `client_max_body_size <bytes>[k\|m]` | `client_max_body_size 10M;` |
+| | `client_max_body_size <bytes>[k\|m]` (default for locations) | `client_max_body_size 10M;` |
 | | `error_page <code> <file>` | `error_page 404 ./contents/errors/404.html;` |
 | `location <prefix>` | `root <dir>` | `root ./contents/files;` |
 | | `index <file>` | `index index.html;` |
@@ -72,6 +72,7 @@ The file uses nginx-style blocks; `#` starts a comment. Supported directives:
 | | `allowed_methods <methods...>` (default `GET`) | `allowed_methods GET POST DELETE;` |
 | | `return [3xx] <target>` | `return 301 /;` |
 | | `upload on\|off` + `upload_store <dir>` | `upload on; upload_store ./contents/uploads;` |
+| | `client_max_body_size <bytes>[k\|m]` | `client_max_body_size 100;` |
 | | `cgi <extension> <absolute interpreter path>` | `cgi .py /usr/bin/python3;` |
 | | `session_demo on\|off` | `session_demo on;` |
 

@@ -47,8 +47,10 @@ struct Route {
 	bool                   upload_enabled;
 	bool                   session_demo;
 	std::map<std::string, std::string> cgi_handlers;
+	size_t                 client_max_body_size;  // 0 inherits the server limit
 
-	Route() : is_cgi(false), redirect_status(0), autoindex(false), upload_enabled(false), session_demo(false) {}
+	Route() : is_cgi(false), redirect_status(0), autoindex(false), upload_enabled(false), session_demo(false),
+		client_max_body_size(0) {}
 };
 
 struct ServerConfig {

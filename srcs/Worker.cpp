@@ -192,7 +192,7 @@ void Worker::processBufferedRequest(Connection &conn) {
 	}
 	int state = 0;
 	if (errorStatus == 0)
-		state = http.parseBody(conn.inbuf, conn.txn.request, reader, config.bodyLimit(conn.server_index), errorStatus);
+		state = http.parseBody(conn.inbuf, conn.txn.request, reader, conn.txn.route.client_max_body_size, errorStatus);
 	if (state == 0 && errorStatus == 0)
 		return ;
 	if (errorStatus != 0) {

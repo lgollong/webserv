@@ -67,15 +67,15 @@ Dependency arrows point one way: `Worker → services`.
 | **Worker** | Runs the loop; owns all connections; dispatches on phase; orchestrates. | `map<int, Connection>`, `SessionStore` | `run`, `acceptNew`, `onReadable`, `onWritable` |
 | **Poller** | Thin `poll()` wrapper; maintains the fd set and per-fd interest. | `vector<pollfd>` | `add`, `remove`, `setEvents`, `poll` |
 | **Http** | Byte stream ↔ structured message, both directions; renders status codes (incl. errors). | `Request`, `Response` | `parse`, `build` |
-| **Config** | Parses the startup file and resolves a request to its listener-selected location. | `ServerConfig`, `Route` | `servers`, `route`, `bodyLimit`, `errorPage` |
+| **Config** | Parses the startup file and resolves a request to its listener-selected location. | `ServerConfig`, `Route` | `servers`, `route`, `errorPage` |
 | **Cgi** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `sendBody`, `collect`, `stop` |
 | **StaticFile** | Reads a file from disk, resolves its MIME type, autoindex/upload/delete. | `Content` | `serve`, `upload`, `erase` |
 
-`Http::parse` rejects repeated `Content-Length` or `Transfer-Encoding` fields,
+`Http::parseHead` rejects repeated `Content-Length` or `Transfer-Encoding` fields,
 unsupported transfer codings, and requests combining `Transfer-Encoding` with
-`Content-Length`. It decodes supported chunked bodies before CGI or upload
-dispatch. Chunk-size lines are limited to 1 KiB, trailers to 16 KiB, and all
-chunk metadata combined to 1 MiB; the configured body limit applies to the
+`Content-Length`. `Http::parseBody` then decodes the body incrementally (state in
+`Transaction::reader`) before CGI or upload dispatch. Chunk-size lines are limited to 1 KiB, trailers to 16 KiB, and all
+chunk metadata combined to 1 MiB; the route's body limit applies to the
 decoded content.
 
 ### State objects (the nesting)
@@ -129,8 +129,9 @@ next step would block.
 
 1. `Poller.poll()` → client fd readable.
 2. `Worker::onReadable()` → raw bytes appended to `conn.inbuf`.
-3. `Http::parse(inbuf, txn.request, Config::bodyLimit(server_index))` → incomplete, malformed, or a filled `Request`.
-4. `Config::route(server_index, txn.request)` → `Route` (root, optional CGI state, allowed methods).
+3. `Http::parseHead(inbuf, txn.request, txn.reader)` → incomplete, malformed, or the request line and headers.
+4. `Config::route(server_index, txn.request)` → `Route` (root, optional CGI state, allowed methods, body limit);
+   `Http::parseBody` then decodes the body as it arrives, against the route's `client_max_body_size`.
 5. `StaticFile::serve(route, request)` → `Content{status, body, mime_type}` (or an error status).
 6. `Http::build(txn.response)` → response bytes into `conn.outbuf`; `phase = WRITING`, set `POLLOUT`.
 7. On writable: `Worker::onWritable()` advances `sent` until fully sent, then resets for keep-alive or closes.

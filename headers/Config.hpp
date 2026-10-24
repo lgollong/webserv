@@ -13,7 +13,6 @@ class Config {
 		Route                             route(size_t serverIndex, const Request &request) const;
 		const std::vector<ServerConfig> & servers() const;
 		std::string                       errorPage(size_t serverIndex, int status) const;
-		size_t                            bodyLimit(size_t serverIndex) const;
 		bool                              debugLogs() const;
 
 	private:
