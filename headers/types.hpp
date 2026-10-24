@@ -86,11 +86,29 @@ struct Content {
 	Content() : status(0), file_fd(-1), file_size(0) {}
 };
 
+enum ChunkState {
+	CHUNK_SIZE,
+	CHUNK_DATA,
+	CHUNK_DATA_END,
+	CHUNK_TRAILER
+};
+
+struct BodyReader {           // decoding progress of the current request body
+	bool         head_done;
+	bool         chunked;
+	size_t       remaining;   // Content-Length bytes still expected, or bytes left in the current chunk
+	ChunkState   chunk_state;
+	size_t       metadata;    // chunk-size lines and trailers seen so far
+
+	BodyReader() : head_done(false), chunked(false), remaining(0), chunk_state(CHUNK_SIZE), metadata(0) {}
+};
+
 struct Transaction {
 	Request      request;
 	Response     response;
 	Route        route;
 	CgiJob       cgi;
+	BodyReader   reader;
 };
 
 struct Connection {

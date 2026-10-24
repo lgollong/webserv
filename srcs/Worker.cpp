@@ -161,7 +161,7 @@ void Worker::acceptNew(int listen_fd, size_t serverIndex) {
 }
 
 void Worker::onReadable(Connection &conn) {
-	char buf[4096];
+	char buf[65536];
 	ssize_t n = read(conn.fd, buf, sizeof(buf));
 	if (n <= 0) {
 		closeConnection(conn);
@@ -180,18 +180,28 @@ void Worker::processBufferedRequest(Connection &conn) {
 		return ;
 
 	int errorStatus = 0;
-	ssize_t size = http.parse(conn.inbuf, conn.txn.request, config.bodyLimit(conn.server_index), errorStatus);
-	if (size == 0)
+	BodyReader &reader = conn.txn.reader;
+	if (!reader.head_done) {
+		ssize_t size = http.parseHead(conn.inbuf, conn.txn.request, reader, errorStatus);
+		if (size == 0)
+			return ;
+		if (size > 0) {
+			conn.inbuf.erase(0, static_cast<size_t>(size));
+			conn.txn.route = config.route(conn.server_index, conn.txn.request);
+		}
+	}
+	int state = 0;
+	if (errorStatus == 0)
+		state = http.parseBody(conn.inbuf, conn.txn.request, reader, config.bodyLimit(conn.server_index), errorStatus);
+	if (state == 0 && errorStatus == 0)
 		return ;
-	if (size < 0) {
+	if (errorStatus != 0) {
 		conn.inbuf.clear();
 		conn.close_after_write = true;
 		respond(conn, errorStatus);
 		return ;
 	}
-	conn.inbuf.erase(0, static_cast<size_t>(size));
 	conn.close_after_write = requestWantsClose(conn.txn.request);
-	conn.txn.route = config.route(conn.server_index, conn.txn.request);
 	if (debug)
 		std::cerr << "DEBUG: fd " << conn.fd << " request: " << conn.txn.request.method << " "
 			<< conn.txn.request.path << " " << conn.txn.request.version << std::endl;

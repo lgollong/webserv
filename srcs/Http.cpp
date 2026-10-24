@@ -3,6 +3,7 @@
 #include <sstream>
 #include <cctype>
 #include <cstdlib>
+#include <algorithm>
 
 Http::Http() {}
 
@@ -52,73 +53,82 @@ static bool parseHeaders(const std::string &block, Request &request) {
 	return true;
 }
 
-static ssize_t parseChunkedBody(const std::string &inbuf, size_t pos, size_t maxBodyBytes,
-		std::string &body, int &errorStatus) {
-	body.clear();
-	size_t metadataBytes = 0;
+static int failWith(int &errorStatus, int status) {
+	errorStatus = status;
+	return -1;
+}
+
+// Consumes as much of the chunked body as inbuf holds; returns 1 when the final chunk
+// and trailers are in, 0 when more input is needed, -1 on error.
+static int readChunked(std::string &inbuf, std::string &body, BodyReader &reader,
+		size_t maxBodyBytes, int &errorStatus) {
 	while (true) {
-		std::string::size_type lineEnd = inbuf.find("\r\n", pos);
-		if (lineEnd == std::string::npos) {
-			size_t pending = inbuf.size() - pos;
-			if (pending > Http::MAX_CHUNK_LINE_BYTES ||
-				pending > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
-				errorStatus = 413;
-				return -1;
+		if (reader.chunk_state == CHUNK_DATA) {
+			size_t take = std::min(reader.remaining, inbuf.size());
+			body.append(inbuf, 0, take);
+			inbuf.erase(0, take);
+			reader.remaining -= take;
+			if (reader.remaining > 0)
+				return 0;
+			reader.chunk_state = CHUNK_DATA_END;
+		}
+		if (reader.chunk_state == CHUNK_DATA_END) {
+			if (inbuf.size() < 2)
+				return 0;
+			if (inbuf.compare(0, 2, "\r\n") != 0)
+				return failWith(errorStatus, 400);
+			inbuf.erase(0, 2);
+			reader.chunk_state = CHUNK_SIZE;
+		}
+
+		size_t budget = Http::MAX_CHUNK_METADATA_BYTES - reader.metadata;
+		if (reader.chunk_state == CHUNK_TRAILER) {
+			size_t trailerBytes = 2;
+			if (inbuf.compare(0, 2, "\r\n") != 0) {
+				std::string::size_type end = inbuf.find("\r\n\r\n");
+				if (end == std::string::npos) {
+					if (inbuf.size() > Http::MAX_CHUNK_TRAILER_BYTES || inbuf.size() > budget)
+						return failWith(errorStatus, 413);
+					return 0;
+				}
+				trailerBytes = end + 4;
 			}
+			if (trailerBytes > Http::MAX_CHUNK_TRAILER_BYTES || trailerBytes > budget)
+				return failWith(errorStatus, 413);
+			inbuf.erase(0, trailerBytes);
+			return 1;
+		}
+
+		std::string::size_type lineEnd = inbuf.find("\r\n");
+		if (lineEnd == std::string::npos) {
+			if (inbuf.size() > Http::MAX_CHUNK_LINE_BYTES || inbuf.size() > budget)
+				return failWith(errorStatus, 413);
 			return 0;
 		}
-		size_t lineBytes = lineEnd - pos + 2;
-		if (lineEnd - pos > Http::MAX_CHUNK_LINE_BYTES ||
-			lineBytes > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
-			errorStatus = 413;
-			return -1;
-		}
-		metadataBytes += lineBytes;
-		std::string line = inbuf.substr(pos, lineEnd - pos);
+		size_t lineBytes = lineEnd + 2;
+		if (lineEnd > Http::MAX_CHUNK_LINE_BYTES || lineBytes > budget)
+			return failWith(errorStatus, 413);
+		reader.metadata += lineBytes;
+		std::string line = inbuf.substr(0, lineEnd);
 		std::string sizeText = trim(line.substr(0, line.find(';')));
 		char *end = NULL;
 		size_t size = std::strtoul(sizeText.c_str(), &end, 16);
-		if (sizeText.empty() || sizeText.size() > 8 || *end != '\0') {
-			errorStatus = 400;
-			return -1;
-		}
-		pos = lineEnd + 2;
+		if (sizeText.empty() || sizeText.size() > 8 || *end != '\0')
+			return failWith(errorStatus, 400);
+		inbuf.erase(0, lineBytes);
 
 		if (size == 0) {
-			std::string::size_type bodyEnd = inbuf.find("\r\n\r\n", pos - 2);
-			if (bodyEnd == std::string::npos) {
-				size_t pending = inbuf.size() - pos;
-				if (pending > Http::MAX_CHUNK_TRAILER_BYTES ||
-					pending > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
-					errorStatus = 413;
-					return -1;
-				}
-				return 0;
-			}
-			size_t trailerBytes = bodyEnd + 4 - pos;
-			if (trailerBytes > Http::MAX_CHUNK_TRAILER_BYTES ||
-				trailerBytes > Http::MAX_CHUNK_METADATA_BYTES - metadataBytes) {
-				errorStatus = 413;
-				return -1;
-			}
-			return static_cast<ssize_t>(bodyEnd + 4);
+			reader.chunk_state = CHUNK_TRAILER;
+			continue;
 		}
-		if (size > maxBodyBytes - body.size()) {
-			errorStatus = 413;
-			return -1;
-		}
-		if (inbuf.size() < pos + size + 2)
-			return 0;
-		if (inbuf.compare(pos + size, 2, "\r\n") != 0) {
-			errorStatus = 400;
-			return -1;
-		}
-		body.append(inbuf, pos, size);
-		pos += size + 2;
+		if (size > maxBodyBytes - body.size())
+			return failWith(errorStatus, 413);
+		reader.remaining = size;
+		reader.chunk_state = CHUNK_DATA;
 	}
 }
 
-ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBytes, int &errorStatus) {
+ssize_t Http::parseHead(const std::string &inbuf, Request &request, BodyReader &reader, int &errorStatus) {
 	errorStatus = 0;
 	std::string::size_type headerEnd = inbuf.find("\r\n\r\n");
 	if (headerEnd == std::string::npos || headerEnd + 4 > MAX_HEADER_BYTES) {
@@ -137,7 +147,7 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 	if (errorStatus != 0)
 		return -1;
 
-	size_t bodyStart = headerEnd + 4;
+	reader = BodyReader();
 	std::map<std::string, std::string>::const_iterator it = parsed.headers.find("transfer-encoding");
 	if (it != parsed.headers.end()) {
 		if (parsed.version != "HTTP/1.1" || lowerCase(it->second) != "chunked" ||
@@ -145,13 +155,8 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 			errorStatus = 400;
 			return -1;
 		}
-		ssize_t requestSize = parseChunkedBody(inbuf, bodyStart, maxBodyBytes, parsed.body, errorStatus);
-		if (requestSize > 0)
-			request = parsed;
-		return requestSize;
+		reader.chunked = true;
 	}
-
-	size_t contentLength = 0;
 	it = parsed.headers.find("content-length");
 	if (it != parsed.headers.end()) {
 		if (it->second.empty() || it->second.size() > 18 ||
@@ -159,18 +164,27 @@ ssize_t Http::parse(const std::string &inbuf, Request &request, size_t maxBodyBy
 			errorStatus = 400;
 			return -1;
 		}
-		contentLength = std::strtoul(it->second.c_str(), NULL, 10);
+		reader.remaining = std::strtoul(it->second.c_str(), NULL, 10);
 	}
-	if (contentLength > maxBodyBytes) {
-		errorStatus = 413;
-		return -1;
-	}
-	if (inbuf.size() < bodyStart + contentLength)
-		return 0;
-
-	parsed.body = inbuf.substr(bodyStart, contentLength);
+	reader.head_done = true;
 	request = parsed;
-	return static_cast<ssize_t>(bodyStart + contentLength);
+	return static_cast<ssize_t>(headerEnd + 4);
+}
+
+int Http::parseBody(std::string &inbuf, Request &request, BodyReader &reader, size_t maxBodyBytes, int &errorStatus) {
+	errorStatus = 0;
+	if (reader.chunked)
+		return readChunked(inbuf, request.body, reader, maxBodyBytes, errorStatus);
+
+	if (reader.remaining > maxBodyBytes - request.body.size())
+		return failWith(errorStatus, 413);
+	if (request.body.empty())
+		request.body.reserve(reader.remaining);
+	size_t take = std::min(reader.remaining, inbuf.size());
+	request.body.append(inbuf, 0, take);
+	inbuf.erase(0, take);
+	reader.remaining -= take;
+	return reader.remaining == 0 ? 1 : 0;
 }
 
 static const char *reasonPhrase(int status) {
