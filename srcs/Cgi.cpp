@@ -125,7 +125,7 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 }
 
 bool Cgi::collect(CgiJob &job) {
-	char buf[4096];
+	char buf[65536];
 	ssize_t n = read(job.out_fd, buf, sizeof(buf));
 	if (n > 0 && job.output.size() + static_cast<size_t>(n) <= MAX_OUTPUT_BYTES) {
 		job.output.append(buf, static_cast<size_t>(n));

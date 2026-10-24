@@ -6,7 +6,7 @@
 
 class Cgi {
 	public:
-		enum { MAX_OUTPUT_BYTES = 16 * 1024 * 1024 };
+		enum { MAX_OUTPUT_BYTES = 256 * 1024 * 1024 };
 
 		Cgi();
 		~Cgi();
