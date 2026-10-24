@@ -66,7 +66,7 @@ Dependency arrows point one way: `Worker → services`.
 |---|---|---|---|
 | **Worker** | Runs the loop; owns all connections; dispatches on phase; orchestrates. | `map<int, Connection>`, `SessionStore` | `run`, `acceptNew`, `onReadable`, `onWritable` |
 | **Poller** | Thin `poll()` wrapper; maintains the fd set and per-fd interest. | `vector<pollfd>` | `add`, `remove`, `setEvents`, `poll` |
-| **Http** | Byte stream ↔ structured message, both directions; renders status codes (incl. errors). | `Request`, `Response` | `parse`, `build` |
+| **Http** | Byte stream ↔ structured message, both directions; renders status codes (incl. errors). | `Request`, `Response` | `parseHead`, `parseBody`, `buildHead` |
 | **Config** | Parses the startup file and resolves a request to its listener-selected location. | `ServerConfig`, `Route` | `servers`, `route`, `errorPage` |
 | **Cgi** | Forks/execs a script, wires up its I/O, collects output non-blockingly. | `CgiJob` | `start`, `sendBody`, `collect`, `stop` |
 | **StaticFile** | Reads a file from disk, resolves its MIME type, autoindex/upload/delete. | `Content` | `serve`, `upload`, `erase` |
@@ -133,7 +133,7 @@ next step would block.
 4. `Config::route(server_index, txn.request)` → `Route` (root, optional CGI state, allowed methods, body limit);
    `Http::parseBody` then decodes the body as it arrives, against the route's `client_max_body_size`.
 5. `StaticFile::serve(route, request)` → `Content{status, body, mime_type}` (or an error status).
-6. `Http::build(txn.response)` → response bytes into `conn.outbuf`; `phase = WRITING`, set `POLLOUT`.
+6. `Http::buildHead(txn.response, …)` plus the body → response bytes into `conn.outbuf`; `phase = WRITING`, set `POLLOUT`.
 7. On writable: `Worker::onWritable()` advances `sent` until fully sent, then resets for keep-alive or closes.
 
 **Dynamic — `POST /login.php`** (differs at the content step)
@@ -143,8 +143,8 @@ next step would block.
    set `phase = RUNNING_CGI`, and return to the loop without blocking in `waitpid`.
 6. On pipe events, `Cgi::sendBody()` forwards POST data and `Cgi::collect()` accumulates output; on end of output, `Cgi::stop()` reaps the child and the
    script's `Status:` / `Content-Type:` header block is parsed into `txn.response`.
-7. `Http::build` → bytes; then `WRITING` and partial writes as above.
+7. `Http::buildHead` plus the body → bytes; then `WRITING` and partial writes as above.
 
 **Errors ride the same path:** handlers return a non-OK status (400/403/404/502); `Worker` first
 looks up the selected server's configured error page when the response body is empty, then passes
-the result through `Http::build` and the normal `WRITING` phase.
+the result through `Http::buildHead` and the normal `WRITING` phase.

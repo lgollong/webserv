@@ -234,13 +234,6 @@ Response Http::defaultErrorResponse(int status) const {
 	return response;
 }
 
-std::string Http::build(const Response &response) {
-	std::string head = buildHead(response, response.body.size());
-	if (response.status == 204)
-		return head;
-	return head + response.body;
-}
-
 std::string Http::buildHead(const Response &response, size_t bodyLength) {
 	int status = response.status;
 	if (!supportsStatus(status))

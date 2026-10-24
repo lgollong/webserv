@@ -159,11 +159,13 @@ void Cgi::stop(CgiJob &job) const {
 	job.pid = -1;
 }
 
-Response Cgi::buildResponse(const CgiJob &job) const {
-	Response response;
+// Parses the CGI header block into response; the body is moved out of job.output.
+// A failed or malformed run leaves response as a bodiless 502.
+void Cgi::buildResponse(CgiJob &job, Response &response) const {
+	response = Response();
 	response.status = 502;
 	if (job.failed)
-		return response;
+		return;
 
 	Response parsed;
 	parsed.status = 200;
@@ -171,7 +173,7 @@ Response Cgi::buildResponse(const CgiJob &job) const {
 	while (true) {
 		std::string::size_type end = job.output.find('\n', pos);
 		if (end == std::string::npos)
-			return response;
+			return;
 		std::string line = job.output.substr(pos, end - pos);
 		pos = end + 1;
 		if (!line.empty() && line[line.size() - 1] == '\r')
@@ -181,7 +183,7 @@ Response Cgi::buildResponse(const CgiJob &job) const {
 
 		std::string::size_type colon = line.find(':');
 		if (colon == std::string::npos || colon == 0)
-			return response;
+			return;
 		const std::string name = lowerCase(line.substr(0, colon));
 		const std::string value = trim(line.substr(colon + 1));
 		if (name == "status")
@@ -196,7 +198,9 @@ Response Cgi::buildResponse(const CgiJob &job) const {
 	if (parsed.headers.count("Location") && parsed.status == 200)
 		parsed.status = 302;
 	if (!parsed.headers.count("Content-Type") && !parsed.headers.count("Location"))
-		return response;
-	parsed.body = job.output.substr(pos);
-	return parsed;
+		return;
+	job.output.erase(0, pos);
+	response.status = parsed.status;
+	response.headers.swap(parsed.headers);
+	response.body.swap(job.output);
 }

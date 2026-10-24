@@ -292,8 +292,10 @@ void Worker::startCgi(Connection &conn) {
 }
 
 void Worker::onCgiWritable(Connection &conn) {
-	if (cgi.sendBody(conn.txn.cgi, conn.txn.request.body))
+	if (cgi.sendBody(conn.txn.cgi, conn.txn.request.body)) {
 		closeManagedFd(conn.txn.cgi.in_fd);
+		std::string().swap(conn.txn.request.body); // forwarded; free it while the CGI still runs
+	}
 }
 
 void Worker::onCgiReadable(Connection &conn) {
@@ -305,7 +307,7 @@ void Worker::finishCgiResponse(Connection &conn) {
 	closeManagedFd(conn.txn.cgi.out_fd);
 	closeManagedFd(conn.txn.cgi.in_fd);
 	cgi.stop(conn.txn.cgi);
-	conn.txn.response = cgi.buildResponse(conn.txn.cgi);
+	cgi.buildResponse(conn.txn.cgi, conn.txn.response);
 	if (!http.supportsStatus(conn.txn.response.status))
 		conn.txn.response = Response();
 	if (conn.txn.response.status == 0)
@@ -350,8 +352,12 @@ void Worker::queueResponse(Connection &conn) {
 
 	if (conn.body_fd >= 0)
 		conn.outbuf = http.buildHead(response, conn.body_remaining);
-	else
-		conn.outbuf = http.build(response);
+	else {
+		conn.outbuf = http.buildHead(response, response.body.size());
+		if (response.status != 204)
+			conn.outbuf += response.body;
+		std::string().swap(response.body);
+	}
 	conn.sent = 0;
 	conn.phase = WRITING;
 	poller.setEvents(conn.fd, POLLOUT);

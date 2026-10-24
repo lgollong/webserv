@@ -16,7 +16,7 @@ class Cgi {
 		bool      collect(CgiJob &job);
 		bool      sendBody(CgiJob &job, const std::string &body);
 		void      stop(CgiJob &job) const;
-		Response  buildResponse(const CgiJob &job) const;
+		void      buildResponse(CgiJob &job, Response &response) const;
 };
 
 #endif

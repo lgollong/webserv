@@ -23,7 +23,6 @@ class Http {
 		int          parseBody(std::string &inbuf, Request &request, BodyReader &reader, size_t maxBodyBytes, int &errorStatus);
 		Response     defaultErrorResponse(int status) const;
 		bool         supportsStatus(int status) const;
-		std::string  build(const Response &response);
 		std::string  buildHead(const Response &response, size_t bodyLength);
 };
 
