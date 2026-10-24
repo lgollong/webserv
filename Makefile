@@ -9,6 +9,7 @@ SRC_DIR = srcs
 SRC = $(shell find $(SRC_DIR) -type f -name "*.cpp")
 OBJ_DIR = objs
 OBJ = $(SRC:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+DEP = $(OBJ:.o=.d)
 
 NAME = webserv
 
@@ -18,8 +19,10 @@ $(NAME): $(OBJ)
 	@$(CXX) $(CXXFLAGS) $(OBJ) -o $(NAME)
 	@echo "\033[1;32m ✅ [webserv created]\033[0m"
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp Makefile | $(OBJ_DIR)
+	@$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+-include $(DEP)
 
 $(OBJ_DIR):
 	@mkdir -p $(OBJ_DIR)
