@@ -261,23 +261,6 @@
 			</form>
 			<pre id="lab-output" class="result">No request sent yet.</pre>
 		</section>
-
-		<section id="code" class="block">
-			<h2>Runtime contract and current boundaries</h2>
-			<p>Where to look when the evaluation sheet asks for the code. Everything below is in <code>srcs/</code>.</p>
-			<table class="code-map">
-				<thead><tr><th>Question</th><th>Answer</th></tr></thead>
-				<tbody>
-					<tr><td>Event mechanism</td><td>One <code>poll()</code> in <code>Worker::run()</code>, through <code>Poller</code>. It watches listeners, clients and CGI pipes, for reading and for writing.</td></tr>
-					<tr><td>From poll() to client I/O</td><td><code>Worker::dispatchEvent()</code> &rarr; <code>acceptNew()</code>, <code>onReadable()</code>, <code>onWritable()</code>, <code>onCgiReadable()</code>, <code>onCgiWritable()</code>. One <code>read</code> or <code>write</code> per readiness event.</td></tr>
-					<tr><td>Return values</td><td><code>&lt;= 0</code> on a client socket closes the client; on a CGI pipe, <code>&lt; 0</code> fails the job and <code>0</code> means EOF. <code>errno</code> is never checked after read/write.</td></tr>
-					<tr><td>Disk files</td><td>Opened in <code>StaticFile</code> and streamed in 64&nbsp;KiB chunks from <code>Worker::refillFromBodyFile()</code>, only when the client socket is writable.</td></tr>
-					<tr><td>fork</td><td>Only in <code>Cgi::start()</code>.</td></tr>
-					<tr><td>Timeouts</td><td>Idle clients: 30&nbsp;s. CGI: 15&nbsp;s without pipe I/O (120&nbsp;s at most), then <code>SIGTERM</code>, then <code>SIGKILL</code>.</td></tr>
-					<tr><td>No relinking</td><td>Run <code>make</code> twice: the second run prints <code>Nothing to be done</code>.</td></tr>
-				</tbody>
-			</table>
-		</section>
 	</main>
 
 	<footer class="footer"><span>42 webserv &middot; lgollong, lorbke, sachmull</span><a href="/upload.html">Uploads</a></footer>
