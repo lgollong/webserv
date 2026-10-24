@@ -74,6 +74,7 @@ The file uses nginx-style blocks; `#` starts a comment. Supported directives:
 | | `upload on\|off` + `upload_store <dir>` | `upload on; upload_store ./contents/uploads;` |
 | | `client_max_body_size <bytes>[k\|m]` | `client_max_body_size 100;` |
 | | `cgi <extension> <absolute interpreter path>` | `cgi .py /usr/bin/python3;` |
+| | `cgi_require_script on\|off` (default `on`; `off` runs the handler for missing scripts) | `cgi_require_script off;` |
 | | `session_demo on\|off` | `session_demo on;` |
 
 The longest matching location prefix wins. A URL below a location maps into its root: with `location /files { root ./contents/files; }`, `/files/a/b.txt` serves `./contents/files/a/b.txt`.

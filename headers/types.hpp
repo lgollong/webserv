@@ -48,9 +48,10 @@ struct Route {
 	bool                   session_demo;
 	std::map<std::string, std::string> cgi_handlers;
 	size_t                 client_max_body_size;  // 0 inherits the server limit
+	bool                   cgi_require_script;    // off: run the handler even if the script file is missing
 
 	Route() : is_cgi(false), redirect_status(0), autoindex(false), upload_enabled(false), session_demo(false),
-		client_max_body_size(0) {}
+		client_max_body_size(0), cgi_require_script(true) {}
 };
 
 struct ServerConfig {

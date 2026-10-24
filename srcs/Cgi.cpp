@@ -92,7 +92,8 @@ CgiJob Cgi::start(const Request &request, const Route &route, const ServerConfig
 	job.failed = true;
 
 	struct stat info;
-	if (stat(route.cgi_script_path.c_str(), &info) != 0 || !S_ISREG(info.st_mode))
+	if (route.cgi_require_script &&
+		(stat(route.cgi_script_path.c_str(), &info) != 0 || !S_ISREG(info.st_mode)))
 		return job;
 	int inPipe[2];
 	int outPipe[2];

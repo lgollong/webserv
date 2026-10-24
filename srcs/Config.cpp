@@ -118,6 +118,8 @@ static void parseLocation(ServerConfig &server, const Tokens &tokens, size_t &i)
 			route.upload_enabled = parseSwitch(args, directive);
 		else if (directive == "session_demo")
 			route.session_demo = parseSwitch(args, directive);
+		else if (directive == "cgi_require_script")
+			route.cgi_require_script = parseSwitch(args, directive);
 		else if (directive == "allowed_methods")
 			route.allowed_methods.insert(args.begin(), args.end());
 		else if (directive == "return" && args.size() <= 2) {
